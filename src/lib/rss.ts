@@ -73,50 +73,71 @@ function getTextValue(value: unknown): string | null {
   return null;
 }
 
+function getUsableHttpUrl(value: unknown): string | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+
+  if (trimmed.length === 0) {
+    return null;
+  }
+
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(trimmed);
+  } catch {
+    return null;
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return null;
+  }
+
+  return parsedUrl.href;
+}
+
 function getCanonicalUrl(entry: FeedEntry): string | null {
   const linkValue = entry.link;
 
-  if (typeof linkValue === "string" && linkValue.trim().length > 0) {
-    return linkValue.trim();
+  const directLink = getUsableHttpUrl(linkValue);
+
+  if (directLink) {
+    return directLink;
   }
 
   const linkCandidates = asArray(linkValue).flatMap((link) =>
     link && typeof link === "object" ? [link as FeedLink] : [],
   );
 
-  const isHttpUrl = (value: unknown): value is string =>
-    typeof value === "string" && /^https?:\/\//.test(value.trim());
-
   const preferredLink =
     linkCandidates.find((link) => {
-      const href = link["@_href"];
       const rel = link["@_rel"];
       const type = link["@_type"];
 
       return (
-        isHttpUrl(href) &&
+        getUsableHttpUrl(link["@_href"]) !== null &&
         rel === "alternate" &&
         typeof type === "string" &&
         type.includes("html")
       );
     }) ??
     linkCandidates.find((link) => {
-      const href = link["@_href"];
       const rel = link["@_rel"];
 
-      return isHttpUrl(href) && (rel === undefined || rel === "alternate");
+      return (
+        getUsableHttpUrl(link["@_href"]) !== null &&
+        (rel === undefined || rel === "alternate")
+      );
     }) ??
     linkCandidates.find((link) => {
-      const href = link["@_href"];
-      return isHttpUrl(href);
-    }) ??
-    linkCandidates.find((link) => {
-      const href = link["@_href"];
-      return typeof href === "string" && href.trim().length > 0;
+      return getUsableHttpUrl(link["@_href"]) !== null;
     });
 
   if (preferredLink) {
-    return String(preferredLink["@_href"]).trim();
+    return getUsableHttpUrl(preferredLink["@_href"]);
   }
 
   const guid = getTextValue(entry.guid);
@@ -133,19 +154,7 @@ function getCanonicalUrl(entry: FeedEntry): string | null {
     }
   }
 
-  if (/^https?:\/\//.test(guid)) {
-    return guid;
-  }
-
-  if (entry.guid && typeof entry.guid === "object") {
-    const isPermaLink = (entry.guid as Record<string, unknown>)["@_isPermaLink"];
-
-    if (isPermaLink === true || isPermaLink === "true") {
-      return guid;
-    }
-  }
-
-  return null;
+  return getUsableHttpUrl(guid);
 }
 
 function getPublishedAt(entry: FeedEntry): string | null {

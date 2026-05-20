@@ -19,6 +19,17 @@ import { parseFeedItems } from "@/lib/rss";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
 const SOURCE_SYNC_TIMEOUT_MS = 10_000;
+const BLOCKED_SOURCE_URL_ERROR = "Source URL targets a blocked local or private address.";
+
+function normalizeHostname(hostname: string): string {
+  const trimmed = hostname.trim().toLowerCase();
+
+  if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+    return trimmed.slice(1, -1);
+  }
+
+  return trimmed;
+}
 
 function getString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
@@ -49,7 +60,7 @@ export function getBlockedSourceUrlError(url: string): string | null {
     return "Source URL must use http or https.";
   }
 
-  const hostname = parsedUrl.hostname.toLowerCase();
+  const hostname = normalizeHostname(parsedUrl.hostname);
 
   if (
     hostname === "localhost" ||
@@ -59,7 +70,7 @@ export function getBlockedSourceUrlError(url: string): string | null {
     hostname.endsWith(".local") ||
     hostname.endsWith(".internal")
   ) {
-    return "Source URL targets a blocked local or private address.";
+    return BLOCKED_SOURCE_URL_ERROR;
   }
 
   const ipVersion = isIP(hostname);
@@ -76,7 +87,7 @@ export function getBlockedSourceUrlError(url: string): string | null {
       (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) ||
       (firstOctet === 192 && secondOctet === 168)
     ) {
-      return "Source URL targets a blocked local or private address.";
+      return BLOCKED_SOURCE_URL_ERROR;
     }
   }
 
@@ -88,7 +99,7 @@ export function getBlockedSourceUrlError(url: string): string | null {
       hostname.startsWith("fd") ||
       hostname.startsWith("fe80:"))
   ) {
-    return "Source URL targets a blocked local or private address.";
+    return BLOCKED_SOURCE_URL_ERROR;
   }
 
   return null;

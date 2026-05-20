@@ -106,6 +106,55 @@ describe("parseFeedItems", () => {
     expect(getBlockedSourceUrlError("https://example.com/feed.xml")).toBeNull();
   });
 
+  it("blocks IPv6 literal localhost and private source urls", () => {
+    expect(getBlockedSourceUrlError("https://[::1]/feed.xml")).toBe(
+      "Source URL targets a blocked local or private address.",
+    );
+    expect(getBlockedSourceUrlError("https://[fc00::1]/feed.xml")).toBe(
+      "Source URL targets a blocked local or private address.",
+    );
+    expect(getBlockedSourceUrlError("https://[fe80::1]/feed.xml")).toBe(
+      "Source URL targets a blocked local or private address.",
+    );
+    expect(getBlockedSourceUrlError("https://[2001:db8::1]/feed.xml")).toBeNull();
+  });
+
+  it("ignores relative or non-http canonical links", () => {
+    const items = parseFeedItems(`
+      <rss version="2.0">
+        <channel>
+          <item>
+            <title>Relative link</title>
+            <link>/posts/relative-link</link>
+            <description>Ignored because the link is relative.</description>
+          </item>
+          <item>
+            <title>Javascript link</title>
+            <link>javascript:alert('xss')</link>
+            <description>Ignored because the scheme is unsupported.</description>
+          </item>
+          <item>
+            <title>Mailto guid</title>
+            <guid isPermaLink="true">mailto:editor@example.com</guid>
+            <description>Ignored because the permalink is not http.</description>
+          </item>
+          <item>
+            <title>Usable link</title>
+            <link>https://example.com/posts/usable-link</link>
+            <description>Retained because the link is usable.</description>
+          </item>
+        </channel>
+      </rss>
+    `);
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        title: "Usable link",
+        canonicalUrl: "https://example.com/posts/usable-link",
+      }),
+    ]);
+  });
+
   it("stores feed items per source and ignores duplicate canonical urls", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-rss-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
