@@ -1,6 +1,10 @@
 /// <reference types="vitest/globals" />
 
-import { getBlockedSourceUrlError } from "@/app/actions";
+import {
+  fetchSourceFeed,
+  getBlockedSourceUrlError,
+  getResolvedSourceUrlError,
+} from "@/app/actions";
 import { readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -110,6 +114,9 @@ describe("parseFeedItems", () => {
     expect(getBlockedSourceUrlError("https://[::1]/feed.xml")).toBe(
       "Source URL targets a blocked local or private address.",
     );
+    expect(getBlockedSourceUrlError("https://[::ffff:127.0.0.1]/feed.xml")).toBe(
+      "Source URL targets a blocked local or private address.",
+    );
     expect(getBlockedSourceUrlError("https://[fc00::1]/feed.xml")).toBe(
       "Source URL targets a blocked local or private address.",
     );
@@ -153,6 +160,57 @@ describe("parseFeedItems", () => {
         canonicalUrl: "https://example.com/posts/usable-link",
       }),
     ]);
+  });
+
+  it("blocks hostnames that resolve to loopback or private addresses", async () => {
+    await expect(
+      getResolvedSourceUrlError(
+        "https://demo.127.0.0.1.nip.io/feed.xml",
+        async () => [{ address: "127.0.0.1", family: 4 }],
+      ),
+    ).resolves.toBe("Source URL targets a blocked local or private address.");
+
+    await expect(
+      getResolvedSourceUrlError(
+        "https://example.com/feed.xml",
+        async () => [{ address: "93.184.216.34", family: 4 }],
+      ),
+    ).resolves.toBeNull();
+  });
+
+  it("blocks redirect targets that resolve to private addresses", async () => {
+    const fetchImpl = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        new Response(null, {
+          status: 302,
+          headers: {
+            location: "https://redirected.example.com/feed.xml",
+          },
+        }),
+      );
+
+    const lookupFn = vi.fn(async (hostname: string) => {
+      if (hostname === "example.com") {
+        return [{ address: "93.184.216.34", family: 4 }];
+      }
+
+      if (hostname === "redirected.example.com") {
+        return [{ address: "127.0.0.1", family: 4 }];
+      }
+
+      throw new Error(`Unexpected hostname: ${hostname}`);
+    });
+
+    await expect(
+      fetchSourceFeed("https://example.com/feed.xml", {
+        fetchImpl,
+        lookupFn,
+      }),
+    ).rejects.toThrow("Source URL targets a blocked local or private address.");
+
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(lookupFn).toHaveBeenCalledTimes(2);
   });
 
   it("stores feed items per source and ignores duplicate canonical urls", () => {
