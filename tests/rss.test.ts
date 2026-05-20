@@ -33,6 +33,30 @@ describe("parseFeedItems", () => {
     });
   });
 
+  it("returns canonical feed items from Atom xml with alternate links", () => {
+    const xml = readFileSync(
+      join(process.cwd(), "tests/fixtures/sample-atom-feed.xml"),
+      "utf8",
+    );
+
+    const items = parseFeedItems(xml);
+
+    expect(items).toEqual([
+      expect.objectContaining({
+        title: "Atom launch roundup",
+        canonicalUrl: "https://example.com/posts/atom-launch-roundup",
+        publishedAt: "2026-05-20T08:30:00.000Z",
+        summary: "Atom summary content.",
+      }),
+      expect.objectContaining({
+        title: "Fallback link entry",
+        canonicalUrl: "https://example.com/posts/fallback-link",
+        publishedAt: null,
+        summary: "Fallback summary content.",
+      }),
+    ]);
+  });
+
   it("stores feed items per source and ignores duplicate canonical urls", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-rss-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));

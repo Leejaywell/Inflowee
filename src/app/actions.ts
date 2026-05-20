@@ -92,6 +92,8 @@ export async function runSourceSync(formData: FormData) {
     redirect("/sources?error=Source%20not%20found.");
   }
 
+  let syncError: string | null = null;
+
   try {
     const response = await fetch(source.url, { cache: "no-store" });
 
@@ -116,17 +118,20 @@ export async function runSourceSync(formData: FormData) {
       sourceId: source.id,
       status: "success",
     });
-
-    revalidatePath("/sources");
-    redirect("/sources?synced=source");
   } catch (error) {
     markSourceSyncResult(defaultStore, {
       sourceId: source.id,
       status: "error",
       error: error instanceof Error ? error.message : "Unknown sync error.",
     });
-
-    revalidatePath("/sources");
-    redirect("/sources?error=Unable%20to%20sync%20source.");
+    syncError = "Unable%20to%20sync%20source.";
   }
+
+  revalidatePath("/sources");
+
+  if (syncError) {
+    redirect(`/sources?error=${syncError}`);
+  }
+
+  redirect("/sources?synced=source");
 }

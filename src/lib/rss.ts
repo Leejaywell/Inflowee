@@ -18,6 +18,12 @@ type FeedEntry = {
   "content:encoded"?: unknown;
 };
 
+type FeedLink = {
+  "@_href"?: unknown;
+  "@_rel"?: unknown;
+  "@_type"?: unknown;
+};
+
 const parser = new XMLParser({
   ignoreAttributes: false,
   trimValues: true,
@@ -55,13 +61,45 @@ function getCanonicalUrl(entry: FeedEntry): string | null {
     return linkValue.trim();
   }
 
-  if (linkValue && typeof linkValue === "object") {
-    const href = (linkValue as Record<string, unknown>)["@_href"];
-    if (typeof href === "string" && href.trim().length > 0) {
-      return href.trim();
-    }
+  const linkCandidates = asArray(linkValue).flatMap((link) =>
+    link && typeof link === "object" ? [link as FeedLink] : [],
+  );
+
+  const isHttpUrl = (value: unknown): value is string =>
+    typeof value === "string" && /^https?:\/\//.test(value.trim());
+
+  const preferredLink =
+    linkCandidates.find((link) => {
+      const href = link["@_href"];
+      const rel = link["@_rel"];
+      const type = link["@_type"];
+
+      return (
+        isHttpUrl(href) &&
+        rel === "alternate" &&
+        typeof type === "string" &&
+        type.includes("html")
+      );
+    }) ??
+    linkCandidates.find((link) => {
+      const href = link["@_href"];
+      const rel = link["@_rel"];
+
+      return isHttpUrl(href) && (rel === undefined || rel === "alternate");
+    }) ??
+    linkCandidates.find((link) => {
+      const href = link["@_href"];
+      return isHttpUrl(href);
+    }) ??
+    linkCandidates.find((link) => {
+      const href = link["@_href"];
+      return typeof href === "string" && href.trim().length > 0;
+    });
+
+  if (preferredLink) {
+    return String(preferredLink["@_href"]).trim();
   }
- 
+
   return null;
 }
 
