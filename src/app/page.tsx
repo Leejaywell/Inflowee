@@ -1,4 +1,5 @@
 import { createSpace, createTask } from "@/app/actions";
+import { AppShell } from "@/components/app-shell";
 import { listSpacesWithTasks, type TaskType } from "@/lib/store";
 
 type HomeProps = {
@@ -24,8 +25,8 @@ export default async function Home({ searchParams }: HomeProps) {
   const taskCount = spaces.reduce((count, space) => count + space.tasks.length, 0);
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,#f7f1e9_0%,#f3f4ef_40%,#eceee9_100%)] text-stone-950">
-      <main className="mx-auto flex w-full max-w-7xl flex-col gap-8 px-6 py-10 lg:px-10">
+    <AppShell currentPath="/">
+      <div className="grid gap-8">
         <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.4fr_0.8fr]">
           <div className="space-y-5">
             <span className="inline-flex rounded-full bg-stone-950 px-3 py-1 text-xs font-medium tracking-[0.18em] text-stone-50 uppercase">
@@ -255,7 +256,7 @@ export default async function Home({ searchParams }: HomeProps) {
             )}
           </section>
         </section>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

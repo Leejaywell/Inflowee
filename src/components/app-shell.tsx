@@ -3,7 +3,6 @@ import Link from "next/link";
 const navigationItems = [
   { href: "/", label: "Home" },
   { href: "/sources", label: "Sources" },
-  { href: "/inbox", label: "Inbox" },
 ] as const;
 
 type AppShellProps = {

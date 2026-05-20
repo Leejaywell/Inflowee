@@ -56,8 +56,24 @@ export async function createSource(formData: FormData) {
     redirect(`/sources?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid source input.")}`);
   }
 
-  createSourceRecord(defaultStore, parsed.data);
+  const taskExists = Boolean(
+    defaultStore.database
+      .prepare("SELECT 1 FROM tasks WHERE id = ? LIMIT 1")
+      .get(parsed.data.taskId),
+  );
+
+  if (!taskExists) {
+    redirect("/sources?error=Select%20a%20valid%20task.");
+  }
+
+  let destination = "/sources?created=source";
+
+  try {
+    createSourceRecord(defaultStore, parsed.data);
+  } catch {
+    destination = "/sources?error=Unable%20to%20create%20source.";
+  }
 
   revalidatePath("/sources");
-  redirect("/sources?created=source");
+  redirect(destination);
 }
