@@ -12,8 +12,23 @@ import {
   createTaskRecord,
   listSourcesByTask,
 } from "@/lib/store";
+import { createSourceSchema } from "@/lib/validation";
 
 describe("store source persistence", () => {
+  it("rejects non-http source URLs", () => {
+    const parsed = createSourceSchema.safeParse({
+      taskId: "task-123",
+      sourceType: "RSS",
+      title: "OpenAI News",
+      url: "ftp://example.com/feed.xml",
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe(
+      "Enter a valid http or https URL.",
+    );
+  });
+
   it("lists RSS sources by task from an isolated database", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));

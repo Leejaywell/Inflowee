@@ -3,8 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createSpaceRecord, createTaskRecord } from "@/lib/store";
-import { createSpaceSchema, createTaskSchema } from "@/lib/validation";
+import { createSourceRecord, createSpaceRecord, createTaskRecord, defaultStore } from "@/lib/store";
+import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
@@ -42,4 +42,22 @@ export async function createTask(formData: FormData) {
 
   revalidatePath("/");
   redirect("/?created=task");
+}
+
+export async function createSource(formData: FormData) {
+  const parsed = createSourceSchema.safeParse({
+    taskId: getString(formData, "taskId"),
+    sourceType: getString(formData, "sourceType"),
+    title: getString(formData, "title"),
+    url: getString(formData, "url"),
+  });
+
+  if (!parsed.success) {
+    redirect(`/sources?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid source input.")}`);
+  }
+
+  createSourceRecord(defaultStore, parsed.data);
+
+  revalidatePath("/sources");
+  redirect("/sources?created=source");
 }
