@@ -109,53 +109,64 @@ function mapSource(row: SourceRow): SourceRecord {
 export function createStore(
   filename = join(dataDirectory, "inflowee.sqlite"),
 ): Store {
-  mkdirSync(dirname(filename), { recursive: true });
+  let database: DatabaseSync | undefined;
 
-  const database = new DatabaseSync(filename);
+  const initializeDatabase = () => {
+    mkdirSync(dirname(filename), { recursive: true });
 
-  database.exec(`
-    PRAGMA foreign_keys = ON;
+    const nextDatabase = new DatabaseSync(filename);
 
-    CREATE TABLE IF NOT EXISTS spaces (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      description TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
+    nextDatabase.exec(`
+      PRAGMA foreign_keys = ON;
 
-    CREATE TABLE IF NOT EXISTS tasks (
-      id TEXT PRIMARY KEY,
-      space_id TEXT NOT NULL,
-      title TEXT NOT NULL,
-      task_type TEXT NOT NULL CHECK(task_type IN ('TOPIC', 'QUESTION')),
-      user_prompt TEXT NOT NULL,
-      relevance_level INTEGER NOT NULL DEFAULT 3,
-      summary_preference TEXT NOT NULL DEFAULT 'balanced',
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
-    );
+      CREATE TABLE IF NOT EXISTS spaces (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
 
-    CREATE TABLE IF NOT EXISTS sources (
-      id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
-      source_type TEXT NOT NULL CHECK(source_type IN ('RSS')),
-      title TEXT NOT NULL,
-      url TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'idle',
-      last_synced_at TEXT,
-      last_error TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
+      CREATE TABLE IF NOT EXISTS tasks (
+        id TEXT PRIMARY KEY,
+        space_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        task_type TEXT NOT NULL CHECK(task_type IN ('TOPIC', 'QUESTION')),
+        user_prompt TEXT NOT NULL,
+        relevance_level INTEGER NOT NULL DEFAULT 3,
+        summary_preference TEXT NOT NULL DEFAULT 'balanced',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
+      );
 
-    CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
-    CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
-  `);
+      CREATE TABLE IF NOT EXISTS sources (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK(source_type IN ('RSS')),
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
+        last_synced_at TEXT,
+        last_error TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      );
 
-  return { database };
+      CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
+      CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
+    `);
+
+    database = nextDatabase;
+    return nextDatabase;
+  };
+
+  return {
+    get database() {
+      return database ?? initializeDatabase();
+    },
+  };
 }
 
 export const defaultStore = createStore();
