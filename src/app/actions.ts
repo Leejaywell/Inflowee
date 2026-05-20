@@ -1,7 +1,10 @@
 "use server";
 
 import { lookup } from "node:dns/promises";
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { isIP } from "node:net";
+import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -26,6 +29,12 @@ const BLOCKED_SOURCE_URL_ERROR = "Source URL targets a blocked local or private 
 type LookupResult = {
   address: string;
   family: number;
+};
+
+type ResolvedSourceTarget = {
+  address: string;
+  family: number;
+  url: URL;
 };
 
 type LookupFn = (
@@ -171,26 +180,31 @@ export function getBlockedSourceUrlError(url: string): string | null {
   return getBlockedHostError(parsedUrl.hostname);
 }
 
-export async function getResolvedSourceUrlError(
+async function resolveSourceTarget(
   url: string,
   lookupFn: LookupFn = lookup,
-): Promise<string | null> {
+): Promise<ResolvedSourceTarget> {
   const parsedUrl = parseSourceUrl(url);
 
   if (typeof parsedUrl === "string") {
-    return parsedUrl;
+    throw new Error(parsedUrl);
   }
 
   const directHostError = getBlockedHostError(parsedUrl.hostname);
 
   if (directHostError) {
-    return directHostError;
+    throw new Error(directHostError);
   }
 
   const normalizedHostname = normalizeIpAddress(parsedUrl.hostname);
+  const ipVersion = isIP(normalizedHostname);
 
-  if (isIP(normalizedHostname) !== 0) {
-    return null;
+  if (ipVersion !== 0) {
+    return {
+      address: normalizedHostname,
+      family: ipVersion,
+      url: parsedUrl,
+    };
   }
 
   const resolvedAddresses = await lookupFn(normalizedHostname, {
@@ -202,15 +216,95 @@ export async function getResolvedSourceUrlError(
     throw new Error("Source hostname did not resolve.");
   }
 
-  for (const resolvedAddress of resolvedAddresses) {
-    const blockedAddressError = getBlockedHostError(resolvedAddress.address);
+  const allowedAddress = resolvedAddresses.find(
+    (resolvedAddress) => getBlockedHostError(resolvedAddress.address) === null,
+  );
 
-    if (blockedAddressError) {
-      return blockedAddressError;
-    }
+  if (!allowedAddress) {
+    throw new Error(BLOCKED_SOURCE_URL_ERROR);
   }
 
-  return null;
+  return {
+    address: normalizeIpAddress(allowedAddress.address),
+    family: allowedAddress.family,
+    url: parsedUrl,
+  };
+}
+
+export async function getResolvedSourceUrlError(
+  url: string,
+  lookupFn: LookupFn = lookup,
+): Promise<string | null> {
+  try {
+    await resolveSourceTarget(url, lookupFn);
+    return null;
+  } catch (error) {
+    return getSyncErrorMessage(error);
+  }
+}
+
+async function readResponseBody(
+  response: import("node:http").IncomingMessage,
+): Promise<string> {
+  const contentEncoding = response.headers["content-encoding"];
+  let stream: NodeJS.ReadableStream = response;
+
+  if (contentEncoding === "br") {
+    stream = response.pipe(createBrotliDecompress());
+  } else if (contentEncoding === "gzip") {
+    stream = response.pipe(createGunzip());
+  } else if (contentEncoding === "deflate") {
+    stream = response.pipe(createInflate());
+  }
+
+  const chunks: Buffer[] = [];
+
+  for await (const chunk of stream) {
+    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+  }
+
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+async function requestSourceFeed(
+  target: ResolvedSourceTarget,
+  signal?: AbortSignal,
+): Promise<{
+  headers: import("node:http").IncomingHttpHeaders;
+  status: number;
+  text: string;
+}> {
+  const requestFn = target.url.protocol === "https:" ? httpsRequest : httpRequest;
+
+  return new Promise((resolve, reject) => {
+    const request = requestFn(
+      target.url,
+      {
+        headers: {
+          accept:
+            "application/rss+xml, application/atom+xml, application/xml, text/xml;q=0.9, */*;q=0.1",
+        },
+        lookup: (_hostname, _options, callback) => {
+          callback(null, target.address, target.family);
+        },
+        signal,
+      },
+      async (response) => {
+        try {
+          resolve({
+            headers: response.headers,
+            status: response.statusCode ?? 0,
+            text: await readResponseBody(response),
+          });
+        } catch (error) {
+          reject(error);
+        }
+      },
+    );
+
+    request.on("error", reject);
+    request.end();
+  });
 }
 
 export async function fetchSourceFeed(
@@ -227,20 +321,47 @@ export async function fetchSourceFeed(
   let currentUrl = url;
 
   for (let redirectDepth = 0; redirectDepth <= SOURCE_SYNC_MAX_REDIRECTS; redirectDepth += 1) {
-    const blockedSourceError = await getResolvedSourceUrlError(currentUrl, lookupFn);
+    if (options?.fetchImpl) {
+      const blockedSourceError = await getResolvedSourceUrlError(currentUrl, lookupFn);
 
-    if (blockedSourceError) {
-      throw new Error(blockedSourceError);
+      if (blockedSourceError) {
+        throw new Error(blockedSourceError);
+      }
+
+      const response = await fetchImpl(currentUrl, {
+        cache: "no-store",
+        redirect: "manual",
+        signal,
+      });
+
+      if (response.status >= 300 && response.status < 400) {
+        const location = response.headers.get("location");
+
+        if (!location) {
+          throw new Error("Feed redirect response was missing a Location header.");
+        }
+
+        if (redirectDepth === SOURCE_SYNC_MAX_REDIRECTS) {
+          throw new Error("Feed request exceeded redirect limit.");
+        }
+
+        currentUrl = new URL(location, currentUrl).toString();
+        continue;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Feed request failed with ${response.status}`);
+      }
+
+      return response.text();
     }
 
-    const response = await fetchImpl(currentUrl, {
-      cache: "no-store",
-      redirect: "manual",
-      signal,
-    });
+    const target = await resolveSourceTarget(currentUrl, lookupFn);
+    const response = await requestSourceFeed(target, signal);
 
     if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
+      const locationHeader = response.headers.location;
+      const location = Array.isArray(locationHeader) ? locationHeader[0] : locationHeader;
 
       if (!location) {
         throw new Error("Feed redirect response was missing a Location header.");
@@ -254,11 +375,11 @@ export async function fetchSourceFeed(
       continue;
     }
 
-    if (!response.ok) {
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`Feed request failed with ${response.status}`);
     }
 
-    return response.text();
+    return response.text;
   }
 
   throw new Error("Feed request exceeded redirect limit.");
