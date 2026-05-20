@@ -53,6 +53,18 @@ type ItemRow = {
   created_at: string;
 };
 
+type BriefRow = {
+  id: string;
+  task_id: string;
+  title: string;
+  summary: string;
+  why_it_matters: string;
+  source_citations: string;
+  created_at: string;
+  task_title?: string;
+  space_name?: string;
+};
+
 export type TaskRecord = {
   id: string;
   spaceId: string;
@@ -95,6 +107,18 @@ export type ItemRecord = {
   summary: string | null;
   publishedAt: string | null;
   createdAt: string;
+};
+
+export type BriefRecord = {
+  id: string;
+  taskId: string;
+  title: string;
+  summary: string;
+  whyItMatters: string;
+  sourceCitations: string[];
+  createdAt: string;
+  taskTitle?: string;
+  spaceName?: string;
 };
 
 type CreateSpaceInput = {
@@ -151,6 +175,20 @@ function mapItem(row: ItemRow): ItemRecord {
     summary: row.summary,
     publishedAt: row.published_at,
     createdAt: row.created_at,
+  };
+}
+
+function mapBrief(row: BriefRow): BriefRecord {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    title: row.title,
+    summary: row.summary,
+    whyItMatters: row.why_it_matters,
+    sourceCitations: JSON.parse(row.source_citations) as string[],
+    createdAt: row.created_at,
+    taskTitle: row.task_title,
+    spaceName: row.space_name,
   };
 }
 
@@ -266,16 +304,37 @@ export function createStore(
         FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS briefs (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        why_it_matters TEXT NOT NULL,
+        source_citations TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS brief_items (
+        brief_id TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        PRIMARY KEY (brief_id, item_id),
+        FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE,
+        FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
     `);
 
     migrateSourcesTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -416,6 +475,23 @@ export function getSourceById(
   return row ? mapSource(row) : null;
 }
 
+export function getTaskBySourceId(
+  store: Store,
+  sourceId: string,
+): TaskRecord | null {
+  const row = store.database
+    .prepare(
+      `SELECT tasks.*
+       FROM tasks
+       JOIN sources ON sources.task_id = tasks.id
+       WHERE sources.id = ?
+       LIMIT 1`,
+    )
+    .get(sourceId) as TaskRow | undefined;
+
+  return row ? mapTask(row) : null;
+}
+
 export function createSourceRecord(
   store: Store,
   input: {
@@ -455,7 +531,7 @@ export function createSourceRecord(
   return id;
 }
 
-export function createItemRecord(
+export function createItemRecordResult(
   store: Store,
   input: {
     sourceId: string;
@@ -464,7 +540,7 @@ export function createItemRecord(
     summary?: string | null;
     publishedAt?: string | null;
   },
-): boolean {
+): ItemRecord | null {
   const timestamp = new Date().toISOString();
   const id = randomUUID();
   const result = store.database
@@ -489,7 +565,32 @@ export function createItemRecord(
       timestamp,
     );
 
-  return Number(result.changes) > 0;
+  if (Number(result.changes) === 0) {
+    return null;
+  }
+
+  return {
+    id,
+    sourceId: input.sourceId,
+    title: input.title,
+    canonicalUrl: input.canonicalUrl,
+    summary: input.summary ?? null,
+    publishedAt: input.publishedAt ?? null,
+    createdAt: timestamp,
+  };
+}
+
+export function createItemRecord(
+  store: Store,
+  input: {
+    sourceId: string;
+    title: string;
+    canonicalUrl: string;
+    summary?: string | null;
+    publishedAt?: string | null;
+  },
+): boolean {
+  return createItemRecordResult(store, input) !== null;
 }
 
 export function listSourcesByTask(
@@ -518,6 +619,70 @@ export function listItemsBySource(
     .all(sourceId) as ItemRow[];
 
   return rows.map(mapItem);
+}
+
+export function createBriefRecord(
+  store: Store,
+  input: {
+    taskId: string;
+    itemIds: string[];
+    title: string;
+    summary: string;
+    whyItMatters: string;
+    sourceCitations: string[];
+  },
+): string {
+  const id = randomUUID();
+  const timestamp = new Date().toISOString();
+
+  store.database
+    .prepare(
+      `INSERT INTO briefs (
+        id,
+        task_id,
+        title,
+        summary,
+        why_it_matters,
+        source_citations,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.taskId,
+      input.title,
+      input.summary,
+      input.whyItMatters,
+      JSON.stringify(input.sourceCitations),
+      timestamp,
+    );
+
+  const statement = store.database.prepare(
+    `INSERT OR IGNORE INTO brief_items (brief_id, item_id) VALUES (?, ?)`,
+  );
+
+  for (const itemId of input.itemIds) {
+    statement.run(id, itemId);
+  }
+
+  return id;
+}
+
+export function listBriefs(store: Store = defaultStore): BriefRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT
+         briefs.*,
+         tasks.title AS task_title,
+         spaces.name AS space_name
+       FROM briefs
+       JOIN tasks ON briefs.task_id = tasks.id
+       JOIN spaces ON tasks.space_id = spaces.id
+       ORDER BY briefs.created_at DESC`,
+    )
+    .all() as BriefRow[];
+
+  return rows.map(mapBrief);
 }
 
 export function markSourceSyncResult(

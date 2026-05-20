@@ -10,7 +10,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
-  createItemRecord,
+  createBriefRecord,
+  createItemRecordResult,
   createSourceRecord,
   createSpaceRecord,
   createTaskRecord,
@@ -19,6 +20,7 @@ import {
   hasTaskRecord,
   markSourceSyncResult,
 } from "@/lib/store";
+import { buildBriefsFromItems } from "@/lib/briefs";
 import { parseFeedItems } from "@/lib/rss";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
@@ -449,6 +451,43 @@ export async function createSource(formData: FormData) {
   redirect(destination);
 }
 
+export function storeSourceItemsAndCreateBriefs(
+  store: typeof defaultStore,
+  source: {
+    id: string;
+    taskId: string;
+  },
+  items: Array<{
+    title: string;
+    canonicalUrl: string;
+    summary: string | null;
+    publishedAt: string | null;
+  }>,
+) {
+  const insertedItems = items.flatMap((item) => {
+    const storedItem = createItemRecordResult(store, {
+      sourceId: source.id,
+      title: item.title,
+      canonicalUrl: item.canonicalUrl,
+      summary: item.summary,
+      publishedAt: item.publishedAt,
+    });
+
+    return storedItem ? [storedItem] : [];
+  });
+
+  const briefs = buildBriefsFromItems(source.taskId, insertedItems);
+
+  for (const brief of briefs) {
+    createBriefRecord(store, brief);
+  }
+
+  return {
+    insertedItemCount: insertedItems.length,
+    createdBriefCount: briefs.length,
+  };
+}
+
 export async function runSourceSync(formData: FormData) {
   const sourceId = getString(formData, "sourceId");
   const source = getSourceById(defaultStore, sourceId);
@@ -482,15 +521,7 @@ export async function runSourceSync(formData: FormData) {
       throw new Error("Feed returned no supported items.");
     }
 
-    for (const item of items) {
-      createItemRecord(defaultStore, {
-        sourceId: source.id,
-        title: item.title,
-        canonicalUrl: item.canonicalUrl,
-        summary: item.summary,
-        publishedAt: item.publishedAt,
-      });
-    }
+    storeSourceItemsAndCreateBriefs(defaultStore, source, items);
 
     markSourceSyncResult(defaultStore, {
       sourceId: source.id,
