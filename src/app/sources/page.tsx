@@ -1,5 +1,4 @@
 import { createSource } from "@/app/actions";
-import { AppShell } from "@/components/app-shell";
 import {
   defaultStore,
   listSourcesByTask,
@@ -42,193 +41,191 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
   const error = params?.error;
 
   return (
-    <AppShell currentPath="/sources">
-      <div className="grid gap-6">
-        <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.35fr_0.65fr]">
-          <div className="space-y-4">
-            <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium tracking-[0.18em] text-white uppercase">
-              Source management
-            </span>
-            <div className="space-y-3">
-              <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-                Attach RSS sources to the tasks already defined.
-              </h1>
-              <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-                This slice only handles source creation and visibility. Pick a
-                task, attach a feed, and confirm it persists in the local
-                database.
-              </p>
-            </div>
+    <main className="grid gap-6">
+      <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.35fr_0.65fr]">
+        <div className="space-y-4">
+          <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium tracking-[0.18em] text-white uppercase">
+            Source management
+          </span>
+          <div className="space-y-3">
+            <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
+              Attach RSS sources to the tasks already defined.
+            </h1>
+            <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
+              This slice only handles source creation and visibility. Pick a
+              task, attach a feed, and confirm it persists in the local
+              database.
+            </p>
           </div>
+        </div>
 
-          <div className="grid gap-4 rounded-[22px] bg-stone-950 p-5 text-stone-50">
-            <div>
-              <p className="text-sm uppercase tracking-[0.2em] text-stone-400">
-                Snapshot
-              </p>
-              <p className="mt-3 text-4xl font-semibold">{tasks.length}</p>
-              <p className="text-sm text-stone-300">tasks available for feeds</p>
-            </div>
-            <div className="border-t border-white/10 pt-4">
-              <p className="text-4xl font-semibold">
-                {tasks.reduce((count, task) => count + task.sources.length, 0)}
-              </p>
-              <p className="text-sm text-stone-300">RSS sources connected</p>
-            </div>
+        <div className="grid gap-4 rounded-[22px] bg-stone-950 p-5 text-stone-50">
+          <div>
+            <p className="text-sm uppercase tracking-[0.2em] text-stone-400">
+              Snapshot
+            </p>
+            <p className="mt-3 text-4xl font-semibold">{tasks.length}</p>
+            <p className="text-sm text-stone-300">tasks available for feeds</p>
           </div>
+          <div className="border-t border-white/10 pt-4">
+            <p className="text-4xl font-semibold">
+              {tasks.reduce((count, task) => count + task.sources.length, 0)}
+            </p>
+            <p className="text-sm text-stone-300">RSS sources connected</p>
+          </div>
+        </div>
+      </section>
+
+      {(created || error) && (
+        <section
+          className={`rounded-2xl border px-5 py-4 text-sm ${
+            error
+              ? "border-rose-200 bg-rose-50 text-rose-700"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+          }`}
+        >
+          {error
+            ? decodeURIComponent(error)
+            : created === "source"
+              ? "Source created."
+              : "Update applied."}
         </section>
+      )}
 
-        {(created || error) && (
-          <section
-            className={`rounded-2xl border px-5 py-4 text-sm ${
-              error
-                ? "border-rose-200 bg-rose-50 text-rose-700"
-                : "border-emerald-200 bg-emerald-50 text-emerald-700"
-            }`}
-          >
-            {error
-              ? decodeURIComponent(error)
-              : created === "source"
-                ? "Source created."
-                : "Update applied."}
-          </section>
-        )}
+      <section className="grid gap-6 lg:grid-cols-[0.84fr_1.16fr]">
+        <form
+          action={createSource}
+          className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+        >
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold">Add an RSS source</h2>
+            <p className="text-sm leading-6 text-stone-500">
+              Source creation is scoped to existing tasks.
+            </p>
+          </div>
 
-        <section className="grid gap-6 lg:grid-cols-[0.84fr_1.16fr]">
-          <form
-            action={createSource}
-            className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
-          >
-            <div className="space-y-1">
-              <h2 className="text-xl font-semibold">Add an RSS source</h2>
-              <p className="text-sm leading-6 text-stone-500">
-                Source creation is scoped to existing tasks.
-              </p>
-            </div>
-
-            <label className="grid gap-2 text-sm">
-              <span className="font-medium text-stone-700">Task</span>
-              <select
-                name="taskId"
-                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Select a task
-                </option>
-                {tasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.spaceName} / {task.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <input name="sourceType" type="hidden" value="RSS" />
-
-            <label className="grid gap-2 text-sm">
-              <span className="font-medium text-stone-700">Source title</span>
-              <input
-                name="title"
-                placeholder="OpenAI Blog RSS"
-                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
-              />
-            </label>
-
-            <label className="grid gap-2 text-sm">
-              <span className="font-medium text-stone-700">Feed URL</span>
-              <input
-                name="url"
-                placeholder="https://example.com/feed.xml"
-                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
-              />
-            </label>
-
-            <button
-              className="inline-flex h-12 items-center justify-center rounded-2xl bg-[#0057ff] px-4 text-sm font-medium text-white transition hover:bg-[#0049d6]"
-              disabled={tasks.length === 0}
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Task</span>
+            <select
+              name="taskId"
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              defaultValue=""
             >
-              Save source
-            </button>
-          </form>
+              <option value="" disabled>
+                Select a task
+              </option>
+              {tasks.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.spaceName} / {task.title}
+                </option>
+              ))}
+            </select>
+          </label>
 
-          <section className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-            <div className="flex items-end justify-between gap-3">
-              <div>
-                <h2 className="text-xl font-semibold">Task sources</h2>
-                <p className="text-sm leading-6 text-stone-500">
-                  RSS sources currently attached to each task.
-                </p>
-              </div>
-              <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
-                Local DB
-              </span>
+          <input name="sourceType" type="hidden" value="RSS" />
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Source title</span>
+            <input
+              name="title"
+              placeholder="OpenAI Blog RSS"
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Feed URL</span>
+            <input
+              name="url"
+              placeholder="https://example.com/feed.xml"
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <button
+            className="inline-flex h-12 items-center justify-center rounded-2xl bg-[#0057ff] px-4 text-sm font-medium text-white transition hover:bg-[#0049d6]"
+            disabled={tasks.length === 0}
+          >
+            Save source
+          </button>
+        </form>
+
+        <section className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">Task sources</h2>
+              <p className="text-sm leading-6 text-stone-500">
+                RSS sources currently attached to each task.
+              </p>
             </div>
+            <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
+              Local DB
+            </span>
+          </div>
 
-            {tasks.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
-                No tasks yet. Create tasks on the home page before adding
-                sources.
-              </div>
-            ) : (
-              <div className="grid gap-4">
-                {tasks.map((task) => (
-                  <article
-                    key={task.id}
-                    className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-5"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-                          {task.spaceName}
-                        </p>
-                        <h3 className="text-lg font-semibold text-stone-950">
-                          {task.title}
-                        </h3>
-                        <p className="max-w-2xl text-sm leading-6 text-stone-600">
-                          {task.userPrompt}
-                        </p>
-                      </div>
-                      <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-stone-500">
-                        {task.sources.length} sources
-                      </span>
+          {tasks.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
+              No tasks yet. Create tasks on the home page before adding
+              sources.
+            </div>
+          ) : (
+            <div className="grid gap-4">
+              {tasks.map((task) => (
+                <article
+                  key={task.id}
+                  className="rounded-[22px] border border-stone-200 bg-stone-50/80 p-5"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
+                        {task.spaceName}
+                      </p>
+                      <h3 className="text-lg font-semibold text-stone-950">
+                        {task.title}
+                      </h3>
+                      <p className="max-w-2xl text-sm leading-6 text-stone-600">
+                        {task.userPrompt}
+                      </p>
                     </div>
+                    <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-stone-500">
+                      {task.sources.length} sources
+                    </span>
+                  </div>
 
-                    <div className="mt-4 grid gap-3">
-                      {task.sources.length === 0 ? (
-                        <p className="text-sm text-stone-500">
-                          No sources linked to this task yet.
-                        </p>
-                      ) : (
-                        task.sources.map((source) => (
-                          <div
-                            key={source.id}
-                            className="rounded-2xl bg-white px-4 py-4 shadow-[0_8px_24px_rgba(33,24,9,0.05)]"
-                          >
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <h4 className="font-medium text-stone-950">
-                                {source.title}
-                              </h4>
-                              <span
-                                className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[source.status]}`}
-                              >
-                                {statusLabels[source.status]}
-                              </span>
-                            </div>
-                            <p className="mt-2 break-all text-sm leading-6 text-stone-600">
-                              {source.url}
-                            </p>
+                  <div className="mt-4 grid gap-3">
+                    {task.sources.length === 0 ? (
+                      <p className="text-sm text-stone-500">
+                        No sources linked to this task yet.
+                      </p>
+                    ) : (
+                      task.sources.map((source) => (
+                        <div
+                          key={source.id}
+                          className="rounded-2xl bg-white px-4 py-4 shadow-[0_8px_24px_rgba(33,24,9,0.05)]"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <h4 className="font-medium text-stone-950">
+                              {source.title}
+                            </h4>
+                            <span
+                              className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[source.status]}`}
+                            >
+                              {statusLabels[source.status]}
+                            </span>
                           </div>
-                        ))
-                      )}
-                    </div>
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
+                          <p className="mt-2 break-all text-sm leading-6 text-stone-600">
+                            {source.url}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
         </section>
-      </div>
-    </AppShell>
+      </section>
+    </main>
   );
 }

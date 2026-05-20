@@ -1,16 +1,21 @@
+"use client";
+
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 const navigationItems = [
   { href: "/", label: "Home" },
   { href: "/sources", label: "Sources" },
+  { href: "/inbox", label: "Inbox" },
 ] as const;
 
 type AppShellProps = {
-  currentPath: string;
   children: React.ReactNode;
 };
 
-export function AppShell({ currentPath, children }: AppShellProps) {
+export function AppShell({ children }: AppShellProps) {
+  const pathname = usePathname();
+
   return (
     <div className="min-h-screen bg-[linear-gradient(180deg,#f7f1e9_0%,#f3f4ef_40%,#eceee9_100%)] text-stone-950">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col px-6 py-6 lg:px-10">
@@ -26,7 +31,7 @@ export function AppShell({ currentPath, children }: AppShellProps) {
 
           <nav className="flex flex-wrap gap-2">
             {navigationItems.map((item) => {
-              const isActive = item.href === currentPath;
+              const isActive = item.href === pathname;
 
               return (
                 <Link
