@@ -1,7 +1,7 @@
 import { createSource } from "@/app/actions";
 import {
   defaultStore,
-  listSourcesByTask,
+  listSources,
   listSpacesWithTasks,
   type SourceStatus,
 } from "@/lib/store";
@@ -26,22 +26,31 @@ const statusClasses: Record<SourceStatus, string> = {
 };
 
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
-  const [spaces, params] = await Promise.all([
+  const [spaces, sources, params] = await Promise.all([
     Promise.resolve(listSpacesWithTasks(defaultStore)),
+    Promise.resolve(listSources(defaultStore)),
     searchParams,
   ]);
+  const sourcesByTask = new Map<string, typeof sources>();
+
+  for (const source of sources) {
+    const taskSources = sourcesByTask.get(source.taskId) ?? [];
+    taskSources.push(source);
+    sourcesByTask.set(source.taskId, taskSources);
+  }
+
   const tasks = spaces.flatMap((space) =>
     space.tasks.map((task) => ({
       ...task,
       spaceName: space.name,
-      sources: listSourcesByTask(defaultStore, task.id),
+      sources: sourcesByTask.get(task.id) ?? [],
     })),
   );
   const created = params?.created;
   const error = params?.error;
 
   return (
-    <main className="grid gap-6">
+    <div className="grid gap-6">
       <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-4">
           <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium tracking-[0.18em] text-white uppercase">
@@ -226,6 +235,6 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           )}
         </section>
       </section>
-    </main>
+    </div>
   );
 }

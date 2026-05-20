@@ -11,6 +11,7 @@ import {
   createStore,
   createTaskRecord,
   hasTaskRecord,
+  listSources,
   listSourcesByTask,
 } from "@/lib/store";
 import { createSourceSchema } from "@/lib/validation";
@@ -53,6 +54,15 @@ describe("store source persistence", () => {
       });
 
       expect(listSourcesByTask(store, taskId)).toEqual([
+        expect.objectContaining({
+          taskId,
+          sourceType: "RSS",
+          title: "OpenAI News",
+          url: "https://example.com/feed.xml",
+          status: "idle",
+        }),
+      ]);
+      expect(listSources(store)).toEqual([
         expect.objectContaining({
           taskId,
           sourceType: "RSS",

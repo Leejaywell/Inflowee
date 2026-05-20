@@ -409,3 +409,11 @@ export function listSourcesByTask(
 
   return rows.map(mapSource);
 }
+
+export function listSources(store: Store = defaultStore): SourceRecord[] {
+  const rows = store.database
+    .prepare("SELECT * FROM sources ORDER BY created_at DESC")
+    .all() as SourceRow[];
+
+  return rows.map(mapSource);
+}
