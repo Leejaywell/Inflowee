@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createSpaceRecord, createTaskRecord } from "@/lib/store";
+import { createSpaceRecord, createTaskRecord, defaultStore } from "@/lib/store";
 import { createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
@@ -20,7 +20,7 @@ export async function createSpace(formData: FormData) {
     redirect(`/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid space input.")}`);
   }
 
-  createSpaceRecord(parsed.data);
+  createSpaceRecord(defaultStore, parsed.data);
 
   revalidatePath("/");
   redirect("/?created=space");
@@ -38,7 +38,7 @@ export async function createTask(formData: FormData) {
     redirect(`/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid task input.")}`);
   }
 
-  createTaskRecord(parsed.data);
+  createTaskRecord(defaultStore, parsed.data);
 
   revalidatePath("/");
   redirect("/?created=task");
