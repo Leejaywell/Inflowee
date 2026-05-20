@@ -90,6 +90,22 @@ type CreateTaskInput = {
 };
 
 const dataDirectory = join(process.cwd(), "data");
+const sourceStatusConstraint = "CHECK(status IN ('idle', 'success', 'error'))";
+const sourceTableDefinition = `
+  CREATE TABLE IF NOT EXISTS sources (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    source_type TEXT NOT NULL CHECK(source_type IN ('RSS')),
+    title TEXT NOT NULL,
+    url TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
+    last_synced_at TEXT,
+    last_error TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+  );
+`;
 
 function mapSource(row: SourceRow): SourceRecord {
   return {
@@ -104,6 +120,71 @@ function mapSource(row: SourceRow): SourceRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function migrateSourcesTable(database: DatabaseSync) {
+  const sourcesTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'sources'",
+    )
+    .get() as { sql: string } | undefined;
+
+  if (!sourcesTable || sourcesTable.sql.includes(sourceStatusConstraint)) {
+    return;
+  }
+
+  database.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+
+    CREATE TABLE sources_migrated (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      source_type TEXT NOT NULL CHECK(source_type IN ('RSS')),
+      title TEXT NOT NULL,
+      url TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
+      last_synced_at TEXT,
+      last_error TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO sources_migrated (
+      id,
+      task_id,
+      source_type,
+      title,
+      url,
+      status,
+      last_synced_at,
+      last_error,
+      created_at,
+      updated_at
+    )
+    SELECT
+      id,
+      task_id,
+      source_type,
+      title,
+      url,
+      CASE
+        WHEN status IN ('idle', 'success', 'error') THEN status
+        ELSE 'error'
+      END,
+      last_synced_at,
+      last_error,
+      created_at,
+      updated_at
+    FROM sources;
+
+    DROP TABLE sources;
+    ALTER TABLE sources_migrated RENAME TO sources;
+
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
 }
 
 export function createStore(
@@ -140,23 +221,14 @@ export function createStore(
         FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
       );
 
-      CREATE TABLE IF NOT EXISTS sources (
-        id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL,
-        source_type TEXT NOT NULL CHECK(source_type IN ('RSS')),
-        title TEXT NOT NULL,
-        url TEXT NOT NULL,
-        status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
-        last_synced_at TEXT,
-        last_error TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
-      );
+      ${sourceTableDefinition}
 
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
     `);
+
+    migrateSourcesTable(nextDatabase);
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
 
     database = nextDatabase;
     return nextDatabase;
