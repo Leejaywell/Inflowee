@@ -61,8 +61,8 @@ function getCanonicalUrl(entry: FeedEntry): string | null {
       return href.trim();
     }
   }
-
-  return getTextValue(entry.guid);
+ 
+  return null;
 }
 
 function getPublishedAt(entry: FeedEntry): string | null {

@@ -87,7 +87,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         </div>
       </section>
 
-      {(created || error) && (
+      {(created || error || synced) && (
         <section
           className={`rounded-2xl border px-5 py-4 text-sm ${
             error
