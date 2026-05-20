@@ -20,6 +20,16 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Local verification
+
+1. Start the app with `pnpm dev`
+2. Create a space
+3. Create a task inside that space
+4. Open `/sources` and add an RSS source
+5. Click `Sync now`
+6. Open `/inbox` and confirm a brief appears
+7. Open `/inbox/<briefId>/html` and confirm the HTML digest renders
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
