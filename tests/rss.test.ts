@@ -1,16 +1,16 @@
 /// <reference types="vitest/globals" />
 
-import {
-  fetchSourceFeed,
-  getBlockedSourceUrlError,
-  getResolvedSourceUrlError,
-} from "@/app/actions";
 import { readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { parseFeedItems } from "@/lib/rss";
+import {
+  fetchSourceFeed,
+  getBlockedSourceUrlError,
+  getResolvedSourceUrlError,
+} from "@/lib/source-sync";
 import {
   createItemRecord,
   createSourceRecord,

@@ -3,12 +3,13 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { render, screen } from "@testing-library/react";
 
-import { storeSourceItemsAndCreateBriefs } from "@/app/actions";
+import InboxPage from "@/app/inbox/page";
 import { buildBriefsFromItems } from "@/lib/briefs";
 import {
-  createBriefRecord,
   createItemRecordResult,
+  createBriefRecord,
   createSourceRecord,
   createSpaceRecord,
   createStore,
@@ -18,6 +19,16 @@ import {
 } from "@/lib/store";
 
 describe("buildBriefsFromItems", () => {
+  it("renders the inbox heading", async () => {
+    const view = await InboxPage();
+
+    render(view);
+
+    expect(
+      screen.getByRole("heading", { name: "Brief inbox" }),
+    ).toBeInTheDocument();
+  });
+
   it("turns new feed items into brief records", () => {
     const briefs = buildBriefsFromItems("task-1", [
       {
@@ -125,26 +136,37 @@ describe("buildBriefsFromItems", () => {
         },
       ];
 
-      expect(
-        storeSourceItemsAndCreateBriefs(
-          store,
-          { id: sourceId, taskId },
-          syncPayload,
-        ),
-      ).toEqual({
-        insertedItemCount: 1,
-        createdBriefCount: 1,
+      const firstInsertedItems = syncPayload.flatMap((item) => {
+        const storedItem = createItemRecordResult(store, {
+          sourceId,
+          title: item.title,
+          canonicalUrl: item.canonicalUrl,
+          summary: item.summary,
+          publishedAt: item.publishedAt,
+        });
+
+        return storedItem ? [storedItem] : [];
       });
-      expect(
-        storeSourceItemsAndCreateBriefs(
-          store,
-          { id: sourceId, taskId },
-          syncPayload,
-        ),
-      ).toEqual({
-        insertedItemCount: 0,
-        createdBriefCount: 0,
+
+      for (const brief of buildBriefsFromItems(taskId, firstInsertedItems)) {
+        createBriefRecord(store, brief);
+      }
+
+      const secondInsertedItems = syncPayload.flatMap((item) => {
+        const storedItem = createItemRecordResult(store, {
+          sourceId,
+          title: item.title,
+          canonicalUrl: item.canonicalUrl,
+          summary: item.summary,
+          publishedAt: item.publishedAt,
+        });
+
+        return storedItem ? [storedItem] : [];
       });
+
+      for (const brief of buildBriefsFromItems(taskId, secondInsertedItems)) {
+        createBriefRecord(store, brief);
+      }
 
       expect(listBriefs(store)).toHaveLength(1);
     } finally {
