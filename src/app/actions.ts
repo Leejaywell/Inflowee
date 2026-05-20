@@ -16,8 +16,22 @@ import {
 import { parseFeedItems } from "@/lib/rss";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
+const SOURCE_SYNC_TIMEOUT_MS = 10_000;
+
 function getString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
+}
+
+function getSyncErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    if (error.name === "AbortError" || error.name === "TimeoutError") {
+      return "Feed request timed out.";
+    }
+
+    return error.message;
+  }
+
+  return "Unknown sync error.";
 }
 
 export async function createSpace(formData: FormData) {
@@ -95,7 +109,10 @@ export async function runSourceSync(formData: FormData) {
   let syncError: string | null = null;
 
   try {
-    const response = await fetch(source.url, { cache: "no-store" });
+    const response = await fetch(source.url, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
+    });
 
     if (!response.ok) {
       throw new Error(`Feed request failed with ${response.status}`);
@@ -103,6 +120,10 @@ export async function runSourceSync(formData: FormData) {
 
     const xml = await response.text();
     const items = parseFeedItems(xml);
+
+    if (items.length === 0) {
+      throw new Error("Feed returned no supported items.");
+    }
 
     for (const item of items) {
       createItemRecord(defaultStore, {
@@ -119,18 +140,19 @@ export async function runSourceSync(formData: FormData) {
       status: "success",
     });
   } catch (error) {
+    syncError = getSyncErrorMessage(error);
+
     markSourceSyncResult(defaultStore, {
       sourceId: source.id,
       status: "error",
-      error: error instanceof Error ? error.message : "Unknown sync error.",
+      error: syncError,
     });
-    syncError = "Unable%20to%20sync%20source.";
   }
 
   revalidatePath("/sources");
 
   if (syncError) {
-    redirect(`/sources?error=${syncError}`);
+    redirect(`/sources?error=${encodeURIComponent(syncError)}`);
   }
 
   redirect("/sources?synced=source");

@@ -31,6 +31,10 @@ const parser = new XMLParser({
   parseTagValue: false,
 });
 
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
 function asArray<T>(value: T | T[] | undefined): T[] {
   if (value === undefined) {
     return [];
@@ -41,15 +45,29 @@ function asArray<T>(value: T | T[] | undefined): T[] {
 
 function getTextValue(value: unknown): string | null {
   if (typeof value === "string") {
-    const trimmed = value.trim();
+    const trimmed = normalizeText(value);
     return trimmed.length > 0 ? trimmed : null;
   }
 
+  if (Array.isArray(value)) {
+    const text = normalizeText(
+      value
+        .map((item) => getTextValue(item))
+        .filter((item): item is string => item !== null)
+        .join(" "),
+    );
+    return text.length > 0 ? text : null;
+  }
+
   if (value && typeof value === "object") {
-    const candidate = (value as Record<string, unknown>)["#text"];
-    return typeof candidate === "string" && candidate.trim().length > 0
-      ? candidate.trim()
-      : null;
+    const text = normalizeText(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key]) => !key.startsWith("@_"))
+        .map(([, nestedValue]) => getTextValue(nestedValue))
+        .filter((item): item is string => item !== null)
+        .join(" "),
+    );
+    return text.length > 0 ? text : null;
   }
 
   return null;

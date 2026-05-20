@@ -13,6 +13,11 @@
     <title>Fallback link entry</title>
     <link href="https://example.com/posts/fallback-link" />
     <updated>2026-05-19T06:45:00Z</updated>
-    <summary>Fallback summary content.</summary>
+    <summary type="xhtml">
+      <div xmlns="http://www.w3.org/1999/xhtml">
+        <p>Fallback summary content.</p>
+        <p>Second paragraph.</p>
+      </div>
+    </summary>
   </entry>
 </feed>

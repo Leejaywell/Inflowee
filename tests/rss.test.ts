@@ -58,9 +58,22 @@ describe("parseFeedItems", () => {
         title: "Fallback link entry",
         canonicalUrl: "https://example.com/posts/fallback-link",
         publishedAt: "2026-05-19T06:45:00.000Z",
-        summary: "Fallback summary content.",
+        summary: "Fallback summary content. Second paragraph.",
       }),
     ]);
+  });
+
+  it("returns no items for feeds without usable links or guids", () => {
+    const items = parseFeedItems(`
+      <feed xmlns="http://www.w3.org/2005/Atom">
+        <entry>
+          <title>Unsupported entry</title>
+          <summary>No canonical URL is available here.</summary>
+        </entry>
+      </feed>
+    `);
+
+    expect(items).toEqual([]);
   });
 
   it("stores feed items per source and ignores duplicate canonical urls", () => {
