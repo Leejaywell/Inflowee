@@ -26,10 +26,16 @@ describe("parseFeedItems", () => {
 
     const items = parseFeedItems(xml);
 
-    expect(items).toHaveLength(2);
+    expect(items).toHaveLength(3);
     expect(items[0]).toMatchObject({
       title: "Launch roundup",
       canonicalUrl: "https://example.com/posts/launch-roundup",
+    });
+    expect(items[2]).toMatchObject({
+      title: "Guid-only entry",
+      canonicalUrl: "https://example.com/posts/guid-only-entry",
+      publishedAt: "2026-05-21T09:15:00.000Z",
+      summary: "Entry with only a GUID permalink.",
     });
   });
 
@@ -51,7 +57,7 @@ describe("parseFeedItems", () => {
       expect.objectContaining({
         title: "Fallback link entry",
         canonicalUrl: "https://example.com/posts/fallback-link",
-        publishedAt: null,
+        publishedAt: "2026-05-19T06:45:00.000Z",
         summary: "Fallback summary content.",
       }),
     ]);

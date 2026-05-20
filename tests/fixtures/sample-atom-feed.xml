@@ -12,6 +12,7 @@
   <entry>
     <title>Fallback link entry</title>
     <link href="https://example.com/posts/fallback-link" />
+    <updated>2026-05-19T06:45:00Z</updated>
     <summary>Fallback summary content.</summary>
   </entry>
 </feed>

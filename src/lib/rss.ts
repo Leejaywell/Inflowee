@@ -13,6 +13,7 @@ type FeedEntry = {
   guid?: unknown;
   pubDate?: unknown;
   published?: unknown;
+  updated?: unknown;
   description?: unknown;
   summary?: unknown;
   "content:encoded"?: unknown;
@@ -100,11 +101,32 @@ function getCanonicalUrl(entry: FeedEntry): string | null {
     return String(preferredLink["@_href"]).trim();
   }
 
+  const guid = getTextValue(entry.guid);
+
+  if (!guid) {
+    return null;
+  }
+
+  if (/^https?:\/\//.test(guid)) {
+    return guid;
+  }
+
+  if (entry.guid && typeof entry.guid === "object") {
+    const isPermaLink = (entry.guid as Record<string, unknown>)["@_isPermaLink"];
+
+    if (isPermaLink === true || isPermaLink === "true") {
+      return guid;
+    }
+  }
+
   return null;
 }
 
 function getPublishedAt(entry: FeedEntry): string | null {
-  const raw = getTextValue(entry.pubDate) ?? getTextValue(entry.published);
+  const raw =
+    getTextValue(entry.pubDate) ??
+    getTextValue(entry.published) ??
+    getTextValue(entry.updated);
 
   if (!raw) {
     return null;
