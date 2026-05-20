@@ -1,5 +1,7 @@
 "use server";
 
+import { isIP } from "node:net";
+
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -32,6 +34,64 @@ function getSyncErrorMessage(error: unknown): string {
   }
 
   return "Unknown sync error.";
+}
+
+export function getBlockedSourceUrlError(url: string): string | null {
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(url);
+  } catch {
+    return "Source URL is invalid.";
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    return "Source URL must use http or https.";
+  }
+
+  const hostname = parsedUrl.hostname.toLowerCase();
+
+  if (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "0.0.0.0" ||
+    hostname === "host.docker.internal" ||
+    hostname.endsWith(".local") ||
+    hostname.endsWith(".internal")
+  ) {
+    return "Source URL targets a blocked local or private address.";
+  }
+
+  const ipVersion = isIP(hostname);
+
+  if (ipVersion === 4) {
+    const octets = hostname.split(".").map(Number);
+    const [firstOctet, secondOctet] = octets;
+
+    if (
+      firstOctet === 0 ||
+      firstOctet === 10 ||
+      firstOctet === 127 ||
+      (firstOctet === 169 && secondOctet === 254) ||
+      (firstOctet === 172 && secondOctet >= 16 && secondOctet <= 31) ||
+      (firstOctet === 192 && secondOctet === 168)
+    ) {
+      return "Source URL targets a blocked local or private address.";
+    }
+  }
+
+  if (
+    ipVersion === 6 &&
+    (hostname === "::1" ||
+      hostname === "::" ||
+      hostname.startsWith("fc") ||
+      hostname.startsWith("fd") ||
+      hostname.startsWith("fe80:"))
+  ) {
+    return "Source URL targets a blocked local or private address.";
+  }
+
+  return null;
 }
 
 export async function createSpace(formData: FormData) {
@@ -104,6 +164,19 @@ export async function runSourceSync(formData: FormData) {
 
   if (!source) {
     redirect("/sources?error=Source%20not%20found.");
+  }
+
+  const blockedSourceError = getBlockedSourceUrlError(source.url);
+
+  if (blockedSourceError) {
+    markSourceSyncResult(defaultStore, {
+      sourceId: source.id,
+      status: "error",
+      error: blockedSourceError,
+    });
+
+    revalidatePath("/sources");
+    redirect(`/sources?error=${encodeURIComponent(blockedSourceError)}`);
   }
 
   let syncError: string | null = null;

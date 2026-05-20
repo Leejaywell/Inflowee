@@ -125,6 +125,14 @@ function getCanonicalUrl(entry: FeedEntry): string | null {
     return null;
   }
 
+  if (entry.guid && typeof entry.guid === "object") {
+    const isPermaLink = (entry.guid as Record<string, unknown>)["@_isPermaLink"];
+
+    if (isPermaLink === false || isPermaLink === "false") {
+      return null;
+    }
+  }
+
   if (/^https?:\/\//.test(guid)) {
     return guid;
   }

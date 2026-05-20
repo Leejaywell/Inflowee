@@ -1,5 +1,6 @@
 /// <reference types="vitest/globals" />
 
+import { getBlockedSourceUrlError } from "@/app/actions";
 import { readFileSync } from "node:fs";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -74,6 +75,35 @@ describe("parseFeedItems", () => {
     `);
 
     expect(items).toEqual([]);
+  });
+
+  it("ignores guid urls when isPermaLink is explicitly false", () => {
+    const items = parseFeedItems(`
+      <rss version="2.0">
+        <channel>
+          <item>
+            <title>Non permalink guid</title>
+            <guid isPermaLink="false">https://example.com/posts/non-permalink-guid</guid>
+            <description>Should be ignored.</description>
+          </item>
+        </channel>
+      </rss>
+    `);
+
+    expect(items).toEqual([]);
+  });
+
+  it("blocks localhost and private source urls", () => {
+    expect(getBlockedSourceUrlError("https://localhost/feed.xml")).toBe(
+      "Source URL targets a blocked local or private address.",
+    );
+    expect(getBlockedSourceUrlError("https://127.0.0.1/feed.xml")).toBe(
+      "Source URL targets a blocked local or private address.",
+    );
+    expect(getBlockedSourceUrlError("https://192.168.1.10/feed.xml")).toBe(
+      "Source URL targets a blocked local or private address.",
+    );
+    expect(getBlockedSourceUrlError("https://example.com/feed.xml")).toBeNull();
   });
 
   it("stores feed items per source and ignores duplicate canonical urls", () => {
