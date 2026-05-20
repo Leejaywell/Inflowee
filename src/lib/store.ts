@@ -43,6 +43,16 @@ type SourceRow = {
   updated_at: string;
 };
 
+type ItemRow = {
+  id: string;
+  source_id: string;
+  title: string;
+  canonical_url: string;
+  summary: string | null;
+  published_at: string | null;
+  created_at: string;
+};
+
 export type TaskRecord = {
   id: string;
   spaceId: string;
@@ -75,6 +85,16 @@ export type SourceRecord = {
   lastError: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type ItemRecord = {
+  id: string;
+  sourceId: string;
+  title: string;
+  canonicalUrl: string;
+  summary: string | null;
+  publishedAt: string | null;
+  createdAt: string;
 };
 
 type CreateSpaceInput = {
@@ -119,6 +139,18 @@ function mapSource(row: SourceRow): SourceRecord {
     lastError: row.last_error,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapItem(row: ItemRow): ItemRecord {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    title: row.title,
+    canonicalUrl: row.canonical_url,
+    summary: row.summary,
+    publishedAt: row.published_at,
+    createdAt: row.created_at,
   };
 }
 
@@ -223,12 +255,27 @@ export function createStore(
 
       ${sourceTableDefinition}
 
+      CREATE TABLE IF NOT EXISTS items (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        canonical_url TEXT NOT NULL,
+        summary TEXT,
+        published_at TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
+      CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
     `);
 
     migrateSourcesTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
+    nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -358,6 +405,17 @@ export function hasTaskRecord(store: Store, taskId: string): boolean {
   );
 }
 
+export function getSourceById(
+  store: Store,
+  sourceId: string,
+): SourceRecord | null {
+  const row = store.database
+    .prepare("SELECT * FROM sources WHERE id = ? LIMIT 1")
+    .get(sourceId) as SourceRow | undefined;
+
+  return row ? mapSource(row) : null;
+}
+
 export function createSourceRecord(
   store: Store,
   input: {
@@ -397,6 +455,43 @@ export function createSourceRecord(
   return id;
 }
 
+export function createItemRecord(
+  store: Store,
+  input: {
+    sourceId: string;
+    title: string;
+    canonicalUrl: string;
+    summary?: string | null;
+    publishedAt?: string | null;
+  },
+): boolean {
+  const timestamp = new Date().toISOString();
+  const id = randomUUID();
+  const result = store.database
+    .prepare(
+      `INSERT OR IGNORE INTO items (
+        id,
+        source_id,
+        title,
+        canonical_url,
+        summary,
+        published_at,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.sourceId,
+      input.title,
+      input.canonicalUrl,
+      input.summary ?? null,
+      input.publishedAt ?? null,
+      timestamp,
+    );
+
+  return Number(result.changes) > 0;
+}
+
 export function listSourcesByTask(
   store: Store,
   taskId: string,
@@ -408,6 +503,49 @@ export function listSourcesByTask(
     .all(taskId) as SourceRow[];
 
   return rows.map(mapSource);
+}
+
+export function listItemsBySource(
+  store: Store,
+  sourceId: string,
+): ItemRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM items
+       WHERE source_id = ?
+       ORDER BY published_at DESC, created_at DESC`,
+    )
+    .all(sourceId) as ItemRow[];
+
+  return rows.map(mapItem);
+}
+
+export function markSourceSyncResult(
+  store: Store,
+  input: {
+    sourceId: string;
+    status: SourceStatus;
+    error?: string | null;
+  },
+) {
+  const timestamp = new Date().toISOString();
+
+  store.database
+    .prepare(
+      `UPDATE sources
+       SET status = ?,
+           last_synced_at = ?,
+           last_error = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      input.status,
+      timestamp,
+      input.status === "error" ? (input.error ?? "Unknown sync error.") : null,
+      timestamp,
+      input.sourceId,
+    );
 }
 
 export function listSources(store: Store = defaultStore): SourceRecord[] {

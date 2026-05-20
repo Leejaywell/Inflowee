@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Example Feed</title>
+    <link>https://example.com/</link>
+    <description>Sample feed for RSS parsing tests.</description>
+    <item>
+      <title>Launch roundup</title>
+      <link>https://example.com/posts/launch-roundup</link>
+      <guid>https://example.com/posts/launch-roundup</guid>
+      <pubDate>Tue, 20 May 2026 08:30:00 GMT</pubDate>
+      <description>Highlights from this week&apos;s launch announcements.</description>
+    </item>
+    <item>
+      <title>Team notes</title>
+      <link>https://example.com/posts/team-notes</link>
+      <guid>https://example.com/posts/team-notes</guid>
+      <pubDate>Mon, 19 May 2026 16:00:00 GMT</pubDate>
+      <description>Internal notes that are still safe to publish.</description>
+    </item>
+  </channel>
+</rss>

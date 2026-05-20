@@ -4,12 +4,16 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import {
+  createItemRecord,
   createSourceRecord,
   createSpaceRecord,
   createTaskRecord,
   defaultStore,
+  getSourceById,
   hasTaskRecord,
+  markSourceSyncResult,
 } from "@/lib/store";
+import { parseFeedItems } from "@/lib/rss";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
@@ -78,4 +82,51 @@ export async function createSource(formData: FormData) {
 
   revalidatePath("/sources");
   redirect(destination);
+}
+
+export async function runSourceSync(formData: FormData) {
+  const sourceId = getString(formData, "sourceId");
+  const source = getSourceById(defaultStore, sourceId);
+
+  if (!source) {
+    redirect("/sources?error=Source%20not%20found.");
+  }
+
+  try {
+    const response = await fetch(source.url, { cache: "no-store" });
+
+    if (!response.ok) {
+      throw new Error(`Feed request failed with ${response.status}`);
+    }
+
+    const xml = await response.text();
+    const items = parseFeedItems(xml);
+
+    for (const item of items) {
+      createItemRecord(defaultStore, {
+        sourceId: source.id,
+        title: item.title,
+        canonicalUrl: item.canonicalUrl,
+        summary: item.summary,
+        publishedAt: item.publishedAt,
+      });
+    }
+
+    markSourceSyncResult(defaultStore, {
+      sourceId: source.id,
+      status: "success",
+    });
+
+    revalidatePath("/sources");
+    redirect("/sources?synced=source");
+  } catch (error) {
+    markSourceSyncResult(defaultStore, {
+      sourceId: source.id,
+      status: "error",
+      error: error instanceof Error ? error.message : "Unknown sync error.",
+    });
+
+    revalidatePath("/sources");
+    redirect("/sources?error=Unable%20to%20sync%20source.");
+  }
 }

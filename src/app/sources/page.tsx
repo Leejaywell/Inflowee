@@ -1,4 +1,4 @@
-import { createSource } from "@/app/actions";
+import { createSource, runSourceSync } from "@/app/actions";
 import {
   defaultStore,
   listSources,
@@ -10,6 +10,7 @@ type SourcesPageProps = {
   searchParams?: Promise<{
     created?: string;
     error?: string;
+    synced?: string;
   }>;
 };
 
@@ -48,6 +49,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
   );
   const created = params?.created;
   const error = params?.error;
+  const synced = params?.synced;
 
   return (
     <div className="grid gap-6">
@@ -97,7 +99,9 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             ? decodeURIComponent(error)
             : created === "source"
               ? "Source created."
-              : "Update applied."}
+              : synced === "source"
+                ? "Source synced."
+                : "Update applied."}
         </section>
       )}
 
@@ -216,11 +220,23 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                             <h4 className="font-medium text-stone-950">
                               {source.title}
                             </h4>
-                            <span
-                              className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[source.status]}`}
-                            >
-                              {statusLabels[source.status]}
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[source.status]}`}
+                              >
+                                {statusLabels[source.status]}
+                              </span>
+                              <form action={runSourceSync}>
+                                <input
+                                  name="sourceId"
+                                  type="hidden"
+                                  value={source.id}
+                                />
+                                <button className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
+                                  Sync now
+                                </button>
+                              </form>
+                            </div>
                           </div>
                           <p className="mt-2 break-all text-sm leading-6 text-stone-600">
                             {source.url}
