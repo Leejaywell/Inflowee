@@ -10,6 +10,7 @@ import {
   createSpaceRecord,
   createStore,
   createTaskRecord,
+  hasTaskRecord,
   listSourcesByTask,
 } from "@/lib/store";
 import { createSourceSchema } from "@/lib/validation";
@@ -158,6 +159,38 @@ describe("store source persistence", () => {
             new Date().toISOString(),
             new Date().toISOString(),
           ),
+      ).toThrow();
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects stale task ids after the task has been removed", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, {
+        name: "OpenAI",
+      });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Monitor feed",
+        taskType: "TOPIC",
+        userPrompt: "Track RSS updates",
+      });
+
+      store.database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+
+      expect(hasTaskRecord(store, taskId)).toBe(false);
+      expect(() =>
+        createSourceRecord(store, {
+          taskId,
+          sourceType: "RSS",
+          title: "OpenAI News",
+          url: "https://example.com/feed.xml",
+        }),
       ).toThrow();
     } finally {
       store.database.close();

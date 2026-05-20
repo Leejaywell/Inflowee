@@ -350,6 +350,14 @@ export function createTaskRecord(
   return id;
 }
 
+export function hasTaskRecord(store: Store, taskId: string): boolean {
+  return Boolean(
+    store.database
+      .prepare("SELECT 1 FROM tasks WHERE id = ? LIMIT 1")
+      .get(taskId),
+  );
+}
+
 export function createSourceRecord(
   store: Store,
   input: {

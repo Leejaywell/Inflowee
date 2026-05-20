@@ -3,7 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createSourceRecord, createSpaceRecord, createTaskRecord, defaultStore } from "@/lib/store";
+import {
+  createSourceRecord,
+  createSpaceRecord,
+  createTaskRecord,
+  defaultStore,
+  hasTaskRecord,
+} from "@/lib/store";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
@@ -56,11 +62,7 @@ export async function createSource(formData: FormData) {
     redirect(`/sources?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid source input.")}`);
   }
 
-  const taskExists = Boolean(
-    defaultStore.database
-      .prepare("SELECT 1 FROM tasks WHERE id = ? LIMIT 1")
-      .get(parsed.data.taskId),
-  );
+  const taskExists = hasTaskRecord(defaultStore, parsed.data.taskId);
 
   if (!taskExists) {
     redirect("/sources?error=Select%20a%20valid%20task.");
