@@ -20,6 +20,10 @@ export type SourceBundle = {
 
 const sourceBundleCache = new Map<string, Promise<SourceBundle[]> | SourceBundle[]>();
 
+export type RecommendSourceBundlesOptions = {
+  bypassCache?: boolean;
+};
+
 export type BriefCandidate = {
   title: string;
   summary: string;
@@ -163,7 +167,14 @@ Respond in strict JSON format:
 }
 
 // 2.1: recommendSourceBundles
-export async function recommendSourceBundles(prompt: string): Promise<SourceBundle[]> {
+export async function recommendSourceBundles(
+  prompt: string,
+  options: RecommendSourceBundlesOptions = {},
+): Promise<SourceBundle[]> {
+  if (options.bypassCache) {
+    return generateSourceBundles(prompt);
+  }
+
   const cached = sourceBundleCache.get(prompt);
   if (cached) {
     return cached instanceof Promise ? cached : Promise.resolve(cached);

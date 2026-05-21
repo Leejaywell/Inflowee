@@ -301,6 +301,13 @@ describe("task intelligence server actions", () => {
 });
 
 describe("refreshTaskIntelligence", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.unmock("next/cache");
+    vi.unmock("@/lib/store");
+  });
+
   it("persists profile and bundles for a task", async () => {
     const fixture = createIsolatedStore();
 
@@ -342,6 +349,7 @@ describe("refreshTaskIntelligence", () => {
       );
       expect(recommendSourceBundlesImpl).toHaveBeenCalledWith(
         "What changed in coding agents this week?",
+        { bypassCache: true },
       );
       expect(result.profile.keywords).toEqual(["coding agents"]);
       expect(result.bundles).toHaveLength(1);
@@ -354,6 +362,92 @@ describe("refreshTaskIntelligence", () => {
     } finally {
       fixture.cleanup();
     }
+  });
+
+  it("validates recommended sources before creating them", async () => {
+    const revalidatePath = vi.fn();
+    const createSourceRecord = vi.fn();
+    const defaultStore = {
+      database: {
+        prepare: vi.fn().mockReturnValue({
+          get: vi.fn().mockReturnValue({ space_id: "space-9" }),
+        }),
+      },
+    };
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath,
+    }));
+    vi.doMock("@/lib/store", () => ({
+      createChatMessage: vi.fn(),
+      createSourceRecord,
+      defaultStore,
+      getOrCreateChatThread: vi.fn(),
+      listChatMessages: vi.fn(),
+      updateTaskControls: vi.fn(),
+    }));
+
+    const { subscribeRecommendedSources } = await import("@/app/actions-chat");
+
+    await expect(
+      subscribeRecommendedSources("task-123", [
+        {
+          title: "Bad source",
+          url: "ftp://example.com/feed.xml",
+          sourceType: "RSS",
+        },
+      ]),
+    ).rejects.toThrow(
+      "Recommended source 1 is invalid: Enter a valid http or https URL.",
+    );
+
+    expect(createSourceRecord).not.toHaveBeenCalled();
+    expect(revalidatePath).not.toHaveBeenCalled();
+  });
+
+  it("creates recommended sources only after schema validation passes", async () => {
+    const revalidatePath = vi.fn();
+    const createSourceRecord = vi.fn();
+    const defaultStore = {
+      database: {
+        prepare: vi.fn().mockReturnValue({
+          get: vi.fn().mockReturnValue({ space_id: "space-9" }),
+        }),
+      },
+    };
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath,
+    }));
+    vi.doMock("@/lib/store", () => ({
+      createChatMessage: vi.fn(),
+      createSourceRecord,
+      defaultStore,
+      getOrCreateChatThread: vi.fn(),
+      listChatMessages: vi.fn(),
+      updateTaskControls: vi.fn(),
+    }));
+
+    const { subscribeRecommendedSources } = await import("@/app/actions-chat");
+
+    await expect(
+      subscribeRecommendedSources("task-123", [
+        {
+          title: "Validated source",
+          url: "https://example.com/feed.xml",
+          sourceType: "RSS",
+        },
+      ]),
+    ).resolves.toEqual({ success: true });
+
+    expect(createSourceRecord).toHaveBeenCalledWith(defaultStore, {
+      taskId: "task-123",
+      sourceType: "RSS",
+      title: "Validated source",
+      url: "https://example.com/feed.xml",
+    });
+    expect(revalidatePath).toHaveBeenCalledWith("/spaces/space-9/tasks/task-123");
+    expect(revalidatePath).toHaveBeenCalledWith("/sources");
   });
 
   it("throws when the task does not exist", async () => {

@@ -33,6 +33,16 @@ describe("Core AI Orchestration layer", () => {
     expect(second).toBe(first);
   });
 
+  it("bypasses memoized source bundle recommendations when requested", async () => {
+    const first = await recommendSourceBundles("Track Devin and Cursor coding agents");
+    const refreshed = await recommendSourceBundles("Track Devin and Cursor coding agents", {
+      bypassCache: true,
+    });
+
+    expect(refreshed).not.toBe(first);
+    expect(refreshed).toEqual(first);
+  });
+
   it("clusters feed items by Jaccard title-similarity and generates synthesized brief candidates", async () => {
     const mockTask: TaskRecord = {
       id: "task-1",

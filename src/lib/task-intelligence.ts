@@ -1,5 +1,6 @@
 import {
   recommendSourceBundles,
+  type RecommendSourceBundlesOptions,
   understandTaskIntent,
   type SourceBundle,
   type TaskProfile,
@@ -14,7 +15,10 @@ import {
 
 export type RefreshTaskIntelligenceOptions = {
   understandTaskIntentImpl?: (prompt: string) => Promise<TaskProfile>;
-  recommendSourceBundlesImpl?: (prompt: string) => Promise<SourceBundle[]>;
+  recommendSourceBundlesImpl?: (
+    prompt: string,
+    options?: RecommendSourceBundlesOptions,
+  ) => Promise<SourceBundle[]>;
   saveTaskProfileImpl?: (
     store: Store,
     taskId: string,
@@ -46,7 +50,7 @@ export async function refreshTaskIntelligence(
   const previousBundles = listRecommendationBundlesByTask(store, taskId);
 
   const profile = await understand(task.userPrompt);
-  const bundles = await recommend(task.userPrompt);
+  const bundles = await recommend(task.userPrompt, { bypassCache: true });
 
   try {
     replaceBundles(store, taskId, bundles);

@@ -11,6 +11,7 @@ import {
 } from "@/lib/store";
 import { generateChatResponse } from "@/lib/ai";
 import { getGroundingForScope, type GroundingResult } from "@/lib/grounding";
+import { createSourceSchema } from "@/lib/validation";
 
 type ChatScope = "global" | "space" | "task" | "brief";
 
@@ -124,12 +125,34 @@ export async function subscribeRecommendedSources(
   sources: Array<{ title: string; url: string; sourceType: "RSS" | "PAGE" | "STRUCTURED" }>,
 ) {
   const store = defaultStore;
-  for (const s of sources) {
-    createSourceRecord(store, {
+  const parsedSources = sources.map((source, index) => ({
+    index,
+    result: createSourceSchema.safeParse({
       taskId,
-      sourceType: s.sourceType,
-      title: s.title,
-      url: s.url,
+      sourceType: source.sourceType,
+      title: source.title,
+      url: source.url,
+    }),
+  }));
+  const invalidSource = parsedSources.find(({ result }) => !result.success);
+
+  if (invalidSource && !invalidSource.result.success) {
+    const issue = invalidSource.result.error.issues[0]?.message ?? "Invalid source input.";
+    throw new Error(
+      `Recommended source ${invalidSource.index + 1} is invalid: ${issue}`,
+    );
+  }
+
+  for (const { result } of parsedSources) {
+    if (!result.success) {
+      continue;
+    }
+
+    createSourceRecord(store, {
+      taskId: result.data.taskId,
+      sourceType: result.data.sourceType,
+      title: result.data.title,
+      url: result.data.url,
     });
   }
 
