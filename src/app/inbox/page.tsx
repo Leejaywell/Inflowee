@@ -2,6 +2,8 @@ import Link from "next/link";
 
 import { defaultStore, listBriefs } from "@/lib/store";
 
+export const dynamic = "force-dynamic";
+
 export default async function InboxPage() {
   const briefs = listBriefs(defaultStore);
 

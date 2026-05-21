@@ -90,6 +90,7 @@ export async function runSourceSync(formData: FormData) {
   }
 
   revalidatePath("/sources");
+  revalidatePath("/inbox");
 
   if (!result.ok) {
     redirect(`/sources?error=${encodeURIComponent(result.error)}`);
