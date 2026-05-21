@@ -9,7 +9,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:reset": "node --experimental-strip-types scripts/reset-dev.ts",
+    "db:seed": "node --experimental-strip-types scripts/seed-dev.ts"
   },
   "dependencies": {
     "fast-xml-parser": "^5.3.0",
