@@ -18,6 +18,8 @@ export type SourceBundle = {
   sources: SourceRecommendation[];
 };
 
+const sourceBundleCache = new Map<string, Promise<SourceBundle[]> | SourceBundle[]>();
+
 export type BriefCandidate = {
   title: string;
   summary: string;
@@ -162,6 +164,26 @@ Respond in strict JSON format:
 
 // 2.1: recommendSourceBundles
 export async function recommendSourceBundles(prompt: string): Promise<SourceBundle[]> {
+  const cached = sourceBundleCache.get(prompt);
+  if (cached) {
+    return cached instanceof Promise ? cached : Promise.resolve(cached);
+  }
+
+  const pending = generateSourceBundles(prompt)
+    .then((bundles) => {
+      sourceBundleCache.set(prompt, bundles);
+      return bundles;
+    })
+    .catch((error) => {
+      sourceBundleCache.delete(prompt);
+      throw error;
+    });
+
+  sourceBundleCache.set(prompt, pending);
+  return pending;
+}
+
+async function generateSourceBundles(prompt: string): Promise<SourceBundle[]> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey) {
     try {

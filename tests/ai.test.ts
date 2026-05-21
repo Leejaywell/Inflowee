@@ -26,6 +26,13 @@ describe("Core AI Orchestration layer", () => {
     expect(bundles[0].sources[0].title).toBe("TechCrunch Startups");
   });
 
+  it("memoizes source bundle recommendations for identical prompts", async () => {
+    const first = await recommendSourceBundles("Track Devin and Cursor coding agents");
+    const second = await recommendSourceBundles("Track Devin and Cursor coding agents");
+
+    expect(second).toBe(first);
+  });
+
   it("clusters feed items by Jaccard title-similarity and generates synthesized brief candidates", async () => {
     const mockTask: TaskRecord = {
       id: "task-1",

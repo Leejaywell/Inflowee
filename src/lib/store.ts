@@ -513,6 +513,25 @@ export function listSpacesWithTasks(store: Store = defaultStore): SpaceRecord[] 
   }));
 }
 
+export function getSpaceById(store: Store, spaceId: string): SpaceRecord | null {
+  const row = store.database
+    .prepare("SELECT * FROM spaces WHERE id = ? LIMIT 1")
+    .get(spaceId) as SpaceRow | undefined;
+
+  if (!row) {
+    return null;
+  }
+
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    tasks: [],
+  };
+}
+
 export function createSpaceRecord(input: CreateSpaceInput): string;
 export function createSpaceRecord(store: Store, input: CreateSpaceInput): string;
 export function createSpaceRecord(
@@ -1014,16 +1033,10 @@ export function getOrCreateChatThread(
   scopeType: "global" | "space" | "task" | "brief",
   scopeId: string,
 ): ChatThreadRecord {
-  const existing = store.database
-    .prepare(
-      `SELECT * FROM chat_threads
-       WHERE scope_type = ? AND scope_id = ?
-       LIMIT 1`
-    )
-    .get(scopeType, scopeId) as ChatThreadRow | undefined;
+  const existing = findChatThread(store, scopeType, scopeId);
 
   if (existing) {
-    return mapChatThread(existing);
+    return existing;
   }
 
   const id = randomUUID();
@@ -1042,6 +1055,22 @@ export function getOrCreateChatThread(
     scopeId,
     createdAt: timestamp,
   };
+}
+
+export function findChatThread(
+  store: Store,
+  scopeType: "global" | "space" | "task" | "brief",
+  scopeId: string,
+): ChatThreadRecord | null {
+  const existing = store.database
+    .prepare(
+      `SELECT * FROM chat_threads
+       WHERE scope_type = ? AND scope_id = ?
+       LIMIT 1`
+    )
+    .get(scopeType, scopeId) as ChatThreadRow | undefined;
+
+  return existing ? mapChatThread(existing) : null;
 }
 
 export function createChatMessage(

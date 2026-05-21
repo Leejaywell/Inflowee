@@ -19,6 +19,7 @@ import {
   deleteSpace,
   deleteTask,
   getBriefById,
+  findChatThread,
   hasTaskRecord,
   listBriefItemIds,
   listBriefsFiltered,
@@ -607,6 +608,21 @@ describe("store expansions for AI features", () => {
       expect(messages[1].role).toBe("assistant");
       expect(messages[1].content).toBe("Devin is an autonomous AI software engineer.");
       expect(messages[1].citations).toEqual(["https://cognition.labs/blog/introducing-devin"]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("finds chat threads without creating them", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      expect(findChatThread(store, "task", "task-456")).toBeNull();
+
+      const thread = getOrCreateChatThread(store, "task", "task-456");
+      expect(findChatThread(store, "task", "task-456")?.id).toBe(thread.id);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
