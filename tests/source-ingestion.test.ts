@@ -4,7 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { syncSourceById } from "@/lib/source-ingestion";
+import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
 import {
   createSourceRecord,
   createSpaceRecord,
@@ -131,3 +131,76 @@ describe("syncSourceById", () => {
     }
   });
 });
+
+describe("syncAllSources", () => {
+  it("syncs multiple non-error sources and skips error sources", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-all-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "Space" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Task",
+        taskType: "TOPIC",
+        userPrompt: "Prompt",
+      });
+
+      // Healthy source
+      const healthySourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Healthy",
+        url: "https://example.com/healthy.xml",
+      });
+
+      // Errored source
+      const errorSourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Errored",
+        url: "https://example.com/errored.xml",
+      });
+      // Force it to have "error" status
+      const { markSourceSyncResult } = await import("@/lib/store");
+      markSourceSyncResult(store, {
+        sourceId: errorSourceId,
+        status: "error",
+        error: "Failed to connect",
+      });
+
+      const xml = `
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>Healthy post</title>
+              <link>https://example.com/healthy/1</link>
+              <description>Content</description>
+            </item>
+          </channel>
+        </rss>
+      `;
+      const fetchImpl = vi.fn().mockResolvedValue(xml);
+
+      const result = await syncAllSources(store, {
+        fetchSourceFeedImpl: fetchImpl,
+      });
+
+      expect(result).toMatchObject({
+        synced: 1,
+        failed: 0,
+        skipped: 1,
+      });
+
+      expect(result.results).toHaveLength(1);
+      expect(result.results[0]).toMatchObject({
+        ok: true,
+        source: expect.objectContaining({ id: healthySourceId }),
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+});
+

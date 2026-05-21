@@ -16,7 +16,7 @@ import {
   markBriefRead,
   markBriefUnread,
 } from "@/lib/store";
-import { syncSourceById } from "@/lib/source-ingestion";
+import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
@@ -154,3 +154,17 @@ export async function deleteSpace(formData: FormData) {
   revalidatePath("/inbox");
   redirect("/");
 }
+
+export async function runSyncAll() {
+  const result = await syncAllSources(defaultStore);
+
+  revalidatePath("/sources");
+  revalidatePath("/inbox");
+
+  if (result.failed > 0) {
+    redirect(`/sources?error=Synced%20${result.synced}%20sources,%20but%20${result.failed}%20failed.`);
+  }
+
+  redirect(`/sources?synced=all`);
+}
+

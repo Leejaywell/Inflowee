@@ -1,4 +1,4 @@
-import { createSource, deleteSource, runSourceSync } from "@/app/actions";
+import { createSource, deleteSource, runSourceSync, runSyncAll } from "@/app/actions";
 import {
   defaultStore,
   listSources,
@@ -101,7 +101,9 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               ? "Source created."
               : synced === "source"
                 ? "Source synced."
-                : "Update applied."}
+                : synced === "all"
+                  ? "All non-error sources synced."
+                  : "Update applied."}
         </section>
       )}
 
@@ -181,9 +183,18 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                 RSS sources currently attached to each task.
               </p>
             </div>
-            <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
-              Local DB
-            </span>
+            <div className="flex items-center gap-3">
+              {tasks.length > 0 && tasks.some((t) => t.sources.length > 0) && (
+                <form action={runSyncAll}>
+                  <button className="inline-flex h-9 items-center justify-center rounded-xl bg-stone-900 px-4 text-xs font-semibold tracking-wider uppercase text-white transition hover:bg-stone-800">
+                    Sync all
+                  </button>
+                </form>
+              )}
+              <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
+                Local DB
+              </span>
+            </div>
           </div>
 
           {tasks.length === 0 ? (

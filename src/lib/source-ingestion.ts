@@ -7,6 +7,7 @@ import {
   createBriefRecord,
   createItemRecordResult,
   getSourceById,
+  listSources,
   markSourceSyncResult,
   type SourceRecord,
   type Store,
@@ -183,4 +184,44 @@ export async function syncSourceById(
       source,
     };
   }
+}
+
+export type SyncAllResult = {
+  synced: number;
+  failed: number;
+  skipped: number;
+  results: SyncSourceResult[];
+};
+
+export async function syncAllSources(
+  store: Store,
+  options?: {
+    fetchSourceFeedImpl?: typeof fetchSourceFeed;
+  },
+): Promise<SyncAllResult> {
+  const sources = listSources(store);
+  const results: SyncSourceResult[] = [];
+
+  let synced = 0;
+  let failed = 0;
+  let skipped = 0;
+
+  for (const source of sources) {
+    // Skip sources that previously errored — user should fix and retry manually
+    if (source.status === "error") {
+      skipped++;
+      continue;
+    }
+
+    const result = await syncSourceById(store, source.id, options);
+    results.push(result);
+
+    if (result.ok) {
+      synced++;
+    } else {
+      failed++;
+    }
+  }
+
+  return { synced, failed, skipped, results };
 }
