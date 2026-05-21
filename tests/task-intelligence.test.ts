@@ -3,7 +3,9 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { vi } from "vitest";
 
+import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import {
   createSpaceRecord,
   createStore,
@@ -173,6 +175,288 @@ describe("task intelligence store helpers", () => {
       expect(
         listRecommendationBundlesByTask(fixture.store, otherTaskId),
       ).toEqual(otherTaskBundles);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
+
+describe("refreshTaskIntelligence", () => {
+  it("persists profile and bundles for a task", async () => {
+    const fixture = createIsolatedStore();
+
+    try {
+      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
+      const taskId = createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Track agent launches",
+        taskType: "QUESTION",
+        userPrompt: "What changed in coding agents this week?",
+      });
+
+      const understandTaskIntentImpl = vi.fn().mockResolvedValue({
+        keywords: ["coding agents"],
+        suggestedQueries: ["coding agents changelog"],
+      });
+      const recommendSourceBundlesImpl = vi.fn().mockResolvedValue([
+        {
+          title: "Agent bundle",
+          description: "Primary feeds",
+          rationale: "Matches the task",
+          sources: [
+            {
+              title: "Feed",
+              url: "https://example.com/feed.xml",
+              sourceType: "RSS",
+            },
+          ],
+        },
+      ]);
+
+      const result = await refreshTaskIntelligence(fixture.store, taskId, {
+        understandTaskIntentImpl,
+        recommendSourceBundlesImpl,
+      });
+
+      expect(understandTaskIntentImpl).toHaveBeenCalledWith(
+        "What changed in coding agents this week?",
+      );
+      expect(recommendSourceBundlesImpl).toHaveBeenCalledWith(
+        "What changed in coding agents this week?",
+      );
+      expect(result.profile.keywords).toEqual(["coding agents"]);
+      expect(result.bundles).toHaveLength(1);
+      expect(getTaskProfile(fixture.store, taskId)?.keywords).toEqual([
+        "coding agents",
+      ]);
+      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+        result.bundles,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("throws when the task does not exist", async () => {
+    const fixture = createIsolatedStore();
+
+    try {
+      await expect(
+        refreshTaskIntelligence(fixture.store, "missing-task-id"),
+      ).rejects.toThrow("Task missing-task-id not found.");
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("does not persist new profile or bundles when source recommendation fails", async () => {
+    const fixture = createIsolatedStore();
+
+    try {
+      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
+      const taskId = createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Track agent launches",
+        taskType: "QUESTION",
+        userPrompt: "What changed in coding agents this week?",
+      });
+
+      const existingProfile: TaskProfile = {
+        keywords: ["existing keyword"],
+        suggestedQueries: ["existing query"],
+      };
+      const existingBundles: RecommendationBundle[] = [
+        {
+          title: "Existing bundle",
+          description: "Existing sources",
+          rationale: "Existing rationale",
+          sources: [
+            {
+              title: "Existing feed",
+              url: "https://example.com/existing.xml",
+              sourceType: "RSS",
+            },
+          ],
+        },
+      ];
+
+      saveTaskProfile(fixture.store, taskId, existingProfile);
+      replaceRecommendationBundles(fixture.store, taskId, existingBundles);
+
+      const understandTaskIntentImpl = vi.fn().mockResolvedValue({
+        keywords: ["new keyword"],
+        suggestedQueries: ["new query"],
+      });
+      const recommendSourceBundlesImpl = vi
+        .fn()
+        .mockRejectedValue(new Error("recommendation failed"));
+
+      await expect(
+        refreshTaskIntelligence(fixture.store, taskId, {
+          understandTaskIntentImpl,
+          recommendSourceBundlesImpl,
+        }),
+      ).rejects.toThrow("recommendation failed");
+
+      expect(getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
+      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+        existingBundles,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("restores previous bundles and keeps the old profile when profile save fails", async () => {
+    const fixture = createIsolatedStore();
+
+    try {
+      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
+      const taskId = createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Track agent launches",
+        taskType: "QUESTION",
+        userPrompt: "What changed in coding agents this week?",
+      });
+
+      const existingProfile: TaskProfile = {
+        keywords: ["existing keyword"],
+        suggestedQueries: ["existing query"],
+      };
+      const existingBundles: RecommendationBundle[] = [
+        {
+          title: "Existing bundle",
+          description: "Existing sources",
+          rationale: "Existing rationale",
+          sources: [
+            {
+              title: "Existing feed",
+              url: "https://example.com/existing.xml",
+              sourceType: "RSS",
+            },
+          ],
+        },
+      ];
+
+      saveTaskProfile(fixture.store, taskId, existingProfile);
+      replaceRecommendationBundles(fixture.store, taskId, existingBundles);
+
+      const understandTaskIntentImpl = vi.fn().mockResolvedValue({
+        keywords: ["new keyword"],
+        suggestedQueries: ["new query"],
+      });
+      const recommendSourceBundlesImpl = vi.fn().mockResolvedValue([
+        {
+          title: "New bundle",
+          description: "New sources",
+          rationale: "New rationale",
+          sources: [
+            {
+              title: "New feed",
+              url: "https://example.com/new.xml",
+              sourceType: "RSS",
+            },
+          ],
+        },
+      ]);
+      const saveTaskProfileImpl = vi.fn().mockImplementation(() => {
+        throw new Error("profile persistence failed");
+      });
+
+      await expect(
+        refreshTaskIntelligence(fixture.store, taskId, {
+          understandTaskIntentImpl,
+          recommendSourceBundlesImpl,
+          saveTaskProfileImpl,
+        }),
+      ).rejects.toThrow("profile persistence failed");
+
+      expect(getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
+      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+        existingBundles,
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("restores previous bundles when injected bundle persistence mutates state then fails", async () => {
+    const fixture = createIsolatedStore();
+
+    try {
+      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
+      const taskId = createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Track agent launches",
+        taskType: "QUESTION",
+        userPrompt: "What changed in coding agents this week?",
+      });
+
+      const existingProfile: TaskProfile = {
+        keywords: ["existing keyword"],
+        suggestedQueries: ["existing query"],
+      };
+      const existingBundles: RecommendationBundle[] = [
+        {
+          title: "Existing bundle",
+          description: "Existing sources",
+          rationale: "Existing rationale",
+          sources: [
+            {
+              title: "Existing feed",
+              url: "https://example.com/existing.xml",
+              sourceType: "RSS",
+            },
+          ],
+        },
+      ];
+
+      saveTaskProfile(fixture.store, taskId, existingProfile);
+      replaceRecommendationBundles(fixture.store, taskId, existingBundles);
+
+      const understandTaskIntentImpl = vi.fn().mockResolvedValue({
+        keywords: ["new keyword"],
+        suggestedQueries: ["new query"],
+      });
+      const recommendSourceBundlesImpl = vi.fn().mockResolvedValue([
+        {
+          title: "New bundle",
+          description: "New sources",
+          rationale: "New rationale",
+          sources: [
+            {
+              title: "New feed",
+              url: "https://example.com/new.xml",
+              sourceType: "RSS",
+            },
+          ],
+        },
+      ]);
+      const replaceRecommendationBundlesImpl = vi
+        .fn()
+        .mockImplementation(
+          (
+            currentStore,
+            currentTaskId,
+            bundles: RecommendationBundle[],
+          ) => {
+            replaceRecommendationBundles(currentStore, currentTaskId, bundles);
+            throw new Error("bundle persistence failed");
+          },
+        );
+
+      await expect(
+        refreshTaskIntelligence(fixture.store, taskId, {
+          understandTaskIntentImpl,
+          recommendSourceBundlesImpl,
+          replaceRecommendationBundlesImpl,
+        }),
+      ).rejects.toThrow("bundle persistence failed");
+
+      expect(getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
+      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+        existingBundles,
+      );
     } finally {
       fixture.cleanup();
     }
