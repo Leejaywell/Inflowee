@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { refreshStoredTaskIntelligence } from "@/app/actions";
 import { subscribeRecommendedSources } from "@/app/actions-chat";
-import { SourceBundle, SourceRecommendation } from "@/lib/ai";
+import { SourceBundle, SourceRecommendation, TaskProfile } from "@/lib/ai";
 
 type RecommendationWizardProps = {
   taskId: string;
+  taskProfile: TaskProfile | null;
   recommendedBundles: SourceBundle[];
 };
 
@@ -17,6 +19,7 @@ type SelectedSource = {
 
 export function RecommendationWizard({
   taskId,
+  taskProfile,
   recommendedBundles,
 }: RecommendationWizardProps) {
   // Store selected sources as mapping of url -> source object
@@ -24,7 +27,6 @@ export function RecommendationWizard({
     const initial: Record<string, SelectedSource> = {};
     for (const bundle of recommendedBundles) {
       for (const src of bundle.sources) {
-        // Pre-select all recommended sources by default
         initial[src.url] = {
           title: src.title,
           url: src.url,
@@ -36,7 +38,9 @@ export function RecommendationWizard({
   });
 
   const [isPending, startTransition] = useTransition();
+  const [isRefreshing, startRefreshTransition] = useTransition();
   const [success, setSuccess] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   const toggleSource = (src: SourceRecommendation) => {
     setSelectedMap((prev) => {
@@ -71,14 +75,51 @@ export function RecommendationWizard({
     });
   };
 
+  const handleRefresh = () => {
+    setRefreshError(null);
+    startRefreshTransition(async () => {
+      try {
+        await refreshStoredTaskIntelligence(taskId);
+      } catch (error) {
+        setRefreshError(
+          error instanceof Error
+            ? error.message
+            : "Unable to refresh recommendations right now.",
+        );
+      }
+    });
+  };
+
   const selectedCount = Object.keys(selectedMap).length;
 
   if (recommendedBundles.length === 0) {
     return (
       <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)] text-center py-8">
-        <p className="text-sm text-stone-500 font-medium">
-          No automated recommendations found for this task profile.
-        </p>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <p className="text-sm text-stone-500 font-medium">
+              {taskProfile
+                ? "No stored recommendations are available for this task yet."
+                : "This task has no stored intelligence yet."}
+            </p>
+            {taskProfile ? (
+              <p className="text-xs text-stone-400">
+                Refresh to regenerate source bundles from the saved task profile.
+              </p>
+            ) : null}
+            {refreshError ? (
+              <p className="text-xs text-rose-600">{refreshError}</p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
+          >
+            {isRefreshing ? "Refreshing intelligence..." : "Refresh intelligence"}
+          </button>
+        </div>
       </div>
     );
   }
@@ -105,7 +146,7 @@ export function RecommendationWizard({
         <div className="space-y-1">
           <h3 className="text-xl font-semibold text-stone-950">Subscribed successfully!</h3>
           <p className="text-sm text-stone-500 max-w-sm mx-auto leading-normal">
-            Your new intelligence channels are set up. Run synchronization from the **Sources** tab to fetch raw updates.
+            Your new intelligence channels are set up. Run synchronization from the Sources tab to fetch raw updates.
           </p>
         </div>
         <button
@@ -121,10 +162,25 @@ export function RecommendationWizard({
   return (
     <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)] space-y-6">
       <div>
-        <h2 className="text-xl font-semibold text-stone-950">AI Recommendation Wizard</h2>
-        <p className="text-xs text-stone-500 mt-1">
-          Select curated streams recommended specifically for this task query.
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold text-stone-950">AI Recommendation Wizard</h2>
+            <p className="text-xs text-stone-500 mt-1">
+              Select curated streams recommended specifically for this task query.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handleRefresh}
+            disabled={isRefreshing}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-stone-200 px-3 text-[11px] font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
+          >
+            {isRefreshing ? "Refreshing..." : "Refresh intelligence"}
+          </button>
+        </div>
+        {refreshError ? (
+          <p className="mt-2 text-xs text-rose-600">{refreshError}</p>
+        ) : null}
       </div>
 
       <div className="space-y-6">

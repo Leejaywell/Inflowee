@@ -181,6 +181,125 @@ describe("task intelligence store helpers", () => {
   });
 });
 
+describe("task intelligence server actions", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.clearAllMocks();
+    vi.unmock("next/cache");
+    vi.unmock("next/navigation");
+    vi.unmock("@/lib/store");
+    vi.unmock("@/lib/task-intelligence");
+  });
+
+  it("initializes stored intelligence after createTask succeeds", async () => {
+    const revalidatePath = vi.fn();
+    const redirect = vi.fn((destination: string) => {
+      throw new Error(`NEXT_REDIRECT:${destination}`);
+    });
+    const createTaskRecordMock = vi.fn().mockReturnValue("task-123");
+    const refreshTaskIntelligenceMock = vi.fn().mockResolvedValue({
+      profile: {
+        keywords: ["coding agents"],
+        suggestedQueries: ["coding agents changelog"],
+      },
+      bundles: [],
+    });
+    const defaultStore = { database: {} };
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath,
+    }));
+    vi.doMock("next/navigation", () => ({
+      redirect,
+    }));
+    vi.doMock("@/lib/store", () => ({
+      createSourceRecord: vi.fn(),
+      createSpaceRecord: vi.fn(),
+      createTaskRecord: createTaskRecordMock,
+      defaultStore,
+      deleteBrief: vi.fn(),
+      deleteSource: vi.fn(),
+      deleteSpace: vi.fn(),
+      deleteTask: vi.fn(),
+      getTaskById: vi.fn(),
+      hasTaskRecord: vi.fn(),
+      markBriefRead: vi.fn(),
+      markBriefUnread: vi.fn(),
+    }));
+    vi.doMock("@/lib/task-intelligence", () => ({
+      refreshTaskIntelligence: refreshTaskIntelligenceMock,
+    }));
+
+    const { createTask } = await import("@/app/actions");
+
+    const formData = new FormData();
+    formData.set("spaceId", "space-1");
+    formData.set("title", "Track coding agents");
+    formData.set("taskType", "TOPIC");
+    formData.set("userPrompt", "Track coding agent launches and evaluations");
+
+    await expect(createTask(formData)).rejects.toThrow("NEXT_REDIRECT:/?created=task");
+
+    expect(createTaskRecordMock).toHaveBeenCalledWith({
+      spaceId: "space-1",
+      title: "Track coding agents",
+      taskType: "TOPIC",
+      userPrompt: "Track coding agent launches and evaluations",
+    });
+    expect(refreshTaskIntelligenceMock).toHaveBeenCalledWith(defaultStore, "task-123");
+    expect(revalidatePath).toHaveBeenCalledWith("/");
+    expect(redirect).toHaveBeenCalledWith("/?created=task");
+  });
+
+  it("revalidates the task detail route after explicit intelligence refresh", async () => {
+    const revalidatePath = vi.fn();
+    const refreshTaskIntelligenceMock = vi.fn().mockResolvedValue({
+      profile: {
+        keywords: ["coding agents"],
+        suggestedQueries: ["coding agents changelog"],
+      },
+      bundles: [],
+    });
+    const defaultStore = { database: {} };
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath,
+    }));
+    vi.doMock("next/navigation", () => ({
+      redirect: vi.fn(),
+    }));
+    vi.doMock("@/lib/store", () => ({
+      createSourceRecord: vi.fn(),
+      createSpaceRecord: vi.fn(),
+      createTaskRecord: vi.fn(),
+      defaultStore,
+      deleteBrief: vi.fn(),
+      deleteSource: vi.fn(),
+      deleteSpace: vi.fn(),
+      deleteTask: vi.fn(),
+      getTaskById: vi.fn().mockReturnValue({
+        id: "task-123",
+        spaceId: "space-9",
+      }),
+      hasTaskRecord: vi.fn(),
+      markBriefRead: vi.fn(),
+      markBriefUnread: vi.fn(),
+    }));
+    vi.doMock("@/lib/task-intelligence", () => ({
+      refreshTaskIntelligence: refreshTaskIntelligenceMock,
+    }));
+
+    const { refreshStoredTaskIntelligence } = await import("@/app/actions");
+
+    await expect(refreshStoredTaskIntelligence("task-123")).resolves.toEqual({
+      success: true,
+    });
+
+    expect(refreshTaskIntelligenceMock).toHaveBeenCalledWith(defaultStore, "task-123");
+    expect(revalidatePath).toHaveBeenCalledWith("/spaces/space-9/tasks/task-123");
+  });
+});
+
 describe("refreshTaskIntelligence", () => {
   it("persists profile and bundles for a task", async () => {
     const fixture = createIsolatedStore();

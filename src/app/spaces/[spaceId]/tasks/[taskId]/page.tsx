@@ -9,10 +9,10 @@ import {
   findChatThread,
   getSpaceById,
   getTaskById,
+  listRecommendationBundlesByTask,
   listChatMessages,
   listSourcesByTask,
 } from "@/lib/store";
-import { recommendSourceBundles } from "@/lib/ai";
 
 export const dynamic = "force-dynamic";
 
@@ -40,8 +40,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   // 3. Fetch connected sources list
   const activeSources = listSourcesByTask(store, taskId);
 
-  // 4. Trigger AI Recommendations matching the task prompt
-  const recommendedBundles = await recommendSourceBundles(task.userPrompt);
+  // 4. Read stored task intelligence
+  const recommendedBundles = listRecommendationBundlesByTask(store, taskId);
+  const recommendationStateKey = JSON.stringify({
+    taskProfile: task.taskProfile ?? null,
+    recommendedBundles,
+  });
 
   // 5. Fetch grounded thread history
   const chatThread = findChatThread(store, "task", taskId);
@@ -98,7 +102,9 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
           {/* AI Recommendation Wizard */}
           <RecommendationWizard
+            key={recommendationStateKey}
             taskId={taskId}
+            taskProfile={task.taskProfile ?? null}
             recommendedBundles={recommendedBundles}
           />
 
@@ -116,7 +122,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
             {activeSources.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-center text-sm text-stone-505">
-                No active sources subscribed to this task yet. Use the AI recommendation wizard above or add sources manually in the **Sources** tab.
+                No active sources subscribed to this task yet. Use the AI recommendation wizard above or add sources manually in the Sources tab.
               </div>
             ) : (
               <div className="space-y-3">

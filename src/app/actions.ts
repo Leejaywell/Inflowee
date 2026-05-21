@@ -12,11 +12,13 @@ import {
   deleteSource as deleteSourceRecord,
   deleteSpace as deleteSpaceRecord,
   deleteTask as deleteTaskRecord,
+  getTaskById,
   hasTaskRecord,
   markBriefRead,
   markBriefUnread,
 } from "@/lib/store";
 import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
+import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
@@ -51,10 +53,30 @@ export async function createTask(formData: FormData) {
     redirect(`/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid task input.")}`);
   }
 
-  createTaskRecord(parsed.data);
+  const taskId = createTaskRecord(parsed.data);
+
+  try {
+    await refreshTaskIntelligence(defaultStore, taskId);
+  } catch (error) {
+    console.error(`Failed to initialize task intelligence for ${taskId}:`, error);
+  }
 
   revalidatePath("/");
   redirect("/?created=task");
+}
+
+export async function refreshStoredTaskIntelligence(taskId: string) {
+  await refreshTaskIntelligence(defaultStore, taskId);
+
+  const task = getTaskById(defaultStore, taskId);
+
+  if (!task) {
+    throw new Error(`Task ${taskId} not found.`);
+  }
+
+  revalidatePath(`/spaces/${task.spaceId}/tasks/${taskId}`);
+
+  return { success: true };
 }
 
 export async function createSource(formData: FormData) {
@@ -167,4 +189,3 @@ export async function runSyncAll() {
 
   redirect(`/sources?synced=all`);
 }
-
