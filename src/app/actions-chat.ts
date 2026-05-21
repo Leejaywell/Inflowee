@@ -6,14 +6,11 @@ import {
   getOrCreateChatThread,
   createChatMessage,
   listChatMessages,
-  getBriefById,
-  listBriefsFiltered,
   createSourceRecord,
   updateTaskControls,
-  BriefRecord,
-  ItemRecord,
 } from "@/lib/store";
 import { generateChatResponse } from "@/lib/ai";
+import { getGroundingForScope, type GroundingResult } from "@/lib/grounding";
 
 type ChatScope = "global" | "space" | "task" | "brief";
 
@@ -46,74 +43,11 @@ export async function submitChatMessage(
   }));
 
   // 4. Gather grounding materials depending on scope
-  let briefs: BriefRecord[] = [];
-  let items: ItemRecord[] = [];
-
-  interface SqlItemRow {
-    id: string;
-    source_id: string;
-    title: string;
-    canonical_url: string;
-    summary: string | null;
-    published_at: string | null;
-    created_at: string;
-  }
-
-  const mapSqlItem = (row: SqlItemRow): ItemRecord => ({
-    id: row.id,
-    sourceId: row.source_id,
-    title: row.title,
-    canonicalUrl: row.canonical_url,
-    summary: row.summary,
-    publishedAt: row.published_at,
-    createdAt: row.created_at,
-  });
+  let grounding: GroundingResult = { briefs: [], items: [] };
 
   try {
-    if (scopeType === "brief") {
-      const brief = getBriefById(store, scopeId);
-      if (brief) {
-        briefs.push(brief);
-        const rows = (store.database
-          .prepare(
-            `SELECT items.* FROM items
-             JOIN brief_items ON brief_items.item_id = items.id
-             WHERE brief_items.brief_id = ?`,
-          )
-          .all(scopeId) as unknown) as SqlItemRow[];
-        items = rows.map(mapSqlItem);
-      }
-    } else if (scopeType === "task") {
-      briefs = listBriefsFiltered(store, { taskId: scopeId });
-      const rows = (store.database
-        .prepare(
-          `SELECT items.* FROM items
-           JOIN sources ON items.source_id = sources.id
-           WHERE sources.task_id = ?`,
-        )
-        .all(scopeId) as unknown) as SqlItemRow[];
-      items = rows.map(mapSqlItem);
-    } else if (scopeType === "space") {
-      const tasks = store.database
-        .prepare("SELECT id FROM tasks WHERE space_id = ?")
-        .all(scopeId) as Array<{ id: string }>;
-      const taskIds = tasks.map((t) => t.id);
-
-      if (taskIds.length > 0) {
-        briefs = listBriefsFiltered(store).filter((b) =>
-          taskIds.includes(b.taskId),
-        );
-
-        const placeholders = taskIds.map(() => "?").join(",");
-        const rows = (store.database
-          .prepare(
-            `SELECT items.* FROM items
-             JOIN sources ON items.source_id = sources.id
-             WHERE sources.task_id IN (${placeholders})`,
-          )
-          .all(...taskIds) as unknown) as SqlItemRow[];
-        items = rows.map(mapSqlItem);
-      }
+    if (scopeType !== "global") {
+      grounding = getGroundingForScope(store, scopeType, scopeId);
     }
   } catch (e) {
     console.error("Error gathering grounding materials for chat:", e);
@@ -124,7 +58,11 @@ export async function submitChatMessage(
   let responseCitations: string[] = [];
 
   try {
-    const response = await generateChatResponse(formattedHistory, briefs, items);
+    const response = await generateChatResponse(
+      formattedHistory,
+      grounding.briefs,
+      grounding.items,
+    );
     responseContent = response.content;
     responseCitations = response.citations;
   } catch (e) {

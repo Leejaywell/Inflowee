@@ -2,9 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ChatConsole } from "@/components/chat-console";
+import { getGroundingForScope } from "@/lib/grounding";
 import {
   defaultStore,
-  listBriefsFiltered,
+  getSpaceById,
   getOrCreateChatThread,
   listChatMessages,
 } from "@/lib/store";
@@ -13,13 +14,6 @@ export const dynamic = "force-dynamic";
 
 type SpacePageProps = {
   params: Promise<{ spaceId: string }>;
-};
-
-type SpaceRow = {
-  id: string;
-  name: string;
-  description: string | null;
-  created_at: string;
 };
 
 type TaskRow = {
@@ -35,9 +29,7 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
   const store = defaultStore;
 
   // 1. Fetch space
-  const space = store.database
-    .prepare("SELECT * FROM spaces WHERE id = ? LIMIT 1")
-    .get(spaceId) as SpaceRow | undefined;
+  const space = getSpaceById(store, spaceId);
 
   if (!space) {
     notFound();
@@ -48,11 +40,10 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
     .prepare("SELECT * FROM tasks WHERE space_id = ? ORDER BY created_at DESC")
     .all(spaceId) as TaskRow[];
 
-  // 3. Fetch aggregated briefs in this space (any brief belonging to child tasks)
-  const taskIds = tasks.map((t) => t.id);
-  const briefs = listBriefsFiltered(store).filter((b) =>
-    taskIds.includes(b.taskId),
-  );
+  // 3. Fetch aggregated briefs in this space
+  const { briefs } = getGroundingForScope(store, "space", spaceId, {
+    includeItems: false,
+  });
 
   // 4. Fetch Chat history
   const chatThread = getOrCreateChatThread(store, "space", spaceId);
