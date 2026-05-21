@@ -18,8 +18,8 @@ export default function RootLayout({
   const unreadCount = countUnreadBriefs(defaultStore);
 
   return (
-    <html lang="en" className="h-full antialiased">
-      <body className="min-h-full bg-stone-100 text-stone-950">
+    <html lang="en" className="h-full antialiased" suppressHydrationWarning>
+      <body className="min-h-full bg-stone-100 text-stone-950" suppressHydrationWarning>
         <AppShell unreadCount={unreadCount}>{children}</AppShell>
       </body>
     </html>

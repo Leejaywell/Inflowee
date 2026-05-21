@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type TaskType = "TOPIC" | "QUESTION";
-export type SourceType = "RSS" | "PAGE";
+export type SourceType = "RSS" | "PAGE" | "STRUCTURED";
 export type SourceStatus = "idle" | "success" | "error";
 export type Store = {
   database: DatabaseSync;
@@ -26,6 +26,7 @@ type TaskRow = {
   user_prompt: string;
   relevance_level: number;
   summary_preference: string;
+  task_profile: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -66,6 +67,27 @@ type BriefRow = {
   space_name?: string;
 };
 
+export type ChatThreadRow = {
+  id: string;
+  scope_type: string;
+  scope_id: string;
+  created_at: string;
+};
+
+export type ChatMessageRow = {
+  id: string;
+  thread_id: string;
+  role: "user" | "assistant";
+  content: string;
+  citations: string | null;
+  created_at: string;
+};
+
+export type TaskProfile = {
+  keywords: string[];
+  suggestedQueries: string[];
+};
+
 export type TaskRecord = {
   id: string;
   spaceId: string;
@@ -74,6 +96,7 @@ export type TaskRecord = {
   userPrompt: string;
   relevanceLevel: number;
   summaryPreference: string;
+  taskProfile?: TaskProfile | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -123,6 +146,22 @@ export type BriefRecord = {
   spaceName?: string;
 };
 
+export type ChatThreadRecord = {
+  id: string;
+  scopeType: "global" | "space" | "task" | "brief";
+  scopeId: string;
+  createdAt: string;
+};
+
+export type ChatMessageRecord = {
+  id: string;
+  threadId: string;
+  role: "user" | "assistant";
+  content: string;
+  citations: string[] | null;
+  createdAt: string;
+};
+
 type CreateSpaceInput = {
   name: string;
   description?: string;
@@ -141,7 +180,7 @@ const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED')),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
@@ -195,6 +234,26 @@ function mapBrief(row: BriefRow): BriefRecord {
   };
 }
 
+function mapChatThread(row: ChatThreadRow): ChatThreadRecord {
+  return {
+    id: row.id,
+    scopeType: row.scope_type as "global" | "space" | "task" | "brief",
+    scopeId: row.scope_id,
+    createdAt: row.created_at,
+  };
+}
+
+function mapChatMessage(row: ChatMessageRow): ChatMessageRecord {
+  return {
+    id: row.id,
+    threadId: row.thread_id,
+    role: row.role,
+    content: row.content,
+    citations: row.citations ? (JSON.parse(row.citations) as string[]) : null,
+    createdAt: row.created_at,
+  };
+}
+
 function migrateSourcesTable(database: DatabaseSync) {
   const sourcesTable = database
     .prepare(
@@ -202,7 +261,14 @@ function migrateSourcesTable(database: DatabaseSync) {
     )
     .get() as { sql: string } | undefined;
 
-  if (!sourcesTable || sourcesTable.sql.includes(sourceStatusConstraint)) {
+  if (!sourcesTable) {
+    return;
+  }
+
+  const needsStatusMigration = !sourcesTable.sql.includes(sourceStatusConstraint);
+  const needsStructuredMigration = !sourcesTable.sql.includes("'STRUCTURED'");
+
+  if (!needsStatusMigration && !needsStructuredMigration) {
     return;
   }
 
@@ -213,10 +279,10 @@ function migrateSourcesTable(database: DatabaseSync) {
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
-      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE')),
+      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED')),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
+      status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
       last_synced_at TEXT,
       last_error TEXT,
       created_at TEXT NOT NULL,
@@ -239,7 +305,10 @@ function migrateSourcesTable(database: DatabaseSync) {
     SELECT
       id,
       task_id,
-      source_type,
+      CASE
+        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED') THEN source_type
+        ELSE 'PAGE'
+      END,
       title,
       url,
       CASE
@@ -274,6 +343,20 @@ function migrateBriefsTable(database: DatabaseSync) {
   database.exec("ALTER TABLE briefs ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0;");
 }
 
+function migrateTasksTable(database: DatabaseSync) {
+  const tasksTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'",
+    )
+    .get() as { sql: string } | undefined;
+
+  if (!tasksTable || tasksTable.sql.includes("task_profile")) {
+    return;
+  }
+
+  database.exec("ALTER TABLE tasks ADD COLUMN task_profile TEXT;");
+}
+
 export function createStore(
   filename = join(dataDirectory, "inflowee.sqlite"),
 ): Store {
@@ -303,6 +386,7 @@ export function createStore(
         user_prompt TEXT NOT NULL,
         relevance_level INTEGER NOT NULL DEFAULT 3,
         summary_preference TEXT NOT NULL DEFAULT 'balanced',
+        task_profile TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
@@ -341,19 +425,39 @@ export function createStore(
         FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS chat_threads (
+        id TEXT PRIMARY KEY,
+        scope_type TEXT NOT NULL CHECK(scope_type IN ('global', 'space', 'task', 'brief')),
+        scope_id TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id TEXT PRIMARY KEY,
+        thread_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
+        content TEXT NOT NULL,
+        citations TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);
     `);
 
     migrateSourcesTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
+    migrateTasksTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -377,6 +481,7 @@ function mapTask(row: TaskRow): TaskRecord {
     userPrompt: row.user_prompt,
     relevanceLevel: row.relevance_level,
     summaryPreference: row.summary_preference,
+    taskProfile: row.task_profile ? JSON.parse(row.task_profile) : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -855,4 +960,131 @@ export function deleteTask(store: Store, taskId: string): void {
 
 export function deleteSpace(store: Store, spaceId: string): void {
   store.database.prepare("DELETE FROM spaces WHERE id = ?").run(spaceId);
+}
+
+// --- AI Task Intent, Profiles, Controls & Grounded Chat thread store helpers ---
+
+export function getTaskById(store: Store, taskId: string): TaskRecord | null {
+  const row = store.database
+    .prepare("SELECT * FROM tasks WHERE id = ? LIMIT 1")
+    .get(taskId) as TaskRow | undefined;
+
+  return row ? mapTask(row) : null;
+}
+
+export function getTaskProfile(
+  store: Store,
+  taskId: string,
+): TaskProfile | null {
+  const task = getTaskById(store, taskId);
+  return task ? task.taskProfile ?? null : null;
+}
+
+export function saveTaskProfile(
+  store: Store,
+  taskId: string,
+  profile: TaskProfile,
+): void {
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare("UPDATE tasks SET task_profile = ?, updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(profile), timestamp, taskId);
+}
+
+export function updateTaskControls(
+  store: Store,
+  taskId: string,
+  relevanceLevel: number,
+  summaryPreference: string,
+): void {
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare(
+      `UPDATE tasks
+       SET relevance_level = ?,
+           summary_preference = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(relevanceLevel, summaryPreference, timestamp, taskId);
+}
+
+export function getOrCreateChatThread(
+  store: Store,
+  scopeType: "global" | "space" | "task" | "brief",
+  scopeId: string,
+): ChatThreadRecord {
+  const existing = store.database
+    .prepare(
+      `SELECT * FROM chat_threads
+       WHERE scope_type = ? AND scope_id = ?
+       LIMIT 1`
+    )
+    .get(scopeType, scopeId) as ChatThreadRow | undefined;
+
+  if (existing) {
+    return mapChatThread(existing);
+  }
+
+  const id = randomUUID();
+  const timestamp = new Date().toISOString();
+
+  store.database
+    .prepare(
+      `INSERT INTO chat_threads (id, scope_type, scope_id, created_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(id, scopeType, scopeId, timestamp);
+
+  return {
+    id,
+    scopeType,
+    scopeId,
+    createdAt: timestamp,
+  };
+}
+
+export function createChatMessage(
+  store: Store,
+  input: {
+    threadId: string;
+    role: "user" | "assistant";
+    content: string;
+    citations?: string[] | null;
+  },
+): ChatMessageRecord {
+  const id = randomUUID();
+  const timestamp = new Date().toISOString();
+  const citationsStr = input.citations ? JSON.stringify(input.citations) : null;
+
+  store.database
+    .prepare(
+      `INSERT INTO chat_messages (id, thread_id, role, content, citations, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, input.threadId, input.role, input.content, citationsStr, timestamp);
+
+  return {
+    id,
+    threadId: input.threadId,
+    role: input.role,
+    content: input.content,
+    citations: input.citations ?? null,
+    createdAt: timestamp,
+  };
+}
+
+export function listChatMessages(
+  store: Store,
+  threadId: string,
+): ChatMessageRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM chat_messages
+       WHERE thread_id = ?
+       ORDER BY created_at ASC`
+    )
+    .all(threadId) as ChatMessageRow[];
+
+  return rows.map(mapChatMessage);
 }

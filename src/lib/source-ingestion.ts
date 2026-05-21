@@ -1,12 +1,14 @@
-import { buildBriefsFromItems } from "@/lib/briefs";
 import { extractPageContent } from "@/lib/page-extract";
 import { parseFeedItems } from "@/lib/rss";
 import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
+import { generateBriefsFromItems } from "@/lib/ai";
+import { extractStructuredList } from "@/lib/structured-extract";
 import {
   briefExistsForItem,
   createBriefRecord,
   createItemRecordResult,
   getSourceById,
+  getTaskById,
   listSources,
   markSourceSyncResult,
   type SourceRecord,
@@ -40,7 +42,7 @@ function getSyncErrorMessage(error: unknown): string {
   return "Unknown sync error.";
 }
 
-export function storeSourceItemsAndCreateBriefs(
+export async function storeSourceItemsAndCreateBriefs(
   store: Store,
   source: {
     id: string;
@@ -69,10 +71,29 @@ export function storeSourceItemsAndCreateBriefs(
     (item) => !briefExistsForItem(store, item.id),
   );
 
-  const briefs = buildBriefsFromItems(source.taskId, unbriefedItems);
+  if (unbriefedItems.length === 0) {
+    return {
+      insertedItemCount: insertedItems.length,
+      createdBriefCount: 0,
+    };
+  }
+
+  const task = getTaskById(store, source.taskId);
+  if (!task) {
+    throw new Error(`Task with ID ${source.taskId} not found.`);
+  }
+
+  const briefs = await generateBriefsFromItems(task, unbriefedItems);
 
   for (const brief of briefs) {
-    createBriefRecord(store, brief);
+    createBriefRecord(store, {
+      taskId: source.taskId,
+      itemIds: brief.itemIds,
+      title: brief.title,
+      summary: brief.summary,
+      whyItMatters: brief.whyItMatters,
+      sourceCitations: brief.sourceCitations,
+    });
   }
 
   return {
@@ -116,6 +137,16 @@ async function syncPageSource(
   ];
 }
 
+async function syncStructuredSource(
+  source: SourceRecord,
+  fetchImpl: typeof fetchSourceFeed,
+) {
+  const html = await fetchImpl(source.url, {
+    signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
+  });
+  return await extractStructuredList(html, source.url);
+}
+
 export async function syncSourceById(
   store: Store,
   sourceId: string,
@@ -155,9 +186,11 @@ export async function syncSourceById(
     const items =
       source.sourceType === "PAGE"
         ? await syncPageSource(source, fetchImpl)
+        : source.sourceType === "STRUCTURED"
+        ? await syncStructuredSource(source, fetchImpl)
         : await syncRssSource(source, fetchImpl);
 
-    const summary = storeSourceItemsAndCreateBriefs(store, source, items);
+    const summary = await storeSourceItemsAndCreateBriefs(store, source, items);
 
     markSourceSyncResult(store, {
       sourceId: source.id,

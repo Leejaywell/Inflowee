@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ChatDrawer } from "@/components/chat-drawer";
 import {
   defaultStore,
   getBriefById,
   listBriefItemIds,
+  getOrCreateChatThread,
+  listChatMessages,
 } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +25,8 @@ export default async function BriefDetailPage({
   }
 
   const itemIds = listBriefItemIds(defaultStore, briefId);
+  const chatThread = getOrCreateChatThread(defaultStore, "brief", briefId);
+  const chatMessages = listChatMessages(defaultStore, chatThread.id);
 
   return (
     <div className="grid gap-6">
@@ -85,7 +90,7 @@ export default async function BriefDetailPage({
           </div>
 
           <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-            <h2 className="text-lg font-semibold">Export</h2>
+            <h2 className="text-lg font-semibold">Actions</h2>
             <div className="mt-4 flex flex-wrap gap-3">
               <Link
                 href={`/inbox/${briefId}/html`}
@@ -99,6 +104,11 @@ export default async function BriefDetailPage({
               >
                 Image card
               </Link>
+              <ChatDrawer
+                briefId={briefId}
+                briefTitle={brief.title}
+                initialMessages={chatMessages}
+              />
             </div>
           </div>
 

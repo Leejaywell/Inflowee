@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { createSpace, createTask, deleteSpace, deleteTask } from "@/app/actions";
 import { listSpacesWithTasks, type TaskType } from "@/lib/store";
 
@@ -210,8 +211,8 @@ export default async function Home({ searchParams }: HomeProps) {
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1">
-                        <h3 className="text-lg font-semibold text-stone-950">
-                          {space.name}
+                        <h3 className="text-lg font-semibold text-stone-950 hover:text-[#0057ff]">
+                          <Link href={`/spaces/${space.id}`}>{space.name}</Link>
                         </h3>
                         <p className="max-w-2xl text-sm leading-6 text-stone-600">
                           {space.description || "No description yet."}
@@ -242,8 +243,10 @@ export default async function Home({ searchParams }: HomeProps) {
                             className="rounded-2xl bg-white px-4 py-4 shadow-[0_8px_24px_rgba(33,24,9,0.05)]"
                           >
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <h4 className="font-medium text-stone-950">
-                                {task.title}
+                              <h4 className="font-medium text-stone-950 hover:text-[#0057ff]">
+                                <Link href={`/spaces/${space.id}/tasks/${task.id}`}>
+                                  {task.title}
+                                </Link>
                               </h4>
                               <div className="flex items-center gap-2">
                                 <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">

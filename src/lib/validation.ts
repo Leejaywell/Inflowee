@@ -24,7 +24,7 @@ export const createTaskSchema = z.object({
 
 export const createSourceSchema = z.object({
   taskId: z.string().trim().min(1, "Select a task."),
-  sourceType: z.enum(["RSS", "PAGE"]),
+  sourceType: z.enum(["RSS", "PAGE", "STRUCTURED"]),
   title: z
     .string()
     .trim()

@@ -26,6 +26,13 @@ import {
   listSourcesByTask,
   markBriefRead,
   markBriefUnread,
+  getTaskById,
+  getTaskProfile,
+  saveTaskProfile,
+  updateTaskControls,
+  getOrCreateChatThread,
+  createChatMessage,
+  listChatMessages,
 } from "@/lib/store";
 import { createSourceSchema } from "@/lib/validation";
 
@@ -500,6 +507,109 @@ describe("cascade deletes", () => {
       expect(hasTaskRecord(fixture.store, fixture.taskId)).toBe(false);
     } finally {
       fixture.cleanup();
+    }
+  });
+});
+
+describe("store expansions for AI features", () => {
+  it("saves and retrieves task profiles", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "AI Dev" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Coding Agents",
+        taskType: "TOPIC",
+        userPrompt: "Follow AI coding assistant news",
+      });
+
+      const originalProfile = getTaskProfile(store, taskId);
+      expect(originalProfile).toBeNull();
+
+      const newProfile = {
+        keywords: ["ai", "agents", "codegen"],
+        suggestedQueries: ["cursor agent", "devin release"],
+      };
+
+      saveTaskProfile(store, taskId, newProfile);
+      const retrieved = getTaskProfile(store, taskId);
+      expect(retrieved).toEqual(newProfile);
+
+      const task = getTaskById(store, taskId);
+      expect(task?.taskProfile).toEqual(newProfile);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("updates task controls", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "AI Dev" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Coding Agents",
+        taskType: "TOPIC",
+        userPrompt: "Follow AI coding assistant news",
+      });
+
+      const initial = getTaskById(store, taskId);
+      expect(initial?.relevanceLevel).toBe(3);
+      expect(initial?.summaryPreference).toBe("balanced");
+
+      updateTaskControls(store, taskId, 5, "detailed");
+      const updated = getTaskById(store, taskId);
+      expect(updated?.relevanceLevel).toBe(5);
+      expect(updated?.summaryPreference).toBe("detailed");
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("manages chat threads and messages with citations", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const thread = getOrCreateChatThread(store, "task", "task-123");
+      expect(thread.scopeType).toBe("task");
+      expect(thread.scopeId).toBe("task-123");
+      expect(thread.id).toBeDefined();
+
+      const secondThread = getOrCreateChatThread(store, "task", "task-123");
+      expect(secondThread.id).toBe(thread.id);
+
+      createChatMessage(store, {
+        threadId: thread.id,
+        role: "user",
+        content: "What is Devin?",
+      });
+
+      createChatMessage(store, {
+        threadId: thread.id,
+        role: "assistant",
+        content: "Devin is an autonomous AI software engineer.",
+        citations: ["https://cognition.labs/blog/introducing-devin"],
+      });
+
+      const messages = listChatMessages(store, thread.id);
+      expect(messages).toHaveLength(2);
+      expect(messages[0].role).toBe("user");
+      expect(messages[0].content).toBe("What is Devin?");
+      expect(messages[0].citations).toBeNull();
+
+      expect(messages[1].role).toBe("assistant");
+      expect(messages[1].content).toBe("Devin is an autonomous AI software engineer.");
+      expect(messages[1].citations).toEqual(["https://cognition.labs/blog/introducing-devin"]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
     }
   });
 });
