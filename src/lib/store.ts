@@ -67,6 +67,15 @@ type BriefRow = {
   space_name?: string;
 };
 
+type RecommendationBundleRow = {
+  id: string;
+  task_id: string;
+  position: number;
+  bundle_json: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ChatThreadRow = {
   id: string;
   scope_type: string;
@@ -86,6 +95,19 @@ export type ChatMessageRow = {
 export type TaskProfile = {
   keywords: string[];
   suggestedQueries: string[];
+};
+
+export type RecommendationSource = {
+  title: string;
+  url: string;
+  sourceType: SourceType;
+};
+
+export type RecommendationBundle = {
+  title: string;
+  description: string;
+  rationale: string;
+  sources: RecommendationSource[];
 };
 
 export type TaskRecord = {
@@ -232,6 +254,12 @@ function mapBrief(row: BriefRow): BriefRecord {
     taskTitle: row.task_title,
     spaceName: row.space_name,
   };
+}
+
+function mapRecommendationBundle(
+  row: RecommendationBundleRow,
+): RecommendationBundle {
+  return JSON.parse(row.bundle_json) as RecommendationBundle;
 }
 
 function mapChatThread(row: ChatThreadRow): ChatThreadRecord {
@@ -442,12 +470,23 @@ export function createStore(
         FOREIGN KEY(thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS recommendation_bundles (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        bundle_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);
+      CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);
     `);
 
     migrateSourcesTable(nextDatabase);
@@ -458,6 +497,7 @@ export function createStore(
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -1008,6 +1048,64 @@ export function saveTaskProfile(
   store.database
     .prepare("UPDATE tasks SET task_profile = ?, updated_at = ? WHERE id = ?")
     .run(JSON.stringify(profile), timestamp, taskId);
+}
+
+export function replaceRecommendationBundles(
+  store: Store,
+  taskId: string,
+  bundles: RecommendationBundle[],
+): void {
+  const deleteStatement = store.database.prepare(
+    "DELETE FROM recommendation_bundles WHERE task_id = ?",
+  );
+  const insertStatement = store.database.prepare(
+    `INSERT INTO recommendation_bundles (
+      id,
+      task_id,
+      position,
+      bundle_json,
+      created_at,
+      updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)`,
+  );
+
+  store.database.exec("BEGIN");
+
+  try {
+    deleteStatement.run(taskId);
+
+    for (const [index, bundle] of bundles.entries()) {
+      const timestamp = new Date().toISOString();
+      insertStatement.run(
+        randomUUID(),
+        taskId,
+        index,
+        JSON.stringify(bundle),
+        timestamp,
+        timestamp,
+      );
+    }
+
+    store.database.exec("COMMIT");
+  } catch (error) {
+    store.database.exec("ROLLBACK");
+    throw error;
+  }
+}
+
+export function listRecommendationBundlesByTask(
+  store: Store,
+  taskId: string,
+): RecommendationBundle[] {
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM recommendation_bundles
+       WHERE task_id = ?
+       ORDER BY position ASC, created_at ASC`,
+    )
+    .all(taskId) as RecommendationBundleRow[];
+
+  return rows.map(mapRecommendationBundle);
 }
 
 export function updateTaskControls(

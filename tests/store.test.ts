@@ -515,7 +515,10 @@ describe("cascade deletes", () => {
 describe("store expansions for AI features", () => {
   it("saves and retrieves task profiles", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
+    const filename = join(tempDirectory, "store.sqlite");
+    const store = createStore(filename);
+    let reopenedStore: ReturnType<typeof createStore> | null = null;
+    let originalStoreClosed = false;
 
     try {
       const spaceId = createSpaceRecord(store, { name: "AI Dev" });
@@ -535,13 +538,20 @@ describe("store expansions for AI features", () => {
       };
 
       saveTaskProfile(store, taskId, newProfile);
-      const retrieved = getTaskProfile(store, taskId);
+      store.database.close();
+      originalStoreClosed = true;
+
+      reopenedStore = createStore(filename);
+      const retrieved = getTaskProfile(reopenedStore, taskId);
       expect(retrieved).toEqual(newProfile);
 
-      const task = getTaskById(store, taskId);
+      const task = getTaskById(reopenedStore, taskId);
       expect(task?.taskProfile).toEqual(newProfile);
     } finally {
-      store.database.close();
+      reopenedStore?.database.close();
+      if (!originalStoreClosed) {
+        store.database.close();
+      }
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   });
