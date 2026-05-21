@@ -2,6 +2,7 @@ import { buildBriefsFromItems } from "@/lib/briefs";
 import { parseFeedItems } from "@/lib/rss";
 import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
 import {
+  briefExistsForItem,
   createBriefRecord,
   createItemRecordResult,
   getSourceById,
@@ -62,7 +63,11 @@ export function storeSourceItemsAndCreateBriefs(
     return storedItem ? [storedItem] : [];
   });
 
-  const briefs = buildBriefsFromItems(source.taskId, insertedItems);
+  const unbriefedItems = insertedItems.filter(
+    (item) => !briefExistsForItem(store, item.id),
+  );
+
+  const briefs = buildBriefsFromItems(source.taskId, unbriefedItems);
 
   for (const brief of briefs) {
     createBriefRecord(store, brief);

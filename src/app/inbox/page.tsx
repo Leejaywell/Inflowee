@@ -42,7 +42,12 @@ export default async function InboxPage() {
                     {brief.spaceName} / {brief.taskTitle}
                   </p>
                   <h2 className="text-2xl font-semibold text-stone-950">
-                    {brief.title}
+                    <Link
+                      href={`/inbox/${brief.id}`}
+                      className="transition hover:text-[#0057ff]"
+                    >
+                      {brief.title}
+                    </Link>
                   </h2>
                 </div>
 

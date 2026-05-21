@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { defaultStore, listBriefs } from "@/lib/store";
+import { defaultStore, getBriefById } from "@/lib/store";
 
 function escapeHtml(value: string): string {
   return value
@@ -16,7 +16,7 @@ export async function GET(
   context: { params: Promise<{ briefId: string }> },
 ) {
   const { briefId } = await context.params;
-  const brief = listBriefs(defaultStore).find((entry) => entry.id === briefId);
+  const brief = getBriefById(defaultStore, briefId);
 
   if (!brief) {
     return new NextResponse("Brief not found", { status: 404 });

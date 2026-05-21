@@ -720,3 +720,47 @@ export function listSources(store: Store = defaultStore): SourceRecord[] {
 
   return rows.map(mapSource);
 }
+
+export function getBriefById(
+  store: Store,
+  briefId: string,
+): BriefRecord | null {
+  const row = store.database
+    .prepare(
+      `SELECT
+         briefs.*,
+         tasks.title AS task_title,
+         spaces.name AS space_name
+       FROM briefs
+       JOIN tasks ON briefs.task_id = tasks.id
+       JOIN spaces ON tasks.space_id = spaces.id
+       WHERE briefs.id = ?
+       LIMIT 1`,
+    )
+    .get(briefId) as BriefRow | undefined;
+
+  return row ? mapBrief(row) : null;
+}
+
+export function listBriefItemIds(
+  store: Store,
+  briefId: string,
+): string[] {
+  const rows = store.database
+    .prepare("SELECT item_id FROM brief_items WHERE brief_id = ?")
+    .all(briefId) as Array<{ item_id: string }>;
+
+  return rows.map((row) => row.item_id);
+}
+
+export function briefExistsForItem(
+  store: Store,
+  itemId: string,
+): boolean {
+  return Boolean(
+    store.database
+      .prepare("SELECT 1 FROM brief_items WHERE item_id = ? LIMIT 1")
+      .get(itemId),
+  );
+}
+

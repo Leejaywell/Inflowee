@@ -81,4 +81,53 @@ describe("syncSourceById", () => {
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   });
+
+  it("does not create duplicate briefs when re-syncing", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "Space" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Task",
+        taskType: "TOPIC",
+        userPrompt: "Prompt",
+      });
+      const sourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      const xml = `
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>Post A</title>
+              <link>https://example.com/a</link>
+              <description>Content A</description>
+            </item>
+          </channel>
+        </rss>
+      `;
+      const fetchImpl = vi.fn().mockResolvedValue(xml);
+
+      const first = await syncSourceById(store, sourceId, {
+        fetchSourceFeedImpl: fetchImpl,
+      });
+      expect(first).toMatchObject({ ok: true, createdBriefCount: 1 });
+
+      const second = await syncSourceById(store, sourceId, {
+        fetchSourceFeedImpl: fetchImpl,
+      });
+      expect(second).toMatchObject({ ok: true, createdBriefCount: 0 });
+
+      expect(listBriefs(store)).toHaveLength(1);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
 });

@@ -6,11 +6,16 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import {
+  briefExistsForItem,
+  createBriefRecord,
+  createItemRecord,
   createSourceRecord,
   createSpaceRecord,
   createStore,
   createTaskRecord,
+  getBriefById,
   hasTaskRecord,
+  listBriefItemIds,
   listSources,
   listSourcesByTask,
 } from "@/lib/store";
@@ -202,6 +207,122 @@ describe("store source persistence", () => {
           url: "https://example.com/feed.xml",
         }),
       ).toThrow();
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("store brief queries", () => {
+  it("retrieves a brief by id with space and task context", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "AI Watch" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Agent launches",
+        taskType: "TOPIC",
+        userPrompt: "Track launches",
+      });
+      const sourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      createItemRecord(store, {
+        sourceId,
+        title: "Launch roundup",
+        canonicalUrl: "https://example.com/launch",
+        summary: "Latest launches.",
+        publishedAt: "2026-05-21T08:00:00.000Z",
+      });
+
+      const itemRows = store.database
+        .prepare("SELECT id FROM items WHERE source_id = ?")
+        .all(sourceId) as Array<{ id: string }>;
+
+      const briefId = createBriefRecord(store, {
+        taskId,
+        itemIds: [itemRows[0].id],
+        title: "Launch roundup",
+        summary: "Latest launches.",
+        whyItMatters: "New signal.",
+        sourceCitations: ["https://example.com/launch"],
+      });
+
+      const brief = getBriefById(store, briefId);
+      expect(brief).toMatchObject({
+        id: briefId,
+        taskId,
+        title: "Launch roundup",
+        spaceName: "AI Watch",
+        taskTitle: "Agent launches",
+      });
+
+      expect(getBriefById(store, "nonexistent")).toBeNull();
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("lists brief item ids and checks existence", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "Space" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Task",
+        taskType: "TOPIC",
+        userPrompt: "Prompt",
+      });
+      const sourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      createItemRecord(store, {
+        sourceId,
+        title: "Item A",
+        canonicalUrl: "https://example.com/a",
+      });
+      createItemRecord(store, {
+        sourceId,
+        title: "Item B",
+        canonicalUrl: "https://example.com/b",
+      });
+
+      const itemRows = store.database
+        .prepare("SELECT id FROM items WHERE source_id = ? ORDER BY created_at")
+        .all(sourceId) as Array<{ id: string }>;
+
+      const briefId = createBriefRecord(store, {
+        taskId,
+        itemIds: [itemRows[0].id, itemRows[1].id],
+        title: "Combined brief",
+        summary: "Two items.",
+        whyItMatters: "Signal.",
+        sourceCitations: ["https://example.com/a", "https://example.com/b"],
+      });
+
+      expect(listBriefItemIds(store, briefId)).toHaveLength(2);
+      expect(listBriefItemIds(store, briefId)).toEqual(
+        expect.arrayContaining([itemRows[0].id, itemRows[1].id]),
+      );
+      expect(listBriefItemIds(store, "nonexistent")).toEqual([]);
+
+      expect(briefExistsForItem(store, itemRows[0].id)).toBe(true);
+      expect(briefExistsForItem(store, itemRows[1].id)).toBe(true);
+      expect(briefExistsForItem(store, "no-such-item")).toBe(false);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
