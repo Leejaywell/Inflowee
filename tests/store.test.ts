@@ -7,17 +7,25 @@ import { DatabaseSync } from "node:sqlite";
 
 import {
   briefExistsForItem,
+  countUnreadBriefs,
   createBriefRecord,
   createItemRecord,
   createSourceRecord,
   createSpaceRecord,
   createStore,
   createTaskRecord,
+  deleteBrief,
+  deleteSource,
+  deleteSpace,
+  deleteTask,
   getBriefById,
   hasTaskRecord,
   listBriefItemIds,
+  listBriefsFiltered,
   listSources,
   listSourcesByTask,
+  markBriefRead,
+  markBriefUnread,
 } from "@/lib/store";
 import { createSourceSchema } from "@/lib/validation";
 
@@ -326,6 +334,172 @@ describe("store brief queries", () => {
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+});
+
+function seedBriefFixture() {
+  const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+  const store = createStore(join(tempDirectory, "store.sqlite"));
+
+  const spaceId = createSpaceRecord(store, { name: "AI Watch" });
+  const taskId = createTaskRecord(store, {
+    spaceId,
+    title: "Agent launches",
+    taskType: "TOPIC",
+    userPrompt: "Track launches",
+  });
+  const sourceId = createSourceRecord(store, {
+    taskId,
+    sourceType: "RSS",
+    title: "Feed",
+    url: "https://example.com/feed.xml",
+  });
+
+  createItemRecord(store, {
+    sourceId,
+    title: "Item A",
+    canonicalUrl: "https://example.com/a",
+  });
+
+  const itemRows = store.database
+    .prepare("SELECT id FROM items WHERE source_id = ?")
+    .all(sourceId) as Array<{ id: string }>;
+
+  const briefId = createBriefRecord(store, {
+    taskId,
+    itemIds: [itemRows[0].id],
+    title: "Brief A",
+    summary: "Summary A.",
+    whyItMatters: "Signal.",
+    sourceCitations: ["https://example.com/a"],
+  });
+
+  return {
+    store,
+    tempDirectory,
+    spaceId,
+    taskId,
+    sourceId,
+    briefId,
+    itemId: itemRows[0].id,
+    cleanup: () => {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    },
+  };
+}
+
+describe("read/unread and filtered briefs", () => {
+  it("marks a brief as read and unread", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      const brief = getBriefById(fixture.store, fixture.briefId);
+      expect(brief?.isRead).toBe(false);
+
+      markBriefRead(fixture.store, fixture.briefId);
+      expect(getBriefById(fixture.store, fixture.briefId)?.isRead).toBe(true);
+
+      markBriefUnread(fixture.store, fixture.briefId);
+      expect(getBriefById(fixture.store, fixture.briefId)?.isRead).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("counts unread briefs", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      expect(countUnreadBriefs(fixture.store)).toBe(1);
+
+      markBriefRead(fixture.store, fixture.briefId);
+      expect(countUnreadBriefs(fixture.store)).toBe(0);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("filters briefs by task and unread status", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      // All briefs
+      expect(listBriefsFiltered(fixture.store)).toHaveLength(1);
+
+      // By task
+      expect(
+        listBriefsFiltered(fixture.store, { taskId: fixture.taskId }),
+      ).toHaveLength(1);
+      expect(
+        listBriefsFiltered(fixture.store, { taskId: "nonexistent" }),
+      ).toHaveLength(0);
+
+      // Unread only
+      expect(
+        listBriefsFiltered(fixture.store, { unreadOnly: true }),
+      ).toHaveLength(1);
+
+      markBriefRead(fixture.store, fixture.briefId);
+      expect(
+        listBriefsFiltered(fixture.store, { unreadOnly: true }),
+      ).toHaveLength(0);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
+
+describe("cascade deletes", () => {
+  it("deletes a brief", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      deleteBrief(fixture.store, fixture.briefId);
+      expect(getBriefById(fixture.store, fixture.briefId)).toBeNull();
+      // Item should still exist
+      expect(briefExistsForItem(fixture.store, fixture.itemId)).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("deletes a source and cascades to items and brief_items", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      deleteSource(fixture.store, fixture.sourceId);
+      expect(listSources(fixture.store)).toHaveLength(0);
+      // Brief should still exist (its brief_items orphaned, but CASCADE on items removes brief_items)
+      expect(listBriefItemIds(fixture.store, fixture.briefId)).toHaveLength(0);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("deletes a task and cascades to sources, items, and briefs", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      deleteTask(fixture.store, fixture.taskId);
+      expect(listSources(fixture.store)).toHaveLength(0);
+      expect(getBriefById(fixture.store, fixture.briefId)).toBeNull();
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("deletes a space and cascades everything downstream", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      deleteSpace(fixture.store, fixture.spaceId);
+      expect(listSources(fixture.store)).toHaveLength(0);
+      expect(getBriefById(fixture.store, fixture.briefId)).toBeNull();
+      expect(hasTaskRecord(fixture.store, fixture.taskId)).toBe(false);
+    } finally {
+      fixture.cleanup();
     }
   });
 });

@@ -11,9 +11,10 @@ const navigationItems = [
 
 type AppShellProps = {
   children: React.ReactNode;
+  unreadCount?: number;
 };
 
-export function AppShell({ children }: AppShellProps) {
+export function AppShell({ children, unreadCount = 0 }: AppShellProps) {
   const pathname = usePathname();
 
   return (
@@ -37,13 +38,18 @@ export function AppShell({ children }: AppShellProps) {
                 <Link
                   key={item.href}
                   href={item.href}
-                  className={`inline-flex h-10 items-center rounded-full px-4 text-sm font-medium transition ${
+                  className={`inline-flex h-10 items-center gap-2 rounded-full px-4 text-sm font-medium transition ${
                     isActive
                       ? "bg-stone-950 text-stone-50"
                       : "bg-stone-100 text-stone-600 hover:bg-stone-200"
                   }`}
                 >
                   {item.label}
+                  {item.href === "/inbox" && unreadCount > 0 && (
+                    <span className="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-[#0057ff] px-1.5 text-xs font-semibold text-white">
+                      {unreadCount > 99 ? "99+" : unreadCount}
+                    </span>
+                  )}
                 </Link>
               );
             })}

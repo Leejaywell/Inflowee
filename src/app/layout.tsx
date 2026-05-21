@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { AppShell } from "@/components/app-shell";
+import { countUnreadBriefs, defaultStore } from "@/lib/store";
 
 import "./globals.css";
 
@@ -14,10 +15,12 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const unreadCount = countUnreadBriefs(defaultStore);
+
   return (
     <html lang="en" className="h-full antialiased">
       <body className="min-h-full bg-stone-100 text-stone-950">
-        <AppShell>{children}</AppShell>
+        <AppShell unreadCount={unreadCount}>{children}</AppShell>
       </body>
     </html>
   );

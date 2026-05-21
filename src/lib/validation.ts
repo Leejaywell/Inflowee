@@ -21,9 +21,10 @@ export const createTaskSchema = z.object({
     .max(600, "Prompt must be 600 characters or fewer."),
 });
 
+
 export const createSourceSchema = z.object({
   taskId: z.string().trim().min(1, "Select a task."),
-  sourceType: z.literal("RSS"),
+  sourceType: z.enum(["RSS", "PAGE"]),
   title: z
     .string()
     .trim()

@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type TaskType = "TOPIC" | "QUESTION";
-export type SourceType = "RSS";
+export type SourceType = "RSS" | "PAGE";
 export type SourceStatus = "idle" | "success" | "error";
 export type Store = {
   database: DatabaseSync;
@@ -60,6 +60,7 @@ type BriefRow = {
   summary: string;
   why_it_matters: string;
   source_citations: string;
+  is_read: number;
   created_at: string;
   task_title?: string;
   space_name?: string;
@@ -116,6 +117,7 @@ export type BriefRecord = {
   summary: string;
   whyItMatters: string;
   sourceCitations: string[];
+  isRead: boolean;
   createdAt: string;
   taskTitle?: string;
   spaceName?: string;
@@ -139,7 +141,7 @@ const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK(source_type IN ('RSS')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE')),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
@@ -186,6 +188,7 @@ function mapBrief(row: BriefRow): BriefRecord {
     summary: row.summary,
     whyItMatters: row.why_it_matters,
     sourceCitations: JSON.parse(row.source_citations) as string[],
+    isRead: Boolean(row.is_read),
     createdAt: row.created_at,
     taskTitle: row.task_title,
     spaceName: row.space_name,
@@ -210,7 +213,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
-      source_type TEXT NOT NULL CHECK(source_type IN ('RSS')),
+      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE')),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
@@ -255,6 +258,20 @@ function migrateSourcesTable(database: DatabaseSync) {
     COMMIT;
     PRAGMA foreign_keys = ON;
   `);
+}
+
+function migrateBriefsTable(database: DatabaseSync) {
+  const briefsTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'briefs'",
+    )
+    .get() as { sql: string } | undefined;
+
+  if (!briefsTable || briefsTable.sql.includes("is_read")) {
+    return;
+  }
+
+  database.exec("ALTER TABLE briefs ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0;");
 }
 
 export function createStore(
@@ -311,6 +328,7 @@ export function createStore(
         summary TEXT NOT NULL,
         why_it_matters TEXT NOT NULL,
         source_citations TEXT NOT NULL,
+        is_read INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
       );
@@ -331,6 +349,7 @@ export function createStore(
     `);
 
     migrateSourcesTable(nextDatabase);
+    migrateBriefsTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
@@ -764,3 +783,76 @@ export function briefExistsForItem(
   );
 }
 
+// --- Slice A: read/unread, filtered listing, unread count ---
+
+export function markBriefRead(store: Store, briefId: string): void {
+  store.database
+    .prepare("UPDATE briefs SET is_read = 1 WHERE id = ?")
+    .run(briefId);
+}
+
+export function markBriefUnread(store: Store, briefId: string): void {
+  store.database
+    .prepare("UPDATE briefs SET is_read = 0 WHERE id = ?")
+    .run(briefId);
+}
+
+export function countUnreadBriefs(store: Store): number {
+  const row = store.database
+    .prepare("SELECT COUNT(*) AS count FROM briefs WHERE is_read = 0")
+    .get() as { count: number };
+
+  return row.count;
+}
+
+export function listBriefsFiltered(
+  store: Store,
+  filters: { taskId?: string; unreadOnly?: boolean } = {},
+): BriefRecord[] {
+  const conditions: string[] = [];
+  const params: string[] = [];
+
+  if (filters.taskId) {
+    conditions.push("briefs.task_id = ?");
+    params.push(filters.taskId);
+  }
+  if (filters.unreadOnly) {
+    conditions.push("briefs.is_read = 0");
+  }
+
+  const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+  const rows = store.database
+    .prepare(
+      `SELECT
+         briefs.*,
+         tasks.title AS task_title,
+         spaces.name AS space_name
+       FROM briefs
+       JOIN tasks ON briefs.task_id = tasks.id
+       JOIN spaces ON tasks.space_id = spaces.id
+       ${where}
+       ORDER BY briefs.created_at DESC`,
+    )
+    .all(...params) as BriefRow[];
+
+  return rows.map(mapBrief);
+}
+
+// --- Slice A + B: delete functions ---
+
+export function deleteBrief(store: Store, briefId: string): void {
+  store.database.prepare("DELETE FROM briefs WHERE id = ?").run(briefId);
+}
+
+export function deleteSource(store: Store, sourceId: string): void {
+  store.database.prepare("DELETE FROM sources WHERE id = ?").run(sourceId);
+}
+
+export function deleteTask(store: Store, taskId: string): void {
+  store.database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+}
+
+export function deleteSpace(store: Store, spaceId: string): void {
+  store.database.prepare("DELETE FROM spaces WHERE id = ?").run(spaceId);
+}

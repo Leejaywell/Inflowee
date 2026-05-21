@@ -8,7 +8,13 @@ import {
   createSpaceRecord,
   createTaskRecord,
   defaultStore,
+  deleteBrief as deleteBriefRecord,
+  deleteSource as deleteSourceRecord,
+  deleteSpace as deleteSpaceRecord,
+  deleteTask as deleteTaskRecord,
   hasTaskRecord,
+  markBriefRead,
+  markBriefUnread,
 } from "@/lib/store";
 import { syncSourceById } from "@/lib/source-ingestion";
 import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
@@ -97,4 +103,54 @@ export async function runSourceSync(formData: FormData) {
   }
 
   redirect("/sources?synced=source");
+}
+
+export async function toggleBriefRead(formData: FormData) {
+  const briefId = getString(formData, "briefId");
+  const isRead = getString(formData, "isRead");
+
+  if (isRead === "1") {
+    markBriefUnread(defaultStore, briefId);
+  } else {
+    markBriefRead(defaultStore, briefId);
+  }
+
+  revalidatePath("/inbox");
+}
+
+export async function deleteBrief(formData: FormData) {
+  const briefId = getString(formData, "briefId");
+  deleteBriefRecord(defaultStore, briefId);
+
+  revalidatePath("/inbox");
+  redirect("/inbox");
+}
+
+export async function deleteSource(formData: FormData) {
+  const sourceId = getString(formData, "sourceId");
+  deleteSourceRecord(defaultStore, sourceId);
+
+  revalidatePath("/sources");
+  revalidatePath("/inbox");
+  redirect("/sources");
+}
+
+export async function deleteTask(formData: FormData) {
+  const taskId = getString(formData, "taskId");
+  deleteTaskRecord(defaultStore, taskId);
+
+  revalidatePath("/");
+  revalidatePath("/sources");
+  revalidatePath("/inbox");
+  redirect("/");
+}
+
+export async function deleteSpace(formData: FormData) {
+  const spaceId = getString(formData, "spaceId");
+  deleteSpaceRecord(defaultStore, spaceId);
+
+  revalidatePath("/");
+  revalidatePath("/sources");
+  revalidatePath("/inbox");
+  redirect("/");
 }

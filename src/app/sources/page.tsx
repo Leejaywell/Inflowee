@@ -1,4 +1,4 @@
-import { createSource, runSourceSync } from "@/app/actions";
+import { createSource, deleteSource, runSourceSync } from "@/app/actions";
 import {
   defaultStore,
   listSources,
@@ -111,9 +111,9 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Add an RSS source</h2>
+            <h2 className="text-xl font-semibold">Add a source</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Source creation is scoped to existing tasks.
+              Attach an RSS feed or web page to a task.
             </p>
           </div>
 
@@ -135,7 +135,17 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             </select>
           </label>
 
-          <input name="sourceType" type="hidden" value="RSS" />
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Source type</span>
+            <select
+              name="sourceType"
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              defaultValue="RSS"
+            >
+              <option value="RSS">RSS Feed</option>
+              <option value="PAGE">Web Page</option>
+            </select>
+          </label>
 
           <label className="grid gap-2 text-sm">
             <span className="font-medium text-stone-700">Source title</span>
@@ -221,6 +231,9 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                               {source.title}
                             </h4>
                             <div className="flex items-center gap-2">
+                              <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">
+                                {source.sourceType}
+                              </span>
                               <span
                                 className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[source.status]}`}
                               >
@@ -234,6 +247,16 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                                 />
                                 <button className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
                                   Sync now
+                                </button>
+                              </form>
+                              <form action={deleteSource}>
+                                <input
+                                  name="sourceId"
+                                  type="hidden"
+                                  value={source.id}
+                                />
+                                <button className="inline-flex h-9 items-center justify-center rounded-xl border border-rose-200 px-3 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50">
+                                  Delete
                                 </button>
                               </form>
                             </div>

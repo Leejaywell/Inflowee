@@ -1,4 +1,5 @@
 import { buildBriefsFromItems } from "@/lib/briefs";
+import { extractPageContent } from "@/lib/page-extract";
 import { parseFeedItems } from "@/lib/rss";
 import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
 import {
@@ -79,6 +80,41 @@ export function storeSourceItemsAndCreateBriefs(
   };
 }
 
+async function syncRssSource(
+  source: SourceRecord,
+  fetchImpl: typeof fetchSourceFeed,
+) {
+  const xml = await fetchImpl(source.url, {
+    signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
+  });
+  const items = parseFeedItems(xml);
+
+  if (items.length === 0) {
+    throw new Error("Feed returned no supported items.");
+  }
+
+  return items;
+}
+
+async function syncPageSource(
+  source: SourceRecord,
+  fetchImpl: typeof fetchSourceFeed,
+) {
+  const html = await fetchImpl(source.url, {
+    signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
+  });
+  const page = extractPageContent(html, source.url);
+
+  return [
+    {
+      title: page.title,
+      canonicalUrl: page.canonicalUrl,
+      summary: page.summary,
+      publishedAt: new Date().toISOString(),
+    },
+  ];
+}
+
 export async function syncSourceById(
   store: Store,
   sourceId: string,
@@ -113,15 +149,12 @@ export async function syncSourceById(
   }
 
   try {
-    const fetchSourceFeedImpl = options?.fetchSourceFeedImpl ?? fetchSourceFeed;
-    const xml = await fetchSourceFeedImpl(source.url, {
-      signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
-    });
-    const items = parseFeedItems(xml);
+    const fetchImpl = options?.fetchSourceFeedImpl ?? fetchSourceFeed;
 
-    if (items.length === 0) {
-      throw new Error("Feed returned no supported items.");
-    }
+    const items =
+      source.sourceType === "PAGE"
+        ? await syncPageSource(source, fetchImpl)
+        : await syncRssSource(source, fetchImpl);
 
     const summary = storeSourceItemsAndCreateBriefs(store, source, items);
 

@@ -11,6 +11,7 @@ describe("BriefCard", () => {
     summary: "Latest launches and product updates from the AI coding agent space.",
     whyItMatters: "New signal captured from subscribed RSS sources.",
     sourceCitations: ["https://example.com/posts/launch-roundup"],
+    isRead: false,
     createdAt: "2026-05-21T08:00:00.000Z",
     taskTitle: "Agent launches",
     spaceName: "AI Watch",

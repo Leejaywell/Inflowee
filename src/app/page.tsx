@@ -1,4 +1,4 @@
-import { createSpace, createTask } from "@/app/actions";
+import { createSpace, createTask, deleteSpace, deleteTask } from "@/app/actions";
 import { listSpacesWithTasks, type TaskType } from "@/lib/store";
 
 type HomeProps = {
@@ -217,9 +217,17 @@ export default async function Home({ searchParams }: HomeProps) {
                           {space.description || "No description yet."}
                         </p>
                       </div>
+                    <div className="flex items-center gap-2">
                       <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-stone-500">
                         {space.tasks.length} tasks
                       </span>
+                      <form action={deleteSpace}>
+                        <input name="spaceId" type="hidden" value={space.id} />
+                        <button className="inline-flex h-8 items-center rounded-lg border border-rose-200 px-2.5 text-xs font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50">
+                          Delete
+                        </button>
+                      </form>
+                    </div>
                     </div>
 
                     <div className="mt-4 grid gap-3">
@@ -237,9 +245,17 @@ export default async function Home({ searchParams }: HomeProps) {
                               <h4 className="font-medium text-stone-950">
                                 {task.title}
                               </h4>
-                              <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">
-                                {taskTypeLabels[task.taskType]}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-xs font-medium text-stone-600">
+                                  {taskTypeLabels[task.taskType]}
+                                </span>
+                                <form action={deleteTask}>
+                                  <input name="taskId" type="hidden" value={task.id} />
+                                  <button className="inline-flex h-7 items-center rounded-lg border border-rose-200 px-2 text-xs font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50">
+                                    Delete
+                                  </button>
+                                </form>
+                              </div>
                             </div>
                             <p className="mt-2 text-sm leading-6 text-stone-600">
                               {task.userPrompt}

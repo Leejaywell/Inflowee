@@ -20,7 +20,7 @@ import {
 
 describe("buildBriefsFromItems", () => {
   it("renders the inbox heading", async () => {
-    const view = await InboxPage();
+    const view = await InboxPage({ searchParams: Promise.resolve({}) });
 
     render(view);
 
