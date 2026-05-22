@@ -68,3 +68,12 @@ export const updateSourceScheduleSchema = z.object({
     .min(15, "Sync cadence must be at least 15 minutes.")
     .max(1440, "Sync cadence must be 1440 minutes or fewer."),
 });
+
+export const webhookEndpointSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid webhook URL.")
+  .refine(
+    (value) => value.startsWith("https://"),
+    "Enter a valid https webhook URL.",
+  );

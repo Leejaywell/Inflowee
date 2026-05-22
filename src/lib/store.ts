@@ -12,6 +12,7 @@ export type SourceType =
   | "NEWSLETTER";
 export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
+export type DeliveryStatus = "running" | "success" | "error";
 export type Store = {
   database: DatabaseSync;
 };
@@ -58,6 +59,24 @@ type SyncRunRow = {
   status: SyncRunStatus;
   inserted_item_count: number;
   created_brief_count: number;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
+};
+
+type AppSettingRow = {
+  key: string;
+  value: string;
+  updated_at: string;
+};
+
+type DeliveryLogRow = {
+  id: string;
+  brief_id: string;
+  endpoint: string;
+  payload_type: "html";
+  status: DeliveryStatus;
+  response_status: number | null;
   error: string | null;
   started_at: string;
   finished_at: string | null;
@@ -187,6 +206,23 @@ export type SyncRunRecord = {
   finishedAt: string | null;
 };
 
+export type WebhookSettingsRecord = {
+  endpoint: string | null;
+  updatedAt: string | null;
+};
+
+export type DeliveryLogRecord = {
+  id: string;
+  briefId: string;
+  endpoint: string;
+  payloadType: "html";
+  status: DeliveryStatus;
+  responseStatus: number | null;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
+};
+
 export type ItemRecord = {
   id: string;
   sourceId: string;
@@ -292,6 +328,20 @@ function mapSyncRun(row: SyncRunRow): SyncRunRecord {
     status: row.status,
     insertedItemCount: row.inserted_item_count,
     createdBriefCount: row.created_brief_count,
+    error: row.error,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
+  };
+}
+
+function mapDeliveryLog(row: DeliveryLogRow): DeliveryLogRecord {
+  return {
+    id: row.id,
+    briefId: row.brief_id,
+    endpoint: row.endpoint,
+    payloadType: row.payload_type,
+    status: row.status,
+    responseStatus: row.response_status,
     error: row.error,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
@@ -466,6 +516,26 @@ function migrateSyncRunsTable(database: DatabaseSync) {
       finished_at TEXT,
       FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
     );
+  `);
+}
+
+function migrateDeliveryLogsTable(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS delivery_logs (
+      id TEXT PRIMARY KEY,
+      brief_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      payload_type TEXT NOT NULL CHECK(payload_type IN ('html')),
+      status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+      response_status INTEGER,
+      error TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at
+      ON delivery_logs(brief_id, started_at DESC);
   `);
 }
 
@@ -765,6 +835,25 @@ export function createStore(
         FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS delivery_logs (
+        id TEXT PRIMARY KEY,
+        brief_id TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html')),
+        status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+        response_status INTEGER,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
@@ -773,6 +862,7 @@ export function createStore(
       CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);
       CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);
       CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at ON delivery_logs(brief_id, started_at DESC);
     `);
 
     migrateSourcesTable(nextDatabase);
@@ -781,6 +871,7 @@ export function createStore(
     migrateItemsTable(nextDatabase);
     migrateChatMessagesTable(nextDatabase);
     migrateSyncRunsTable(nextDatabase);
+    migrateDeliveryLogsTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_next_sync_at ON sources(next_sync_at);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
@@ -789,6 +880,7 @@ export function createStore(
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at ON delivery_logs(brief_id, started_at DESC);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -1380,6 +1472,108 @@ export function listRecentSyncRunsBySource(
     .all(sourceId, limit) as SyncRunRow[];
 
   return rows.map(mapSyncRun);
+}
+
+export function saveWebhookSettings(store: Store, endpoint: string) {
+  const updatedAt = new Date().toISOString();
+  store.database
+    .prepare(
+      `INSERT INTO app_settings (key, value, updated_at)
+       VALUES ('webhook_endpoint', ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         value = excluded.value,
+         updated_at = excluded.updated_at`,
+    )
+    .run(endpoint, updatedAt);
+}
+
+export function getWebhookSettings(store: Store): WebhookSettingsRecord {
+  const row = store.database
+    .prepare(
+      `SELECT value, updated_at
+       FROM app_settings
+       WHERE key = 'webhook_endpoint'
+       LIMIT 1`,
+    )
+    .get() as AppSettingRow | undefined;
+
+  return {
+    endpoint: row?.value ?? null,
+    updatedAt: row?.updated_at ?? null,
+  };
+}
+
+export function createDeliveryLog(
+  store: Store,
+  input: {
+    briefId: string;
+    endpoint: string;
+    payloadType: "html";
+  },
+) {
+  const id = randomUUID();
+  const startedAt = new Date().toISOString();
+
+  store.database
+    .prepare(
+      `INSERT INTO delivery_logs (
+        id,
+        brief_id,
+        endpoint,
+        payload_type,
+        status,
+        started_at
+      ) VALUES (?, ?, ?, ?, 'running', ?)`,
+    )
+    .run(id, input.briefId, input.endpoint, input.payloadType, startedAt);
+
+  return id;
+}
+
+export function finishDeliveryLog(
+  store: Store,
+  input: {
+    logId: string;
+    status: "success" | "error";
+    responseStatus?: number | null;
+    error?: string | null;
+  },
+) {
+  store.database
+    .prepare(
+      `UPDATE delivery_logs
+       SET status = ?,
+           response_status = ?,
+           error = ?,
+           finished_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      input.status,
+      input.responseStatus ?? null,
+      input.status === "error"
+        ? (input.error ?? "Unknown delivery error.")
+        : null,
+      new Date().toISOString(),
+      input.logId,
+    );
+}
+
+export function listRecentDeliveryLogsByBrief(
+  store: Store,
+  briefId: string,
+  limit = 10,
+): DeliveryLogRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM delivery_logs
+       WHERE brief_id = ?
+       ORDER BY started_at DESC
+       LIMIT ?`,
+    )
+    .all(briefId, limit) as DeliveryLogRow[];
+
+  return rows.map(mapDeliveryLog);
 }
 
 export function listSources(store: Store = defaultStore): SourceRecord[] {

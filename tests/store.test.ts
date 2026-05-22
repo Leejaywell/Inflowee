@@ -16,15 +16,19 @@ import {
   createSpaceRecord,
   createStore,
   createTaskRecord,
+  createDeliveryLog,
   deleteBrief,
   deleteSource,
   deleteSpace,
   deleteTask,
+  finishDeliveryLog,
   getBriefById,
   findChatThread,
+  getWebhookSettings,
   hasTaskRecord,
   listBriefItemIds,
   listBriefsFiltered,
+  listRecentDeliveryLogsByBrief,
   listItemsByBriefId,
   listItemsBySource,
   listRecentSyncRunsBySource,
@@ -35,6 +39,7 @@ import {
   getSourceById,
   getTaskById,
   getTaskProfile,
+  saveWebhookSettings,
   saveTaskProfile,
   finishSyncRun,
   updateTaskControls,
@@ -42,7 +47,11 @@ import {
   createChatMessage,
   listChatMessages,
 } from "@/lib/store";
-import { createSourceSchema, updateSourceScheduleSchema } from "@/lib/validation";
+import {
+  createSourceSchema,
+  updateSourceScheduleSchema,
+  webhookEndpointSchema,
+} from "@/lib/validation";
 
 describe("store source persistence", () => {
   it("rejects non-http source URLs", () => {
@@ -382,6 +391,59 @@ describe("store source persistence", () => {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
     }
+  });
+});
+
+describe("store delivery persistence", () => {
+  it("stores a single webhook endpoint in app settings", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-delivery-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      saveWebhookSettings(store, "https://example.com/webhook");
+
+      expect(getWebhookSettings(store)).toEqual({
+        endpoint: "https://example.com/webhook",
+        updatedAt: expect.any(String),
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("persists delivery logs for a brief", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      const logId = createDeliveryLog(fixture.store, {
+        briefId: fixture.briefId,
+        endpoint: "https://example.com/webhook",
+        payloadType: "html",
+      });
+
+      finishDeliveryLog(fixture.store, {
+        logId,
+        status: "success",
+        responseStatus: 202,
+      });
+
+      expect(listRecentDeliveryLogsByBrief(fixture.store, fixture.briefId)).toEqual([
+        expect.objectContaining({
+          briefId: fixture.briefId,
+          status: "success",
+          responseStatus: 202,
+        }),
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("validates webhook URLs as https-only", () => {
+    const parsed = webhookEndpointSchema.safeParse("http://example.com/hook");
+
+    expect(parsed.success).toBe(false);
   });
 });
 
