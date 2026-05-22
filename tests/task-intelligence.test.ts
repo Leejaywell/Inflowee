@@ -20,6 +20,7 @@ import {
   type RecommendationBundle,
   type TaskProfile,
 } from "@/lib/store";
+import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
 function createIsolatedStore() {
   const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-task-intelligence-test-"));
@@ -192,6 +193,51 @@ describe("task intelligence store helpers", () => {
       ).toEqual(otherTaskBundles);
     } finally {
       fixture.cleanup();
+    }
+  });
+
+  it("persists task profiles and recommendation bundles through the postgres-backed store", async () => {
+    const fixture = await createIsolatedPostgresStore();
+
+    try {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Signals",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Coding agents",
+        taskType: "TOPIC",
+        userPrompt: "Track coding agent launches and evaluations",
+      });
+
+      const profile: TaskProfile = {
+        keywords: ["coding agents"],
+        suggestedQueries: ["coding agents changelog"],
+      };
+      const bundles: RecommendationBundle[] = [
+        {
+          title: "Agent bundle",
+          description: "Primary feeds",
+          rationale: "Matches the task",
+          sources: [
+            {
+              title: "Feed",
+              url: "https://example.com/feed.xml",
+              sourceType: "RSS",
+            },
+          ],
+        },
+      ];
+
+      await saveTaskProfile(fixture.store, taskId, profile);
+      await replaceRecommendationBundles(fixture.store, taskId, bundles);
+
+      expect(await getTaskProfile(fixture.store, taskId)).toEqual(profile);
+      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+        bundles,
+      );
+    } finally {
+      await fixture.cleanup();
     }
   });
 });

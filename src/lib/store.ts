@@ -2264,6 +2264,21 @@ export async function getBriefById(
   store: Store,
   briefId: string,
 ): Promise<BriefRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.brief.findUnique({
+      where: { id: briefId },
+      include: {
+        task: {
+          include: {
+            space: true,
+          },
+        },
+      },
+    });
+
+    return row ? mapPrismaBrief(row) : null;
+  }
+
   const row = store.database
     .prepare(
       `SELECT
@@ -2285,6 +2300,15 @@ export async function listBriefItemIds(
   store: Store,
   briefId: string,
 ): Promise<string[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.briefItem.findMany({
+      where: { briefId },
+      select: { itemId: true },
+    });
+
+    return rows.map((row) => row.itemId);
+  }
+
   const rows = store.database
     .prepare("SELECT item_id FROM brief_items WHERE brief_id = ?")
     .all(briefId) as Array<{ item_id: string }>;
@@ -2317,6 +2341,14 @@ export async function markBriefRead(
   store: Store,
   briefId: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.brief.update({
+      where: { id: briefId },
+      data: { isRead: true },
+    });
+    return;
+  }
+
   store.database
     .prepare("UPDATE briefs SET is_read = 1 WHERE id = ?")
     .run(briefId);
@@ -2326,12 +2358,26 @@ export async function markBriefUnread(
   store: Store,
   briefId: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.brief.update({
+      where: { id: briefId },
+      data: { isRead: false },
+    });
+    return;
+  }
+
   store.database
     .prepare("UPDATE briefs SET is_read = 0 WHERE id = ?")
     .run(briefId);
 }
 
 export async function countUnreadBriefs(store: Store): Promise<number> {
+  if (store.prisma) {
+    return store.prisma.brief.count({
+      where: { isRead: false },
+    });
+  }
+
   const row = store.database
     .prepare("SELECT COUNT(*) AS count FROM briefs WHERE is_read = 0")
     .get() as { count: number };
@@ -2343,6 +2389,25 @@ export async function listBriefsFiltered(
   store: Store,
   filters: { taskId?: string; unreadOnly?: boolean } = {},
 ): Promise<BriefRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.brief.findMany({
+      where: {
+        ...(filters.taskId ? { taskId: filters.taskId } : {}),
+        ...(filters.unreadOnly ? { isRead: false } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        task: {
+          include: {
+            space: true,
+          },
+        },
+      },
+    });
+
+    return rows.map(mapPrismaBrief);
+  }
+
   const conditions: string[] = [];
   const params: string[] = [];
 
@@ -2428,6 +2493,15 @@ export async function getTaskProfile(
   store: Store,
   taskId: string,
 ): Promise<TaskProfile | null> {
+  if (store.prisma) {
+    const task = await store.prisma.task.findUnique({
+      where: { id: taskId },
+      select: { taskProfile: true },
+    });
+
+    return (task?.taskProfile as TaskProfile | null) ?? null;
+  }
+
   const task = await getTaskById(store, taskId);
   return task ? task.taskProfile ?? null : null;
 }
@@ -2437,6 +2511,17 @@ export async function saveTaskProfile(
   taskId: string,
   profile: TaskProfile,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.task.update({
+      where: { id: taskId },
+      data: {
+        taskProfile: profile as Prisma.InputJsonValue,
+      },
+    });
+
+    return;
+  }
+
   const timestamp = new Date().toISOString();
   store.database
     .prepare("UPDATE tasks SET task_profile = ?, updated_at = ? WHERE id = ?")
@@ -2448,6 +2533,29 @@ export async function replaceRecommendationBundles(
   taskId: string,
   bundles: RecommendationBundle[],
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.$transaction(async (tx) => {
+      await tx.recommendationBundle.deleteMany({
+        where: { taskId },
+      });
+
+      if (bundles.length === 0) {
+        return;
+      }
+
+      await tx.recommendationBundle.createMany({
+        data: bundles.map((bundle, index) => ({
+          id: randomUUID(),
+          taskId,
+          position: index,
+          bundleJson: bundle as Prisma.InputJsonValue,
+        })),
+      });
+    });
+
+    return;
+  }
+
   const deleteStatement = store.database.prepare(
     "DELETE FROM recommendation_bundles WHERE task_id = ?",
   );
@@ -2490,6 +2598,15 @@ export async function listRecommendationBundlesByTask(
   store: Store,
   taskId: string,
 ): Promise<RecommendationBundle[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.recommendationBundle.findMany({
+      where: { taskId },
+      orderBy: [{ position: "asc" }, { createdAt: "asc" }],
+    });
+
+    return rows.map((row) => row.bundleJson as RecommendationBundle);
+  }
+
   const rows = store.database
     .prepare(
       `SELECT * FROM recommendation_bundles
@@ -2507,6 +2624,18 @@ export async function updateTaskControls(
   relevanceLevel: number,
   summaryPreference: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.task.update({
+      where: { id: taskId },
+      data: {
+        relevanceLevel,
+        summaryPreference,
+      },
+    });
+
+    return;
+  }
+
   const timestamp = new Date().toISOString();
   store.database
     .prepare(
@@ -2524,6 +2653,29 @@ export async function getOrCreateChatThread(
   scopeType: "global" | "space" | "task" | "brief",
   scopeId: string,
 ): Promise<ChatThreadRecord> {
+  if (store.prisma) {
+    const thread = await store.prisma.chatThread.upsert({
+      where: {
+        scopeType_scopeId: {
+          scopeType,
+          scopeId,
+        },
+      },
+      update: {},
+      create: {
+        scopeType,
+        scopeId,
+      },
+    });
+
+    return mapChatThread({
+      id: thread.id,
+      scope_type: thread.scopeType,
+      scope_id: thread.scopeId,
+      created_at: thread.createdAt.toISOString(),
+    });
+  }
+
   const existing = await findChatThread(store, scopeType, scopeId);
 
   if (existing) {
@@ -2553,6 +2705,26 @@ export async function findChatThread(
   scopeType: "global" | "space" | "task" | "brief",
   scopeId: string,
 ): Promise<ChatThreadRecord | null> {
+  if (store.prisma) {
+    const existing = await store.prisma.chatThread.findUnique({
+      where: {
+        scopeType_scopeId: {
+          scopeType,
+          scopeId,
+        },
+      },
+    });
+
+    return existing
+      ? mapChatThread({
+          id: existing.id,
+          scope_type: existing.scopeType,
+          scope_id: existing.scopeId,
+          created_at: existing.createdAt.toISOString(),
+        })
+      : null;
+  }
+
   const existing = store.database
     .prepare(
       `SELECT * FROM chat_threads
@@ -2574,6 +2746,29 @@ export async function createChatMessage(
     provenance?: "stored" | "mixed" | null;
   },
 ): Promise<ChatMessageRecord> {
+  if (store.prisma) {
+    const message = await store.prisma.chatMessage.create({
+      data: {
+        threadId: input.threadId,
+        role: input.role,
+        content: input.content,
+        citations:
+          (input.citations as Prisma.InputJsonValue | null | undefined) ?? undefined,
+        provenance: input.provenance ?? null,
+      },
+    });
+
+    return mapChatMessage({
+      id: message.id,
+      thread_id: message.threadId,
+      role: message.role as "user" | "assistant",
+      content: message.content,
+      citations: message.citations ? JSON.stringify(message.citations) : null,
+      provenance: message.provenance as "stored" | "mixed" | null,
+      created_at: message.createdAt.toISOString(),
+    });
+  }
+
   const id = randomUUID();
   const timestamp = new Date().toISOString();
   const citationsStr = input.citations ? JSON.stringify(input.citations) : null;
@@ -2609,6 +2804,25 @@ export async function listChatMessages(
   store: Store,
   threadId: string,
 ): Promise<ChatMessageRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.chatMessage.findMany({
+      where: { threadId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return rows.map((message) =>
+      mapChatMessage({
+        id: message.id,
+        thread_id: message.threadId,
+        role: message.role as "user" | "assistant",
+        content: message.content,
+        citations: message.citations ? JSON.stringify(message.citations) : null,
+        provenance: message.provenance as "stored" | "mixed" | null,
+        created_at: message.createdAt.toISOString(),
+      }),
+    );
+  }
+
   const rows = store.database
     .prepare(
       `SELECT * FROM chat_messages
@@ -2624,6 +2838,13 @@ export async function deleteChatMessagesByThreadId(
   store: Store,
   threadId: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.chatMessage.deleteMany({
+      where: { threadId },
+    });
+    return;
+  }
+
   store.database
     .prepare("DELETE FROM chat_messages WHERE thread_id = ?")
     .run(threadId);

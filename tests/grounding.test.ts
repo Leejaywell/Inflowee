@@ -13,6 +13,7 @@ import {
   createStore,
   createTaskRecord,
 } from "@/lib/store";
+import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
 async function createFixture() {
   const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-grounding-test-"));
@@ -123,6 +124,72 @@ describe("getGroundingForScope", () => {
       ]);
     } finally {
       fixture.cleanup();
+    }
+  });
+
+  it("returns task-scoped briefs and items from the postgres-backed store", async () => {
+    const fixture = await createIsolatedPostgresStore();
+
+    try {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Watch",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Agent launches",
+        taskType: "TOPIC",
+        userPrompt: "Track launches",
+      });
+      const sourceId = await createSourceRecord(fixture.store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Feed",
+        url: "https://example.com/feed.xml",
+      });
+      const item = await createItemRecordResult(fixture.store, {
+        sourceId,
+        title: "Launch roundup",
+        canonicalUrl: "https://example.com/launch",
+        summary: "Latest launches.",
+        publishedAt: "2026-05-21T08:00:00.000Z",
+      });
+
+      if (!item) {
+        throw new Error("Expected fixture item to be inserted.");
+      }
+
+      const briefId = await createBriefRecord(fixture.store, {
+        taskId,
+        itemIds: [item.id],
+        title: "Launch roundup",
+        summary: "Latest launches.",
+        whyItMatters: "New signal.",
+        sourceCitations: ["https://example.com/launch"],
+        relevanceScore: 0.5,
+        importanceScore: 0.5,
+        tags: [],
+      });
+
+      const grounding = await getGroundingForScope(
+        fixture.store,
+        "task",
+        taskId,
+      );
+
+      expect(grounding.briefs).toEqual([
+        expect.objectContaining({
+          id: briefId,
+          taskId,
+        }),
+      ]);
+      expect(grounding.items).toEqual([
+        expect.objectContaining({
+          id: item.id,
+          canonicalUrl: "https://example.com/launch",
+        }),
+      ]);
+    } finally {
+      await fixture.cleanup();
     }
   });
 
