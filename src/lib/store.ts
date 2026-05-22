@@ -36,6 +36,7 @@ function createUnavailableDatabaseHandle(): DatabaseSync {
 
 type SpaceRow = {
   id: string;
+  owner_id: string;
   name: string;
   description: string | null;
   created_at: string;
@@ -190,6 +191,7 @@ export type TaskRecord = {
 
 export type SpaceRecord = {
   id: string;
+  ownerId: string;
   name: string;
   description: string | null;
   createdAt: string;
@@ -290,6 +292,7 @@ export type ChatMessageRecord = {
 };
 
 type CreateSpaceInput = {
+  ownerId?: string;
   name: string;
   description?: string;
 };
@@ -735,6 +738,42 @@ function migrateChatMessagesTable(database: DatabaseSync) {
   );
 }
 
+function migrateSpacesTable(database: DatabaseSync) {
+  const spacesTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'spaces'",
+    )
+    .get() as { sql: string } | undefined;
+
+  if (!spacesTable || spacesTable.sql.includes("owner_id")) {
+    return;
+  }
+
+  database.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+
+    CREATE TABLE spaces_migrated (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL DEFAULT 'local-user',
+      name TEXT NOT NULL,
+      description TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    INSERT INTO spaces_migrated (id, owner_id, name, description, created_at, updated_at)
+    SELECT id, 'local-user', name, description, created_at, updated_at
+    FROM spaces;
+
+    DROP TABLE spaces;
+    ALTER TABLE spaces_migrated RENAME TO spaces;
+
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
 export function createStore(): SqliteStore;
 export function createStore(filename: string): SqliteStore;
 export function createStore(options: { databaseUrl: string }): PrismaStore;
@@ -776,6 +815,7 @@ export function createStore(
 
       CREATE TABLE IF NOT EXISTS spaces (
         id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'local-user',
         name TEXT NOT NULL,
         description TEXT,
         created_at TEXT NOT NULL,
@@ -909,6 +949,7 @@ export function createStore(
     `);
 
     migrateSourcesTable(nextDatabase);
+    migrateSpacesTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
     migrateTasksTable(nextDatabase);
     migrateItemsTable(nextDatabase);
@@ -946,6 +987,18 @@ export function getDefaultRuntimeStore(): Store {
   }
 
   return createStore({ databaseUrl: process.env.DATABASE_URL });
+}
+
+function mapSpace(row: SpaceRow, tasks: TaskRecord[]): SpaceRecord {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    name: row.name,
+    description: row.description,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    tasks,
+  };
 }
 
 function mapTask(row: TaskRow): TaskRecord {
@@ -986,6 +1039,37 @@ function mapPrismaTask(task: {
     taskProfile: (task.taskProfile as TaskProfile | null) ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
+  };
+}
+
+function mapPrismaSpace(space: {
+  id: string;
+  ownerId: string;
+  name: string;
+  description: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  tasks?: Array<{
+    id: string;
+    spaceId: string;
+    title: string;
+    taskType: string;
+    userPrompt: string;
+    relevanceLevel: number;
+    summaryPreference: string;
+    taskProfile: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+}): SpaceRecord {
+  return {
+    id: space.id,
+    ownerId: space.ownerId,
+    name: space.name,
+    description: space.description,
+    createdAt: space.createdAt.toISOString(),
+    updatedAt: space.updatedAt.toISOString(),
+    tasks: space.tasks?.map(mapPrismaTask) ?? [],
   };
 }
 
@@ -1130,9 +1214,11 @@ function mapPrismaDeliveryLog(log: {
 
 export async function listSpacesWithTasks(
   store: Store = defaultStore,
+  filters: { ownerId?: string } = {},
 ): Promise<SpaceRecord[]> {
   if (store.prisma) {
     const spaces = await store.prisma.space.findMany({
+      where: filters.ownerId ? { ownerId: filters.ownerId } : undefined,
       orderBy: { createdAt: "desc" },
       include: {
         tasks: {
@@ -1141,19 +1227,20 @@ export async function listSpacesWithTasks(
       },
     });
 
-    return spaces.map((space) => ({
-      id: space.id,
-      name: space.name,
-      description: space.description,
-      createdAt: space.createdAt.toISOString(),
-      updatedAt: space.updatedAt.toISOString(),
-      tasks: space.tasks.map(mapPrismaTask),
-    }));
+    return spaces.map(mapPrismaSpace);
   }
 
-  const spaces = store.database
-    .prepare("SELECT * FROM spaces ORDER BY created_at DESC")
-    .all() as SpaceRow[];
+  const spaces = (
+    filters.ownerId
+      ? store.database
+          .prepare(
+            "SELECT * FROM spaces WHERE owner_id = ? ORDER BY created_at DESC",
+          )
+          .all(filters.ownerId)
+      : store.database
+          .prepare("SELECT * FROM spaces ORDER BY created_at DESC")
+          .all()
+  ) as SpaceRow[];
   const tasks = store.database
     .prepare("SELECT * FROM tasks ORDER BY created_at DESC")
     .all() as TaskRow[];
@@ -1166,14 +1253,7 @@ export async function listSpacesWithTasks(
     tasksBySpace.set(task.space_id, collection);
   }
 
-  return spaces.map((space) => ({
-    id: space.id,
-    name: space.name,
-    description: space.description,
-    createdAt: space.created_at,
-    updatedAt: space.updated_at,
-    tasks: tasksBySpace.get(space.id) ?? [],
-  }));
+  return spaces.map((space) => mapSpace(space, tasksBySpace.get(space.id) ?? []));
 }
 
 export async function getSpaceById(
@@ -1189,14 +1269,7 @@ export async function getSpaceById(
       return null;
     }
 
-    return {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      createdAt: row.createdAt.toISOString(),
-      updatedAt: row.updatedAt.toISOString(),
-      tasks: [],
-    };
+    return mapPrismaSpace(row);
   }
 
   const row = store.database
@@ -1207,14 +1280,7 @@ export async function getSpaceById(
     return null;
   }
 
-  return {
-    id: row.id,
-    name: row.name,
-    description: row.description,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    tasks: [],
-  };
+  return mapSpace(row, []);
 }
 
 export async function listTasksBySpace(
@@ -1252,6 +1318,7 @@ export async function createSpaceRecord(
   if (store.prisma) {
     const space = await store.prisma.space.create({
       data: {
+        ownerId: input.ownerId ?? "local-user",
         name: input.name,
         description: input.description ?? null,
       },
@@ -1265,11 +1332,12 @@ export async function createSpaceRecord(
 
   store.database
     .prepare(
-      `INSERT INTO spaces (id, name, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO spaces (id, owner_id, name, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
+      input.ownerId ?? "local-user",
       input.name,
       input.description ?? null,
       timestamp,

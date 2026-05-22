@@ -158,6 +158,31 @@ describe("store promise contract", () => {
     },
     15_000,
   );
+
+  it("lists only spaces owned by the current user", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      await createSpaceRecord(store, {
+        ownerId: "user-1",
+        name: "Signals",
+      });
+      await createSpaceRecord(store, {
+        ownerId: "user-2",
+        name: "Other",
+      });
+
+      const spaces = await listSpacesWithTasks(store, { ownerId: "user-1" });
+
+      expect(spaces).toHaveLength(1);
+      expect(spaces[0]?.ownerId).toBe("user-1");
+      expect(spaces[0]?.name).toBe("Signals");
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("store source persistence", () => {

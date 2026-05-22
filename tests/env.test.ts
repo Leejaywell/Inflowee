@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
+import { getSessionUser } from "@/lib/auth";
 import { envSchema } from "@/lib/env";
 
 describe("env schema", () => {
@@ -91,5 +92,14 @@ describe("env schema", () => {
         process.env.INNGEST_BASE_URL = previous.INNGEST_BASE_URL;
       }
     }
+  });
+
+  it("returns a single-user default session when no auth provider is configured", async () => {
+    const sessionUser = await getSessionUser();
+
+    expect(sessionUser).toEqual({
+      id: expect.any(String),
+      email: expect.stringContaining("@"),
+    });
   });
 });

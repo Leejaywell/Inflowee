@@ -1,4 +1,5 @@
 import { saveWebhookEndpoint } from "@/app/actions";
+import { getSessionUser } from "@/lib/auth";
 import {
   defaultStore,
   getWebhookSettings,
@@ -15,10 +16,11 @@ type SettingsPageProps = {
 export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
-  const [settings, recentLogs, params] = await Promise.all([
+  const [settings, recentLogs, params, sessionUser] = await Promise.all([
     getWebhookSettings(defaultStore),
     listRecentDeliveryLogs(defaultStore, 12),
     searchParams,
+    getSessionUser(),
   ]);
   const error = params?.error;
   const updated = params?.updated;
@@ -26,10 +28,13 @@ export default async function SettingsPage({
   return (
     <div className="grid gap-6">
       <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.05fr_0.95fr]">
-        <div className="space-y-4">
+          <div className="space-y-4">
           <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-white">
             Delivery settings
           </span>
+          <p className="text-sm text-stone-500">
+            Current session owner: {sessionUser?.email ?? "anonymous"}
+          </p>
           <div className="space-y-3">
             <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
               Configure a single HTTPS webhook for brief delivery.

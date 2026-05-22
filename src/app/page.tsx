@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createSpace, createTask, deleteSpace, deleteTask } from "@/app/actions";
-import { listSpacesWithTasks, type TaskType } from "@/lib/store";
+import { getSessionUser } from "@/lib/auth";
+import { defaultStore, listSpacesWithTasks, type TaskType } from "@/lib/store";
 
 type HomeProps = {
   searchParams?: Promise<{
@@ -15,8 +16,9 @@ const taskTypeLabels: Record<TaskType, string> = {
 };
 
 export default async function Home({ searchParams }: HomeProps) {
+  const sessionUser = await getSessionUser();
   const [spaces, params] = await Promise.all([
-    listSpacesWithTasks(),
+    listSpacesWithTasks(defaultStore, { ownerId: sessionUser?.id }),
     searchParams,
   ]);
 
@@ -38,7 +40,8 @@ export default async function Home({ searchParams }: HomeProps) {
               <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
                 This first vertical slice only proves the core planning surface:
                 create spaces, add topic or question tasks, and persist them in
-                a local development database.
+                a local development database owned by the current single-user
+                session.
               </p>
             </div>
           </div>

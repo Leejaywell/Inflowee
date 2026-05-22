@@ -13,9 +13,14 @@ const navigationItems = [
 type AppShellProps = {
   children: React.ReactNode;
   unreadCount?: number;
+  userEmail?: string | null;
 };
 
-export function AppShell({ children, unreadCount = 0 }: AppShellProps) {
+export function AppShell({
+  children,
+  unreadCount = 0,
+  userEmail = null,
+}: AppShellProps) {
   const pathname = usePathname();
 
   return (
@@ -27,7 +32,9 @@ export function AppShell({ children, unreadCount = 0 }: AppShellProps) {
               Inflowee
             </p>
             <p className="text-sm text-stone-500">
-              Planning surface for tasks and sources.
+              {userEmail
+                ? `Single-user workspace for ${userEmail}.`
+                : "Planning surface for tasks and sources."}
             </p>
           </div>
 
