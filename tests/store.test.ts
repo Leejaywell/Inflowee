@@ -24,6 +24,7 @@ import {
   hasTaskRecord,
   listBriefItemIds,
   listBriefsFiltered,
+  listItemsByBriefId,
   listItemsBySource,
   listSources,
   listSourcesByTask,
@@ -414,6 +415,23 @@ describe("store brief queries", () => {
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("lists linked item records for a brief", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      const items = listItemsByBriefId(fixture.store, fixture.briefId);
+
+      expect(items).toEqual([
+        expect.objectContaining({
+          id: fixture.itemId,
+          canonicalUrl: "https://example.com/a",
+        }),
+      ]);
+    } finally {
+      fixture.cleanup();
     }
   });
 });

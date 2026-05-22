@@ -1,8 +1,8 @@
 import {
   type BriefRecord,
   getBriefById,
-  listBriefItemIds,
   listBriefsFiltered,
+  listItemsByBriefId,
   listItemsBySource,
   listSourcesByTask,
   type ItemRecord,
@@ -71,53 +71,14 @@ export function getGroundingForScope(
       return { briefs: [brief], items: [] };
     }
 
-    const itemIds = listBriefItemIds(store, scopeId);
-    if (itemIds.length === 0) {
+    const items = listItemsByBriefId(store, scopeId);
+    if (items.length === 0) {
       return { briefs: [brief], items: [] };
     }
 
-    const placeholders = itemIds.map(() => "?").join(",");
-    const items = store.database
-      .prepare(
-        `SELECT * FROM items
-         WHERE id IN (${placeholders})
-         ORDER BY published_at DESC, created_at DESC`,
-      )
-      .all(...itemIds) as Array<{
-      id: string;
-      source_id: string;
-      title: string;
-      canonical_url: string;
-      summary: string | null;
-      raw_content: string | null;
-      origin: string | null;
-      language: string | null;
-      content_hash: string;
-      structured_fields: string | null;
-      published_at: string | null;
-      fetched_at: string;
-      created_at: string;
-    }>;
-
     return {
       briefs: [brief],
-      items: items.map((row) => ({
-        id: row.id,
-        sourceId: row.source_id,
-        title: row.title,
-        canonicalUrl: row.canonical_url,
-        summary: row.summary,
-        rawContent: row.raw_content,
-        origin: row.origin,
-        language: row.language,
-        contentHash: row.content_hash,
-        structuredFields: row.structured_fields
-          ? (JSON.parse(row.structured_fields) as Record<string, unknown>)
-          : null,
-        publishedAt: row.published_at,
-        fetchedAt: row.fetched_at,
-        createdAt: row.created_at,
-      })),
+      items: dedupeAndSortItems(items),
     };
   }
 

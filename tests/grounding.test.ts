@@ -116,6 +116,9 @@ describe("getGroundingForScope", () => {
         expect.objectContaining({
           id: fixture.itemId,
           canonicalUrl: "https://example.com/launch",
+          rawContent: "Latest launches.",
+          origin: "example.com",
+          contentHash: expect.any(String),
         }),
       ]);
     } finally {

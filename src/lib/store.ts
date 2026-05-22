@@ -1027,6 +1027,23 @@ export function listItemsBySource(
   return rows.map(mapItem);
 }
 
+export function listItemsByBriefId(
+  store: Store,
+  briefId: string,
+): ItemRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT items.*
+       FROM items
+       JOIN brief_items ON brief_items.item_id = items.id
+       WHERE brief_items.brief_id = ?
+       ORDER BY items.published_at DESC, items.created_at DESC`,
+    )
+    .all(briefId) as ItemRow[];
+
+  return rows.map(mapItem);
+}
+
 export function createBriefRecord(
   store: Store,
   input: {
