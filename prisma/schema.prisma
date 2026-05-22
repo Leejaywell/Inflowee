@@ -22,8 +22,8 @@ model Task {
   title                 String
   taskType              String
   userPrompt            String
-  relevanceLevel        Int
-  summaryPreference     String
+  relevanceLevel        Int                    @default(3)
+  summaryPreference     String                 @default("balanced")
   taskProfile           Json?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
@@ -41,10 +41,10 @@ model Source {
   sourceType          String
   title               String
   url                 String
-  status              String
+  status              String    @default("idle")
   lastSyncedAt        DateTime?
   lastError           String?
-  syncIntervalMinutes Int
+  syncIntervalMinutes Int       @default(360)
   nextSyncAt          DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
@@ -158,6 +158,8 @@ model ChatThread {
   scopeId   String
   createdAt DateTime      @default(now())
   messages  ChatMessage[]
+
+  @@unique([scopeType, scopeId])
 }
 
 model ChatMessage {
