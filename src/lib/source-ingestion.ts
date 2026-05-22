@@ -5,6 +5,7 @@ import { generateBriefsFromItems } from "@/lib/ai";
 import { extractStructuredList } from "@/lib/structured-extract";
 import { extractUpdateEntries } from "@/lib/update-extract";
 import { extractNewsletterArchiveEntries } from "@/lib/newsletter-archive-extract";
+import { enrichItemCandidate } from "@/lib/item-enrichment";
 import {
   briefExistsForItem,
   createBriefRecord,
@@ -57,13 +58,28 @@ export async function storeSourceItemsAndCreateBriefs(
     publishedAt: string | null;
   }>,
 ) {
-  const insertedItems = items.flatMap((item) => {
+  const enrichedItems = await Promise.all(
+    items.map((item) =>
+      enrichItemCandidate({
+        ...item,
+        rawContent: item.summary,
+      }),
+    ),
+  );
+
+  const insertedItems = enrichedItems.flatMap((item) => {
     const storedItem = createItemRecordResult(store, {
       sourceId: source.id,
       title: item.title,
       canonicalUrl: item.canonicalUrl,
       summary: item.summary,
+      rawContent: item.rawContent,
+      origin: item.origin,
+      language: item.language,
+      contentHash: item.contentHash,
+      structuredFields: item.structuredFields,
       publishedAt: item.publishedAt,
+      fetchedAt: item.fetchedAt,
     });
 
     return storedItem ? [storedItem] : [];

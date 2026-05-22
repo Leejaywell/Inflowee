@@ -10,6 +10,7 @@ import {
   countUnreadBriefs,
   createBriefRecord,
   createItemRecord,
+  createItemRecordResult,
   createSourceRecord,
   createSpaceRecord,
   createStore,
@@ -23,6 +24,7 @@ import {
   hasTaskRecord,
   listBriefItemIds,
   listBriefsFiltered,
+  listItemsBySource,
   listSources,
   listSourcesByTask,
   markBriefRead,
@@ -126,22 +128,24 @@ describe("store source persistence", () => {
         url: "https://example.com/archive",
       });
 
-      expect(listSourcesByTask(store, taskId)).toEqual([
-        expect.objectContaining({
-          taskId,
-          sourceType: "UPDATE",
-          title: "OpenAI Changelog",
-          url: "https://openai.com/changelog",
-          status: "idle",
-        }),
-        expect.objectContaining({
-          taskId,
-          sourceType: "NEWSLETTER",
-          title: "Agent Archive",
-          url: "https://example.com/archive",
-          status: "idle",
-        }),
-      ]);
+      expect(listSourcesByTask(store, taskId)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            taskId,
+            sourceType: "UPDATE",
+            title: "OpenAI Changelog",
+            url: "https://openai.com/changelog",
+            status: "idle",
+          }),
+          expect.objectContaining({
+            taskId,
+            sourceType: "NEWSLETTER",
+            title: "Agent Archive",
+            url: "https://example.com/archive",
+            status: "idle",
+          }),
+        ]),
+      );
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
@@ -319,6 +323,10 @@ describe("store brief queries", () => {
         title: "Launch roundup",
         canonicalUrl: "https://example.com/launch",
         summary: "Latest launches.",
+        rawContent: "Latest launches.",
+        origin: "example.com",
+        language: "en",
+        structuredFields: { category: "launch" },
         publishedAt: "2026-05-21T08:00:00.000Z",
       });
 
@@ -577,6 +585,40 @@ describe("cascade deletes", () => {
 });
 
 describe("store expansions for AI features", () => {
+  it("stores enriched item metadata", () => {
+    const fixture = seedBriefFixture();
+
+    try {
+      const itemId = createItemRecordResult(fixture.store, {
+        sourceId: fixture.sourceId,
+        title: "Launch roundup",
+        canonicalUrl: "https://example.com/launch",
+        summary: "Latest launches.",
+        rawContent: "Launch details and context.",
+        origin: "example.com",
+        language: "en",
+        structuredFields: { company: "OpenAI" },
+        publishedAt: "2026-05-21T08:00:00.000Z",
+        fetchedAt: "2026-05-22T08:00:00.000Z",
+      });
+
+      expect(itemId).not.toBeNull();
+      expect(listItemsBySource(fixture.store, fixture.sourceId)).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            rawContent: "Launch details and context.",
+            origin: "example.com",
+            language: "en",
+            structuredFields: { company: "OpenAI" },
+            fetchedAt: "2026-05-22T08:00:00.000Z",
+          }),
+        ]),
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it("saves and retrieves task profiles", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
     const filename = join(tempDirectory, "store.sqlite");

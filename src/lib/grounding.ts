@@ -89,7 +89,13 @@ export function getGroundingForScope(
       title: string;
       canonical_url: string;
       summary: string | null;
+      raw_content: string | null;
+      origin: string | null;
+      language: string | null;
+      content_hash: string;
+      structured_fields: string | null;
       published_at: string | null;
+      fetched_at: string;
       created_at: string;
     }>;
 
@@ -101,7 +107,15 @@ export function getGroundingForScope(
         title: row.title,
         canonicalUrl: row.canonical_url,
         summary: row.summary,
+        rawContent: row.raw_content,
+        origin: row.origin,
+        language: row.language,
+        contentHash: row.content_hash,
+        structuredFields: row.structured_fields
+          ? (JSON.parse(row.structured_fields) as Record<string, unknown>)
+          : null,
         publishedAt: row.published_at,
+        fetchedAt: row.fetched_at,
         createdAt: row.created_at,
       })),
     };

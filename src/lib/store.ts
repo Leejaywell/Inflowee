@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -55,7 +55,13 @@ type ItemRow = {
   title: string;
   canonical_url: string;
   summary: string | null;
+  raw_content: string | null;
+  origin: string | null;
+  language: string | null;
+  content_hash: string;
+  structured_fields: string | null;
   published_at: string | null;
+  fetched_at: string;
   created_at: string;
 };
 
@@ -156,7 +162,13 @@ export type ItemRecord = {
   title: string;
   canonicalUrl: string;
   summary: string | null;
+  rawContent: string | null;
+  origin: string | null;
+  language: string | null;
+  contentHash: string;
+  structuredFields: Record<string, unknown> | null;
   publishedAt: string | null;
+  fetchedAt: string;
   createdAt: string;
 };
 
@@ -241,7 +253,15 @@ function mapItem(row: ItemRow): ItemRecord {
     title: row.title,
     canonicalUrl: row.canonical_url,
     summary: row.summary,
+    rawContent: row.raw_content,
+    origin: row.origin,
+    language: row.language,
+    contentHash: row.content_hash,
+    structuredFields: row.structured_fields
+      ? (JSON.parse(row.structured_fields) as Record<string, unknown>)
+      : null,
     publishedAt: row.published_at,
+    fetchedAt: row.fetched_at,
     createdAt: row.created_at,
   };
 }
@@ -397,6 +417,77 @@ function migrateTasksTable(database: DatabaseSync) {
   database.exec("ALTER TABLE tasks ADD COLUMN task_profile TEXT;");
 }
 
+function migrateItemsTable(database: DatabaseSync) {
+  const itemsTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'items'",
+    )
+    .get() as { sql: string } | undefined;
+
+  if (!itemsTable || itemsTable.sql.includes("content_hash")) {
+    return;
+  }
+
+  database.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+
+    CREATE TABLE items_migrated (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      canonical_url TEXT NOT NULL,
+      summary TEXT,
+      raw_content TEXT,
+      origin TEXT,
+      language TEXT,
+      content_hash TEXT NOT NULL,
+      structured_fields TEXT,
+      published_at TEXT,
+      fetched_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO items_migrated (
+      id,
+      source_id,
+      title,
+      canonical_url,
+      summary,
+      raw_content,
+      origin,
+      language,
+      content_hash,
+      structured_fields,
+      published_at,
+      fetched_at,
+      created_at
+    )
+    SELECT
+      id,
+      source_id,
+      title,
+      canonical_url,
+      summary,
+      summary,
+      NULL,
+      NULL,
+      canonical_url || char(10) || title || char(10) || coalesce(summary, ''),
+      NULL,
+      published_at,
+      created_at,
+      created_at
+    FROM items;
+
+    DROP TABLE items;
+    ALTER TABLE items_migrated RENAME TO items;
+
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
+}
+
 export function createStore(
   filename = join(dataDirectory, "inflowee.sqlite"),
 ): Store {
@@ -440,7 +531,13 @@ export function createStore(
         title TEXT NOT NULL,
         canonical_url TEXT NOT NULL,
         summary TEXT,
+        raw_content TEXT,
+        origin TEXT,
+        language TEXT,
+        content_hash TEXT NOT NULL,
+        structured_fields TEXT,
         published_at TEXT,
+        fetched_at TEXT NOT NULL,
         created_at TEXT NOT NULL,
         FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
       );
@@ -504,6 +601,7 @@ export function createStore(
     migrateSourcesTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
     migrateTasksTable(nextDatabase);
+    migrateItemsTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
@@ -733,11 +831,24 @@ export function createItemRecordResult(
     title: string;
     canonicalUrl: string;
     summary?: string | null;
+    rawContent?: string | null;
+    origin?: string | null;
+    language?: string | null;
+    contentHash?: string;
+    structuredFields?: Record<string, unknown> | null;
     publishedAt?: string | null;
+    fetchedAt?: string;
   },
 ): ItemRecord | null {
   const timestamp = new Date().toISOString();
   const id = randomUUID();
+  const rawContent = input.rawContent ?? input.summary ?? input.title;
+  const contentHash =
+    input.contentHash ??
+    createHash("sha256")
+      .update(`${input.canonicalUrl}\n${input.title}\n${rawContent ?? ""}`)
+      .digest("hex");
+  const fetchedAt = input.fetchedAt ?? timestamp;
   const result = store.database
     .prepare(
       `INSERT OR IGNORE INTO items (
@@ -746,9 +857,15 @@ export function createItemRecordResult(
         title,
         canonical_url,
         summary,
+        raw_content,
+        origin,
+        language,
+        content_hash,
+        structured_fields,
         published_at,
+        fetched_at,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -756,7 +873,13 @@ export function createItemRecordResult(
       input.title,
       input.canonicalUrl,
       input.summary ?? null,
+      rawContent,
+      input.origin ?? new URL(input.canonicalUrl).hostname,
+      input.language ?? null,
+      contentHash,
+      input.structuredFields ? JSON.stringify(input.structuredFields) : null,
       input.publishedAt ?? null,
+      fetchedAt,
       timestamp,
     );
 
@@ -770,7 +893,13 @@ export function createItemRecordResult(
     title: input.title,
     canonicalUrl: input.canonicalUrl,
     summary: input.summary ?? null,
+    rawContent,
+    origin: input.origin ?? new URL(input.canonicalUrl).hostname,
+    language: input.language ?? null,
+    contentHash,
+    structuredFields: input.structuredFields ?? null,
     publishedAt: input.publishedAt ?? null,
+    fetchedAt,
     createdAt: timestamp,
   };
 }
@@ -782,7 +911,13 @@ export function createItemRecord(
     title: string;
     canonicalUrl: string;
     summary?: string | null;
+    rawContent?: string | null;
+    origin?: string | null;
+    language?: string | null;
+    contentHash?: string;
+    structuredFields?: Record<string, unknown> | null;
     publishedAt?: string | null;
+    fetchedAt?: string;
   },
 ): boolean {
   return createItemRecordResult(store, input) !== null;
