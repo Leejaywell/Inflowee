@@ -1,6 +1,6 @@
 import { Inngest } from "inngest";
 
-import { defaultStore } from "@/lib/store";
+import { createStore, defaultStore } from "@/lib/store";
 import { syncDueSources } from "@/lib/sync-runs";
 
 export const SCHEDULED_SYNC_EVENT = "app/sources.sync.requested";
@@ -27,7 +27,11 @@ export async function enqueueScheduledSync(
 export async function runScheduledSyncEvent(
   data: ScheduledSyncEventData = {},
 ) {
-  return syncDueSources(defaultStore, {
+  const runtimeStore = process.env.DATABASE_URL
+    ? createStore({ databaseUrl: process.env.DATABASE_URL })
+    : defaultStore;
+
+  return syncDueSources(runtimeStore, {
     now: data.now ?? new Date().toISOString(),
   });
 }

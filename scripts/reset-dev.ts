@@ -1,11 +1,6 @@
-import { existsSync, rmSync } from "node:fs";
-import { join } from "node:path";
+import { execSync } from "node:child_process";
 
-const databasePath = join(process.cwd(), "data", "inflowee.sqlite");
-
-if (existsSync(databasePath)) {
-  rmSync(databasePath, { force: true });
-  console.log(`Removed ${databasePath}`);
-} else {
-  console.log(`No database found at ${databasePath}`);
-}
+execSync("pnpm prisma migrate reset --force --skip-seed", {
+  stdio: "inherit",
+  env: process.env,
+});
