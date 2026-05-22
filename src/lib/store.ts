@@ -2410,19 +2410,19 @@ export async function finishDeliveryLog(
   },
 ) {
   if (store.prisma) {
-    await store.prisma.$executeRaw`
-      UPDATE "DeliveryLog"
-      SET "status" = ${input.status},
-          "attemptCount" = ${input.attemptCount ?? null},
-          "responseStatus" = ${input.responseStatus ?? null},
-          "error" = ${
-            input.status === "error"
-              ? (input.error ?? "Unknown delivery error.")
-              : null
-          },
-          "finishedAt" = ${new Date()}
-      WHERE "id" = ${input.logId}
-    `;
+    await store.prisma.deliveryLog.update({
+      where: { id: input.logId },
+      data: {
+        status: input.status,
+        attemptCount: input.attemptCount ?? null,
+        responseStatus: input.responseStatus ?? null,
+        error:
+          input.status === "error"
+            ? (input.error ?? "Unknown delivery error.")
+            : null,
+        finishedAt: new Date(),
+      },
+    });
 
     return;
   }
