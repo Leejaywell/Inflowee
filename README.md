@@ -41,6 +41,18 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 - Ask one question from a task or brief chat console
 - Confirm citations render and provenance badges show `Stored context` or `Live context`
 
+## Scheduled Sync Verification
+
+- Run `pnpm test`
+- Run `pnpm lint`
+- Run `pnpm build`
+- Run `pnpm typecheck`
+- Start the app with `pnpm dev`
+- Open `/sources`
+- Change one source cadence and confirm the update persists after refresh
+- POST to `/api/jobs/sync`
+- Confirm due sources update status and recent run rows appear on `/sources`
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
