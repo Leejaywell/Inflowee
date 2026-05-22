@@ -213,14 +213,17 @@ describe("runScheduledSyncEvent", () => {
   });
 
   it("only collapses duplicate delivery events while the first run is in flight", async () => {
+    type DeliveryResult = {
+      status: "success";
+      responseStatus: number;
+    };
     const deliverStoredBriefMock = vi.fn();
-    let resolveFirstRun: ((value: { status: "success"; responseStatus: number }) => void) | null =
-      null;
+    let resolveFirstRun!: (value: DeliveryResult) => void;
 
     deliverStoredBriefMock
       .mockImplementationOnce(
         () =>
-          new Promise<{ status: "success"; responseStatus: number }>((resolve) => {
+          new Promise<DeliveryResult>((resolve: (value: DeliveryResult) => void) => {
             resolveFirstRun = resolve;
           }),
       )
@@ -252,7 +255,7 @@ describe("runScheduledSyncEvent", () => {
       expect(firstRun).toBe(secondRun);
       expect(deliverStoredBriefMock).toHaveBeenCalledTimes(1);
 
-      resolveFirstRun?.({ status: "success", responseStatus: 202 });
+      resolveFirstRun({ status: "success", responseStatus: 202 });
       await firstRun;
 
       await handleBriefDeliveryRequested({

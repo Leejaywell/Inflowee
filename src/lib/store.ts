@@ -863,12 +863,11 @@ export function createStore(): PrismaStore;
 export function createStore(filename: string): SqliteStore;
 export function createStore(options: { databaseUrl: string }): PrismaStore;
 export function createStore(
-  filenameOrOptions:
+  filenameOrOptions?:
     | string
     | {
         databaseUrl: string;
-      }
-    | undefined,
+      },
 ): Store {
   if (filenameOrOptions === undefined) {
     return createPrismaStore(getDatabaseUrl());
@@ -2410,19 +2409,19 @@ export async function finishDeliveryLog(
   },
 ) {
   if (store.prisma) {
-    await store.prisma.deliveryLog.update({
-      where: { id: input.logId },
-      data: {
-        status: input.status,
-        attemptCount: input.attemptCount ?? null,
-        responseStatus: input.responseStatus ?? null,
-        error:
-          input.status === "error"
-            ? (input.error ?? "Unknown delivery error.")
-            : null,
-        finishedAt: new Date(),
-      },
-    });
+    await store.prisma.$executeRaw(
+      Prisma.sql`UPDATE "DeliveryLog"
+                 SET "status" = ${input.status},
+                     "attemptCount" = ${input.attemptCount ?? null},
+                     "responseStatus" = ${input.responseStatus ?? null},
+                     "error" = ${
+                       input.status === "error"
+                         ? (input.error ?? "Unknown delivery error.")
+                         : null
+                     },
+                     "finishedAt" = ${new Date()}
+                 WHERE "id" = ${input.logId}`,
+    );
 
     return;
   }

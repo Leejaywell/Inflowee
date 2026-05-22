@@ -4,8 +4,8 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { render, screen } from "@testing-library/react";
+import { afterEach, vi } from "vitest";
 
-import InboxPage from "@/app/inbox/page";
 import { buildBriefsFromItems } from "@/lib/briefs";
 import {
   createItemRecordResult,
@@ -18,8 +18,20 @@ import {
   listBriefs,
 } from "@/lib/store";
 
+afterEach(() => {
+  vi.resetModules();
+  vi.unmock("@/lib/store");
+});
+
 describe("buildBriefsFromItems", () => {
   it("renders the inbox heading", async () => {
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      listBriefsFiltered: vi.fn().mockResolvedValue([]),
+      listSpacesWithTasks: vi.fn().mockResolvedValue([]),
+    }));
+
+    const { default: InboxPage } = await import("@/app/inbox/page");
     const view = await InboxPage({ searchParams: Promise.resolve({}) });
 
     render(view);
