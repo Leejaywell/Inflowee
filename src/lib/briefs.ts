@@ -1,4 +1,5 @@
 import type { ItemRecord } from "@/lib/store";
+import { clusterItemsForBriefs } from "@/lib/brief-clustering";
 
 export type BriefCandidate = {
   taskId: string;
@@ -19,15 +20,39 @@ export function buildBriefsFromItems(
     "id" | "title" | "canonicalUrl" | "summary" | "publishedAt"
   >[],
 ): BriefCandidate[] {
-  return items.map((item) => ({
-    taskId,
-    itemIds: [item.id],
-    title: item.title,
-    summary: item.summary ?? "No summary available.",
-    whyItMatters: "New signal captured from subscribed RSS sources.",
-    sourceCitations: [item.canonicalUrl],
-    relevanceScore: 0.5,
-    importanceScore: 0.5,
-    tags: [],
-  }));
+  return clusterItemsForBriefs(items as ItemRecord[])
+    .map((cluster) => {
+      const lead = cluster.items[0];
+      const summary =
+        cluster.items.find((item) => item.summary)?.summary ??
+        "No summary available.";
+      const tags = Array.from(
+        new Set(
+          `${lead?.title ?? ""} ${summary}`.toLowerCase().match(/\b[a-z0-9-]{3,}\b/g) ?? [],
+        ),
+      ).filter((tag) =>
+        ["openai", "agent", "api", "model", "funding", "launch"].includes(tag),
+      );
+      const sourceCount = cluster.items.length;
+
+      return {
+        taskId,
+        itemIds: cluster.itemIds,
+        title: cluster.representativeTitle,
+        summary,
+        whyItMatters:
+          sourceCount > 1
+            ? `Multiple sources are reporting the same event, which raises confidence in the signal.`
+            : "New signal captured from subscribed RSS sources.",
+        sourceCitations: cluster.citations,
+        relevanceScore: Math.min(1, 0.5 + sourceCount * 0.1),
+        importanceScore: Math.min(1, 0.45 + sourceCount * 0.15),
+        tags,
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.importanceScore - left.importanceScore ||
+        right.relevanceScore - left.relevanceScore,
+    );
 }

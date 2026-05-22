@@ -7,13 +7,38 @@ export type BriefCluster = {
   items: ItemRecord[];
 };
 
+const STOP_WORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "into",
+  "over",
+  "about",
+  "new",
+  "ships",
+  "ship",
+  "releases",
+  "release",
+  "launches",
+  "launch",
+  "announces",
+  "announce",
+  "introduces",
+  "introduce",
+  "update",
+  "updates",
+]);
+
 function tokenize(text: string) {
   return new Set(
     text
       .toLowerCase()
-      .replace(/[^\w\s-]/g, "")
+      .replace(/-/g, " ")
+      .replace(/[^\w\s]/g, "")
       .split(/\s+/)
-      .filter((word) => word.length > 2),
+      .filter((word) => word.length > 1 && !STOP_WORDS.has(word)),
   );
 }
 
@@ -29,6 +54,10 @@ function jaccardSimilarity(left: string, right: string) {
   const union = new Set([...leftWords, ...rightWords]).size;
 
   return intersection / union;
+}
+
+function normalizedHeadline(text: string) {
+  return [...tokenize(text)].sort().join(" ");
 }
 
 export function clusterItemsForBriefs(items: ItemRecord[]): BriefCluster[] {
@@ -50,7 +79,11 @@ export function clusterItemsForBriefs(items: ItemRecord[]): BriefCluster[] {
         continue;
       }
 
-      if (jaccardSimilarity(item.title, candidate.title) >= 0.25) {
+      if (
+        candidate.canonicalUrl === item.canonicalUrl ||
+        normalizedHeadline(item.title) === normalizedHeadline(candidate.title) ||
+        jaccardSimilarity(item.title, candidate.title) >= 0.34
+      ) {
         cluster.push(candidate);
         visited.add(candidate.id);
       }

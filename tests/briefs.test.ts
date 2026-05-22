@@ -48,11 +48,43 @@ describe("buildBriefsFromItems", () => {
         summary: "Latest launches and product updates.",
         whyItMatters: "New signal captured from subscribed RSS sources.",
         sourceCitations: ["https://example.com/posts/launch-roundup"],
-        relevanceScore: 0.5,
-        importanceScore: 0.5,
-        tags: [],
+        relevanceScore: 0.6,
+        importanceScore: 0.6,
+        tags: ["launch"],
       }),
     ]);
+  });
+
+  it("clusters same-event feed items into one higher-ranked brief", () => {
+    const briefs = buildBriefsFromItems("task-1", [
+      {
+        id: "item-1",
+        title: "OpenAI ships o4-mini",
+        canonicalUrl: "https://example.com/posts/o4-mini-1",
+        summary: "Launch coverage from source one.",
+        publishedAt: "2026-05-21T08:00:00.000Z",
+      },
+      {
+        id: "item-2",
+        title: "OpenAI releases o4 mini",
+        canonicalUrl: "https://another.example.com/posts/o4-mini-2",
+        summary: "Launch coverage from source two.",
+        publishedAt: "2026-05-21T08:05:00.000Z",
+      },
+    ]);
+
+    expect(briefs).toHaveLength(1);
+    expect(briefs[0]).toEqual(
+      expect.objectContaining({
+        itemIds: ["item-1", "item-2"],
+        importanceScore: 0.75,
+        relevanceScore: 0.7,
+        sourceCitations: [
+          "https://example.com/posts/o4-mini-1",
+          "https://another.example.com/posts/o4-mini-2",
+        ],
+      }),
+    );
   });
 
   it("stores generated briefs with task and space context", async () => {
@@ -99,9 +131,9 @@ describe("buildBriefsFromItems", () => {
           summary: "Latest launches and product updates.",
           whyItMatters: "New signal captured from subscribed RSS sources.",
           sourceCitations: ["https://example.com/posts/launch-roundup"],
-          relevanceScore: 0.5,
-          importanceScore: 0.5,
-          tags: [],
+          relevanceScore: 0.6,
+          importanceScore: 0.6,
+          tags: ["launch"],
           taskTitle: "Monitor feed",
           spaceName: "OpenAI",
         }),

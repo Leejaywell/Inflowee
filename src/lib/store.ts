@@ -1804,7 +1804,11 @@ export async function listBriefs(
 ): Promise<BriefRecord[]> {
   if (store.prisma) {
     const rows = await store.prisma.brief.findMany({
-      orderBy: { createdAt: "desc" },
+      orderBy: [
+        { importanceScore: "desc" },
+        { relevanceScore: "desc" },
+        { createdAt: "desc" },
+      ],
       include: {
         task: {
           include: {
@@ -1826,7 +1830,7 @@ export async function listBriefs(
        FROM briefs
        JOIN tasks ON briefs.task_id = tasks.id
        JOIN spaces ON tasks.space_id = spaces.id
-       ORDER BY briefs.created_at DESC`,
+       ORDER BY briefs.importance_score DESC, briefs.relevance_score DESC, briefs.created_at DESC`,
     )
     .all() as BriefRow[];
 
@@ -2410,7 +2414,11 @@ export async function listBriefsFiltered(
         ...(filters.taskId ? { taskId: filters.taskId } : {}),
         ...(filters.unreadOnly ? { isRead: false } : {}),
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [
+        { importanceScore: "desc" },
+        { relevanceScore: "desc" },
+        { createdAt: "desc" },
+      ],
       include: {
         task: {
           include: {
@@ -2446,7 +2454,7 @@ export async function listBriefsFiltered(
        JOIN tasks ON briefs.task_id = tasks.id
        JOIN spaces ON tasks.space_id = spaces.id
        ${where}
-       ORDER BY briefs.created_at DESC`,
+       ORDER BY briefs.importance_score DESC, briefs.relevance_score DESC, briefs.created_at DESC`,
     )
     .all(...params) as BriefRow[];
 

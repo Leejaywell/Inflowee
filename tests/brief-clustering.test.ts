@@ -31,4 +31,14 @@ describe("clusterItemsForBriefs", () => {
     expect(clusters).toHaveLength(1);
     expect(clusters[0]?.itemIds).toEqual(["1", "2"]);
   });
+
+  it("clusters same-event titles from multiple sources into one brief", () => {
+    const clusters = clusterItemsForBriefs([
+      makeItem("1", "OpenAI ships o4-mini", "https://a.example/openai"),
+      makeItem("2", "OpenAI releases o4 mini", "https://b.example/openai"),
+    ]);
+
+    expect(clusters).toHaveLength(1);
+    expect(clusters[0]?.itemIds).toEqual(["1", "2"]);
+  });
 });

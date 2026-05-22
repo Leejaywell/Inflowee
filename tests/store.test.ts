@@ -806,6 +806,44 @@ describe("read/unread and filtered briefs", () => {
       fixture.cleanup();
     }
   });
+
+  it("orders briefs by importance then relevance then recency", async () => {
+    const fixture = await seedBriefFixture();
+
+    try {
+      const secondBriefId = await createBriefRecord(fixture.store, {
+        taskId: fixture.taskId,
+        itemIds: [],
+        title: "Higher priority brief",
+        summary: "Summary B.",
+        whyItMatters: "Higher priority signal.",
+        sourceCitations: ["https://example.com/b"],
+        importanceScore: 0.9,
+        relevanceScore: 0.6,
+      });
+
+      const thirdBriefId = await createBriefRecord(fixture.store, {
+        taskId: fixture.taskId,
+        itemIds: [],
+        title: "High relevance but lower importance",
+        summary: "Summary C.",
+        whyItMatters: "Lower priority signal.",
+        sourceCitations: ["https://example.com/c"],
+        importanceScore: 0.7,
+        relevanceScore: 0.95,
+      });
+
+      const briefs = await listBriefsFiltered(fixture.store);
+
+      expect(briefs.map((brief) => brief.id)).toEqual([
+        secondBriefId,
+        thirdBriefId,
+        fixture.briefId,
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });
 
 describe("cascade deletes", () => {
