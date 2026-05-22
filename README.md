@@ -25,15 +25,18 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 
 ## Deployment
 
-See [docs/deployment/vercel-postgres-inngest.md](/Users/lee/workspaces/ai/Inflowee/docs/deployment/vercel-postgres-inngest.md) for the cloud deployment runbook and smoke-test checklist.
+See [docs/deployment/vercel-postgres-inngest.md](/Users/lee/workspaces/ai/Inflowee/docs/deployment/vercel-postgres-inngest.md) for the cloud deployment runbook and production smoke tests. Use [docs/deployment/release-checklist.md](/Users/lee/workspaces/ai/Inflowee/docs/deployment/release-checklist.md) for the final release checklist.
 
 ## Release Verification
 
+- Run the full release verification suite:
+
+```bash
+pnpm test && pnpm lint && pnpm typecheck && pnpm build
+```
+
 - [ ] `pnpm prisma generate`
-- [ ] `pnpm test`
-- [ ] `pnpm lint`
-- [ ] `pnpm typecheck`
-- [ ] `pnpm build`
+- [ ] `pnpm test && pnpm lint && pnpm typecheck && pnpm build`
 - [ ] `pnpm db:seed`
 - [ ] `POST /api/jobs/sync`
 - [ ] Verify `/inbox`
