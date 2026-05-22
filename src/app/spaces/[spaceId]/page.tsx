@@ -2,12 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { ChatConsole } from "@/components/chat-console";
+import { MemberList } from "@/components/member-list";
 import { getGroundingForScope } from "@/lib/grounding";
 import {
   defaultStore,
   getSpaceById,
   getOrCreateChatThread,
   listChatMessages,
+  listSpaceMembers,
   listTasksBySpace,
 } from "@/lib/store";
 
@@ -30,6 +32,18 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
 
   // 2. Fetch tasks within the space
   const tasks = await listTasksBySpace(store, spaceId);
+  const members = await listSpaceMembers(store, spaceId);
+  const effectiveMembers =
+    members.length > 0
+      ? members
+      : [
+          {
+            spaceId,
+            userId: space.ownerId,
+            role: "owner",
+            createdAt: space.createdAt,
+          },
+        ];
 
   // 3. Fetch aggregated briefs in this space
   const { briefs } = await getGroundingForScope(store, "space", spaceId, {
@@ -62,6 +76,13 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
             <p className="max-w-3xl text-base leading-7 text-stone-600 sm:text-lg">
               {space.description || "No description provided."}
             </p>
+          </div>
+
+          <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+            <h2 className="text-xl font-semibold text-stone-950 border-b border-stone-100 pb-4 mb-4">
+              Space members
+            </h2>
+            <MemberList members={effectiveMembers} />
           </div>
         </div>
       </section>

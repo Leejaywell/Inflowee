@@ -15,6 +15,11 @@ export type DeliveryPayload = {
   html: string;
 };
 
+export type DeliveryChannel = "webhook" | "slack";
+export type SlackDeliveryPayload = {
+  text: string;
+};
+
 type FetchLike = typeof fetch;
 
 export type DeliveryAttemptResult =
@@ -26,6 +31,48 @@ export type DeliveryAttemptResult =
       status: "error";
       error: string;
     };
+
+export async function buildDeliveryPayload(input: {
+  channel: "webhook";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<DeliveryPayload>;
+export async function buildDeliveryPayload(input: {
+  channel: "slack";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<SlackDeliveryPayload>;
+export async function buildDeliveryPayload(input: {
+  channel: DeliveryChannel;
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<DeliveryPayload | SlackDeliveryPayload> {
+  switch (input.channel) {
+    case "slack":
+      return {
+        text: `${input.brief.title}\n${input.brief.summary}`,
+      };
+    default:
+      return {
+        briefId: input.brief.id,
+        format: "html" as const,
+        title: input.brief.title,
+        html: input.html ?? "",
+      };
+  }
+}
 
 export async function deliverBriefDigest(input: {
   endpoint: string;
@@ -112,12 +159,15 @@ export async function deliverStoredBrief(
 
   const result = await deliverBriefWithRetry({
     endpoint: settings.endpoint,
-    payload: {
-      briefId,
-      format: "html",
-      title: brief.title,
+    payload: await buildDeliveryPayload({
+      channel: "webhook",
+      brief: {
+        id: briefId,
+        title: brief.title,
+        summary: brief.summary,
+      },
       html,
-    },
+    }),
     fetchImpl: options?.fetchImpl,
     maxAttempts: options?.maxAttempts,
   });

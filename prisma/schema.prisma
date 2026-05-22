@@ -15,8 +15,20 @@ model Space {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   tasks       Task[]
+  members     SpaceMember[]
 
   @@index([ownerId, createdAt])
+}
+
+model SpaceMember {
+  spaceId    String
+  userId     String
+  role       String
+  createdAt  DateTime @default(now())
+  space      Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@id([spaceId, userId])
+  @@index([userId, createdAt])
 }
 
 model Task {

@@ -1,5 +1,6 @@
 import { saveWebhookEndpoint } from "@/app/actions";
 import { getSessionUser } from "@/lib/auth";
+import { buildDeliveryPayload } from "@/lib/delivery";
 import {
   defaultStore,
   getWebhookSettings,
@@ -24,6 +25,14 @@ export default async function SettingsPage({
   ]);
   const error = params?.error;
   const updated = params?.updated;
+  const slackPreview = await buildDeliveryPayload({
+    channel: "slack",
+    brief: {
+      id: "preview-brief",
+      title: "OpenAI ships a notable update",
+      summary: "The API changelog added a production-facing update.",
+    },
+  });
 
   return (
     <div className="grid gap-6">
@@ -148,6 +157,17 @@ export default async function SettingsPage({
             ))
           )}
         </div>
+      </section>
+
+      <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+        <h2 className="text-xl font-semibold">Channel adapters</h2>
+        <p className="mt-2 text-sm leading-6 text-stone-500">
+          Webhook delivery is active. Slack payload shaping is now available as
+          a first adapter foundation.
+        </p>
+        <pre className="mt-4 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-xs leading-6 text-stone-200">
+          {JSON.stringify(slackPreview, null, 2)}
+        </pre>
       </section>
     </div>
   );

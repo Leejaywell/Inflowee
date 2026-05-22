@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import {
   briefExistsForItem,
+  addSpaceMember,
   countUnreadBriefs,
   createBriefRecord,
   createItemRecord,
@@ -34,6 +35,7 @@ import {
   listRecentSyncRunsBySource,
   listSources,
   listSpacesWithTasks,
+  listSpaceMembers,
   listSourcesByTask,
   markBriefRead,
   markBriefUnread,
@@ -178,6 +180,35 @@ describe("store promise contract", () => {
       expect(spaces).toHaveLength(1);
       expect(spaces[0]?.ownerId).toBe("user-1");
       expect(spaces[0]?.name).toBe("Signals");
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("stores space membership roles", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, {
+        ownerId: "user-1",
+        name: "Signals",
+      });
+
+      await addSpaceMember(store, {
+        spaceId,
+        userId: "user-2",
+        role: "viewer",
+      });
+
+      expect(await listSpaceMembers(store, spaceId)).toEqual([
+        expect.objectContaining({
+          spaceId,
+          userId: "user-2",
+          role: "viewer",
+        }),
+      ]);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });

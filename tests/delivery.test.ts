@@ -1,6 +1,7 @@
 /// <reference types="vitest/globals" />
 
 import {
+  buildDeliveryPayload,
   deliverBriefDigest,
   deliverBriefWithRetry,
   deliverStoredBrief,
@@ -66,6 +67,23 @@ describe("brief HTML rendering", () => {
 });
 
 describe("webhook delivery transport", () => {
+  it("renders a channel-specific payload for slack delivery", async () => {
+    const payload = await buildDeliveryPayload({
+      channel: "slack",
+      brief: {
+        id: "brief-1",
+        title: "Launch",
+        summary: "Summary",
+      },
+    });
+
+    expect(payload).toEqual(
+      expect.objectContaining({
+        text: expect.stringContaining("Launch"),
+      }),
+    );
+  });
+
   it("posts the rendered brief payload to a webhook endpoint", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

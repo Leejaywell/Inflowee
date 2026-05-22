@@ -100,6 +100,13 @@ type DeliveryLogRow = {
   finished_at: string | null;
 };
 
+type SpaceMemberRow = {
+  space_id: string;
+  user_id: string;
+  role: string;
+  created_at: string;
+};
+
 type ItemRow = {
   id: string;
   source_id: string;
@@ -242,6 +249,13 @@ export type DeliveryLogRecord = {
   finishedAt: string | null;
 };
 
+export type SpaceMemberRecord = {
+  spaceId: string;
+  userId: string;
+  role: string;
+  createdAt: string;
+};
+
 export type ItemRecord = {
   id: string;
   sourceId: string;
@@ -365,6 +379,15 @@ function mapDeliveryLog(row: DeliveryLogRow): DeliveryLogRecord {
     error: row.error,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
+  };
+}
+
+function mapSpaceMember(row: SpaceMemberRow): SpaceMemberRecord {
+  return {
+    spaceId: row.space_id,
+    userId: row.user_id,
+    role: row.role,
+    createdAt: row.created_at,
   };
 }
 
@@ -774,6 +797,22 @@ function migrateSpacesTable(database: DatabaseSync) {
   `);
 }
 
+function migrateSpaceMembersTable(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS space_members (
+      space_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      PRIMARY KEY (space_id, user_id),
+      FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_space_members_user_created_at
+      ON space_members(user_id, created_at DESC);
+  `);
+}
+
 export function createStore(): SqliteStore;
 export function createStore(filename: string): SqliteStore;
 export function createStore(options: { databaseUrl: string }): PrismaStore;
@@ -833,6 +872,15 @@ export function createStore(
         task_profile TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
+        FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS space_members (
+        space_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY (space_id, user_id),
         FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
       );
 
@@ -950,6 +998,7 @@ export function createStore(
 
     migrateSourcesTable(nextDatabase);
     migrateSpacesTable(nextDatabase);
+    migrateSpaceMembersTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
     migrateTasksTable(nextDatabase);
     migrateItemsTable(nextDatabase);
@@ -958,6 +1007,7 @@ export function createStore(
     migrateDeliveryLogsTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_next_sync_at ON sources(next_sync_at);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_space_members_user_created_at ON space_members(user_id, created_at DESC);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
@@ -1212,6 +1262,20 @@ function mapPrismaDeliveryLog(log: {
   };
 }
 
+function mapPrismaSpaceMember(member: {
+  spaceId: string;
+  userId: string;
+  role: string;
+  createdAt: Date;
+}): SpaceMemberRecord {
+  return {
+    spaceId: member.spaceId,
+    userId: member.userId,
+    role: member.role,
+    createdAt: member.createdAt.toISOString(),
+  };
+}
+
 export async function listSpacesWithTasks(
   store: Store = defaultStore,
   filters: { ownerId?: string } = {},
@@ -1301,6 +1365,68 @@ export async function listTasksBySpace(
     .all(spaceId) as TaskRow[];
 
   return rows.map(mapTask);
+}
+
+export async function addSpaceMember(
+  store: Store,
+  input: {
+    spaceId: string;
+    userId: string;
+    role: string;
+  },
+): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.spaceMember.upsert({
+      where: {
+        spaceId_userId: {
+          spaceId: input.spaceId,
+          userId: input.userId,
+        },
+      },
+      update: {
+        role: input.role,
+      },
+      create: {
+        spaceId: input.spaceId,
+        userId: input.userId,
+        role: input.role,
+      },
+    });
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare(
+      `INSERT INTO space_members (space_id, user_id, role, created_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(space_id, user_id) DO UPDATE SET role = excluded.role`,
+    )
+    .run(input.spaceId, input.userId, input.role, timestamp);
+}
+
+export async function listSpaceMembers(
+  store: Store,
+  spaceId: string,
+): Promise<SpaceMemberRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.spaceMember.findMany({
+      where: { spaceId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return rows.map(mapPrismaSpaceMember);
+  }
+
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM space_members
+       WHERE space_id = ?
+       ORDER BY created_at ASC`,
+    )
+    .all(spaceId) as SpaceMemberRow[];
+
+  return rows.map(mapSpaceMember);
 }
 
 export function createSpaceRecord(input: CreateSpaceInput): Promise<string>;
