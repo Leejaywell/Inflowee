@@ -940,6 +940,14 @@ export const defaultStore = process.env.DATABASE_URL
   ? createStore({ databaseUrl: process.env.DATABASE_URL })
   : createStore();
 
+export function getDefaultRuntimeStore(): Store {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is required for cloud runtime.");
+  }
+
+  return createStore({ databaseUrl: process.env.DATABASE_URL });
+}
+
 function mapTask(row: TaskRow): TaskRecord {
   return {
     id: row.id,
