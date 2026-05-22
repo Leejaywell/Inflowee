@@ -2,6 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  assertBriefAccess,
+  assertSpaceAccess,
+  assertTaskAccess,
+  requireSessionActor,
+} from "@/lib/auth";
+import {
   deleteChatMessagesByThreadId,
   defaultStore,
   createChatMessage,
@@ -28,6 +34,27 @@ export async function submitChatMessage(
   }
 
   const store = defaultStore;
+  const actor = await requireSessionActor();
+
+  if (scopeType === "space") {
+    await assertSpaceAccess(store, {
+      actorId: actor.id,
+      spaceId: scopeId,
+      minimumRole: "viewer",
+    });
+  } else if (scopeType === "task") {
+    await assertTaskAccess(store, {
+      actorId: actor.id,
+      taskId: scopeId,
+      minimumRole: "viewer",
+    });
+  } else if (scopeType === "brief") {
+    await assertBriefAccess(store, {
+      actorId: actor.id,
+      briefId: scopeId,
+      minimumRole: "viewer",
+    });
+  }
 
   // 1. Get or create thread
   const thread = await getOrCreateChatThread(store, scopeType, scopeId);
@@ -112,6 +139,28 @@ export async function submitChatMessage(
 
 export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
   const store = defaultStore;
+  const actor = await requireSessionActor();
+
+  if (scopeType === "space") {
+    await assertSpaceAccess(store, {
+      actorId: actor.id,
+      spaceId: scopeId,
+      minimumRole: "viewer",
+    });
+  } else if (scopeType === "task") {
+    await assertTaskAccess(store, {
+      actorId: actor.id,
+      taskId: scopeId,
+      minimumRole: "viewer",
+    });
+  } else if (scopeType === "brief") {
+    await assertBriefAccess(store, {
+      actorId: actor.id,
+      briefId: scopeId,
+      minimumRole: "viewer",
+    });
+  }
+
   const thread = await getOrCreateChatThread(store, scopeType, scopeId);
 
   await deleteChatMessagesByThreadId(store, thread.id);
@@ -139,6 +188,12 @@ export async function subscribeRecommendedSources(
   }>,
 ) {
   const store = defaultStore;
+  const actor = await requireSessionActor();
+  await assertTaskAccess(store, {
+    actorId: actor.id,
+    taskId,
+    minimumRole: "editor",
+  });
   const parsedSources = sources.map((source, index) => ({
     index,
     result: createSourceSchema.safeParse({
@@ -184,6 +239,13 @@ export async function updateTaskControlSettings(
   relevanceLevel: number,
   summaryPreference: string,
 ) {
+  const actor = await requireSessionActor();
+  await assertTaskAccess(defaultStore, {
+    actorId: actor.id,
+    taskId,
+    minimumRole: "editor",
+  });
+
   await updateTaskControls(
     defaultStore,
     taskId,

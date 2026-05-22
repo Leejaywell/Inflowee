@@ -293,6 +293,16 @@ describe("task intelligence server actions", () => {
     vi.doMock("@/lib/task-intelligence", () => ({
       refreshTaskIntelligence: refreshTaskIntelligenceMock,
     }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSourceAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
 
     const { createTask } = await import("@/app/actions");
 
@@ -351,6 +361,16 @@ describe("task intelligence server actions", () => {
     }));
     vi.doMock("@/lib/task-intelligence", () => ({
       refreshTaskIntelligence: refreshTaskIntelligenceMock,
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSourceAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
     }));
 
     const { refreshStoredTaskIntelligence } = await import("@/app/actions");
@@ -416,6 +436,15 @@ describe("task intelligence server actions", () => {
     }));
     vi.doMock("@/lib/live-fetch", () => ({
       fetchLiveContext: vi.fn(),
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
     }));
 
     const { submitChatMessage } = await import("@/app/actions-chat");
@@ -559,6 +588,15 @@ describe("refreshTaskIntelligence", () => {
       listChatMessages: vi.fn(),
       updateTaskControls: vi.fn(),
     }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
 
     const { subscribeRecommendedSources } = await import("@/app/actions-chat");
 
@@ -604,6 +642,15 @@ describe("refreshTaskIntelligence", () => {
       getOrCreateChatThread: vi.fn(),
       listChatMessages: vi.fn(),
       updateTaskControls: vi.fn(),
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
     }));
 
     const { subscribeRecommendedSources } = await import("@/app/actions-chat");

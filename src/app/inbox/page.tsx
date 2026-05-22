@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { deleteBrief, toggleBriefRead } from "@/app/actions";
+import { requireSessionActor } from "@/lib/auth";
 import {
   defaultStore,
   listBriefsFiltered,
@@ -17,13 +18,14 @@ type InboxPageProps = {
 };
 
 export default async function InboxPage({ searchParams }: InboxPageProps) {
+  const actor = await requireSessionActor();
   const params = await searchParams;
   const taskId = params?.taskId || undefined;
   const unreadOnly = params?.unread === "1";
 
   const [briefs, spaces] = await Promise.all([
-    listBriefsFiltered(defaultStore, { taskId, unreadOnly }),
-    listSpacesWithTasks(defaultStore),
+    listBriefsFiltered(defaultStore, { actorId: actor.id, taskId, unreadOnly }),
+    listSpacesWithTasks(defaultStore, { actorId: actor.id }),
   ]);
   const tasks = spaces.flatMap((space) =>
     space.tasks.map((task) => ({

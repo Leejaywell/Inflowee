@@ -1,5 +1,5 @@
 import { saveWebhookEndpoint } from "@/app/actions";
-import { getSessionUser } from "@/lib/auth";
+import { requireSessionActor } from "@/lib/auth";
 import { buildDeliveryPayload } from "@/lib/delivery";
 import {
   defaultStore,
@@ -17,11 +17,11 @@ type SettingsPageProps = {
 export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
-  const [settings, recentLogs, params, sessionUser] = await Promise.all([
+  const actor = await requireSessionActor();
+  const [settings, recentLogs, params] = await Promise.all([
     getWebhookSettings(defaultStore),
-    listRecentDeliveryLogs(defaultStore, 12),
+    listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),
     searchParams,
-    getSessionUser(),
   ]);
   const error = params?.error;
   const updated = params?.updated;
@@ -42,7 +42,7 @@ export default async function SettingsPage({
             Delivery settings
           </span>
           <p className="text-sm text-stone-500">
-            Current session owner: {sessionUser?.email ?? "anonymous"}
+            Current session owner: {actor.email}
           </p>
           <div className="space-y-3">
             <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">

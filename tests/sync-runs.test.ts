@@ -253,6 +253,16 @@ describe("scheduled sync actions and surfaces", () => {
         setSourceSchedule: setSourceScheduleMock,
       };
     });
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSourceAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
 
     const { updateSourceSchedule } = await import("@/app/actions");
     const formData = new FormData();
@@ -344,6 +354,12 @@ describe("scheduled sync actions and surfaces", () => {
           finishedAt: "2026-05-22T07:01:00.000Z",
         },
       ],
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
     }));
 
     const { default: SourcesPage } = await import("@/app/sources/page");

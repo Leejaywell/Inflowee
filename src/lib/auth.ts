@@ -1,9 +1,9 @@
-import { cookies, headers } from "next/headers";
-
 import {
   defaultStore,
   getSpaceMembership,
+  getSpaceMembershipForBrief,
   getSpaceMembershipForTask,
+  getTaskBySourceId,
   type SpaceRole,
   type Store,
 } from "./store";
@@ -17,10 +17,6 @@ export type SessionActor = SessionUser;
 
 const DEFAULT_USER_ID = "local-user";
 const DEFAULT_USER_EMAIL = "local@inflowee.dev";
-const ACTOR_ID_COOKIE = "inflowee_actor_id";
-const ACTOR_EMAIL_COOKIE = "inflowee_actor_email";
-const ACTOR_ID_HEADER = "x-inflowee-actor-id";
-const ACTOR_EMAIL_HEADER = "x-inflowee-actor-email";
 
 type SpaceAccessInput = {
   actorId: string;
@@ -31,6 +27,18 @@ type SpaceAccessInput = {
 type TaskAccessInput = {
   actorId: string;
   taskId: string;
+  minimumRole: SpaceRole;
+};
+
+type SourceAccessInput = {
+  actorId: string;
+  sourceId: string;
+  minimumRole: SpaceRole;
+};
+
+type BriefAccessInput = {
+  actorId: string;
+  briefId: string;
   minimumRole: SpaceRole;
 };
 
@@ -45,31 +53,6 @@ function getFallbackSessionUser(): SessionUser | null {
   return { id, email };
 }
 
-async function getRequestSessionUser(): Promise<SessionUser | null> {
-  try {
-    const [cookieStore, headerStore] = await Promise.all([cookies(), headers()]);
-    const id =
-      cookieStore.get(ACTOR_ID_COOKIE)?.value ??
-      headerStore.get(ACTOR_ID_HEADER) ??
-      null;
-    const email =
-      cookieStore.get(ACTOR_EMAIL_COOKIE)?.value ??
-      headerStore.get(ACTOR_EMAIL_HEADER) ??
-      null;
-
-    if (!id) {
-      return null;
-    }
-
-    return {
-      id,
-      email: email ?? `${id}@inflowee.local`,
-    };
-  } catch {
-    return null;
-  }
-}
-
 function roleSatisfies(role: SpaceRole, minimumRole: SpaceRole) {
   const rank: Record<SpaceRole, number> = {
     viewer: 0,
@@ -81,7 +64,7 @@ function roleSatisfies(role: SpaceRole, minimumRole: SpaceRole) {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-  return (await getRequestSessionUser()) ?? getFallbackSessionUser();
+  return getFallbackSessionUser();
 }
 
 export async function requireSessionActor(): Promise<SessionActor> {
@@ -126,6 +109,50 @@ export async function assertTaskAccess(
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
   const input = maybeInput ?? (storeOrInput as TaskAccessInput);
   const membership = await getSpaceMembershipForTask(store, input.actorId, input.taskId);
+
+  if (!membership || !roleSatisfies(membership.role, input.minimumRole)) {
+    throw new Error("Forbidden");
+  }
+}
+
+export async function assertSourceAccess(
+  input: SourceAccessInput,
+): Promise<void>;
+export async function assertSourceAccess(
+  store: Store,
+  input: SourceAccessInput,
+): Promise<void>;
+export async function assertSourceAccess(
+  storeOrInput: Store | SourceAccessInput,
+  maybeInput?: SourceAccessInput,
+): Promise<void> {
+  const store = maybeInput ? (storeOrInput as Store) : defaultStore;
+  const input = maybeInput ?? (storeOrInput as SourceAccessInput);
+  const task = await getTaskBySourceId(store, input.sourceId);
+
+  if (!task) {
+    throw new Error("Forbidden");
+  }
+
+  await assertTaskAccess(store, {
+    actorId: input.actorId,
+    taskId: task.id,
+    minimumRole: input.minimumRole,
+  });
+}
+
+export async function assertBriefAccess(input: BriefAccessInput): Promise<void>;
+export async function assertBriefAccess(
+  store: Store,
+  input: BriefAccessInput,
+): Promise<void>;
+export async function assertBriefAccess(
+  storeOrInput: Store | BriefAccessInput,
+  maybeInput?: BriefAccessInput,
+): Promise<void> {
+  const store = maybeInput ? (storeOrInput as Store) : defaultStore;
+  const input = maybeInput ?? (storeOrInput as BriefAccessInput);
+  const membership = await getSpaceMembershipForBrief(store, input.actorId, input.briefId);
 
   if (!membership || !roleSatisfies(membership.role, input.minimumRole)) {
     throw new Error("Forbidden");

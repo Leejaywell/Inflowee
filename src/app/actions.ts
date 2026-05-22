@@ -3,6 +3,13 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import {
+  assertBriefAccess,
+  assertSourceAccess,
+  assertSpaceAccess,
+  assertTaskAccess,
+  requireSessionActor,
+} from "@/lib/auth";
 import { deliverStoredBrief } from "@/lib/delivery";
 import {
   createSourceRecord,
@@ -17,12 +24,13 @@ import {
   getWebhookSettings,
   getTaskById,
   hasTaskRecord,
+  listSources,
   markBriefRead,
   markBriefUnread,
   saveWebhookSettings,
   setSourceSchedule,
 } from "@/lib/store";
-import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
+import { syncSourceById } from "@/lib/source-ingestion";
 import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import {
   createSourceSchema,
@@ -37,6 +45,7 @@ function getString(formData: FormData, key: string) {
 }
 
 export async function createSpace(formData: FormData) {
+  const actor = await requireSessionActor();
   const parsed = createSpaceSchema.safeParse({
     name: getString(formData, "name"),
     description: getString(formData, "description"),
@@ -46,13 +55,17 @@ export async function createSpace(formData: FormData) {
     redirect(`/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid space input.")}`);
   }
 
-  await createSpaceRecord(parsed.data);
+  await createSpaceRecord({
+    ...parsed.data,
+    ownerId: actor.id,
+  });
 
   revalidatePath("/");
   redirect("/?created=space");
 }
 
 export async function createTask(formData: FormData) {
+  const actor = await requireSessionActor();
   const parsed = createTaskSchema.safeParse({
     spaceId: getString(formData, "spaceId"),
     title: getString(formData, "title"),
@@ -63,6 +76,12 @@ export async function createTask(formData: FormData) {
   if (!parsed.success) {
     redirect(`/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid task input.")}`);
   }
+
+  await assertSpaceAccess(defaultStore, {
+    actorId: actor.id,
+    spaceId: parsed.data.spaceId,
+    minimumRole: "editor",
+  });
 
   const taskId = await createTaskRecord(parsed.data);
 
@@ -77,6 +96,13 @@ export async function createTask(formData: FormData) {
 }
 
 export async function refreshStoredTaskIntelligence(taskId: string) {
+  const actor = await requireSessionActor();
+  await assertTaskAccess(defaultStore, {
+    actorId: actor.id,
+    taskId,
+    minimumRole: "editor",
+  });
+
   await refreshTaskIntelligence(defaultStore, taskId);
 
   const task = await getTaskById(defaultStore, taskId);
@@ -91,6 +117,7 @@ export async function refreshStoredTaskIntelligence(taskId: string) {
 }
 
 export async function createSource(formData: FormData) {
+  const actor = await requireSessionActor();
   const parsed = createSourceSchema.safeParse({
     taskId: getString(formData, "taskId"),
     sourceType: getString(formData, "sourceType"),
@@ -108,6 +135,12 @@ export async function createSource(formData: FormData) {
     redirect("/sources?error=Select%20a%20valid%20task.");
   }
 
+  await assertTaskAccess(defaultStore, {
+    actorId: actor.id,
+    taskId: parsed.data.taskId,
+    minimumRole: "editor",
+  });
+
   let destination = "/sources?created=source";
 
   try {
@@ -121,7 +154,13 @@ export async function createSource(formData: FormData) {
 }
 
 export async function runSourceSync(formData: FormData) {
+  const actor = await requireSessionActor();
   const sourceId = getString(formData, "sourceId");
+  await assertSourceAccess(defaultStore, {
+    actorId: actor.id,
+    sourceId,
+    minimumRole: "editor",
+  });
   const result = await syncSourceById(defaultStore, sourceId);
 
   if (!result.source) {
@@ -139,6 +178,7 @@ export async function runSourceSync(formData: FormData) {
 }
 
 export async function updateSourceSchedule(formData: FormData) {
+  const actor = await requireSessionActor();
   const parsed = updateSourceScheduleSchema.safeParse({
     sourceId: getString(formData, "sourceId"),
     syncIntervalMinutes: getString(formData, "syncIntervalMinutes"),
@@ -150,6 +190,12 @@ export async function updateSourceSchedule(formData: FormData) {
     );
   }
 
+  await assertSourceAccess(defaultStore, {
+    actorId: actor.id,
+    sourceId: parsed.data.sourceId,
+    minimumRole: "editor",
+  });
+
   await setSourceSchedule(
     defaultStore,
     parsed.data.sourceId,
@@ -160,8 +206,15 @@ export async function updateSourceSchedule(formData: FormData) {
 }
 
 export async function toggleBriefRead(formData: FormData) {
+  const actor = await requireSessionActor();
   const briefId = getString(formData, "briefId");
   const isRead = getString(formData, "isRead");
+
+  await assertBriefAccess(defaultStore, {
+    actorId: actor.id,
+    briefId,
+    minimumRole: "editor",
+  });
 
   if (isRead === "1") {
     await markBriefUnread(defaultStore, briefId);
@@ -173,7 +226,13 @@ export async function toggleBriefRead(formData: FormData) {
 }
 
 export async function deleteBrief(formData: FormData) {
+  const actor = await requireSessionActor();
   const briefId = getString(formData, "briefId");
+  await assertBriefAccess(defaultStore, {
+    actorId: actor.id,
+    briefId,
+    minimumRole: "editor",
+  });
   await deleteBriefRecord(defaultStore, briefId);
 
   revalidatePath("/inbox");
@@ -181,7 +240,13 @@ export async function deleteBrief(formData: FormData) {
 }
 
 export async function deleteSource(formData: FormData) {
+  const actor = await requireSessionActor();
   const sourceId = getString(formData, "sourceId");
+  await assertSourceAccess(defaultStore, {
+    actorId: actor.id,
+    sourceId,
+    minimumRole: "editor",
+  });
   await deleteSourceRecord(defaultStore, sourceId);
 
   revalidatePath("/sources");
@@ -190,7 +255,13 @@ export async function deleteSource(formData: FormData) {
 }
 
 export async function deleteTask(formData: FormData) {
+  const actor = await requireSessionActor();
   const taskId = getString(formData, "taskId");
+  await assertTaskAccess(defaultStore, {
+    actorId: actor.id,
+    taskId,
+    minimumRole: "editor",
+  });
   await deleteTaskRecord(defaultStore, taskId);
 
   revalidatePath("/");
@@ -200,7 +271,13 @@ export async function deleteTask(formData: FormData) {
 }
 
 export async function deleteSpace(formData: FormData) {
+  const actor = await requireSessionActor();
   const spaceId = getString(formData, "spaceId");
+  await assertSpaceAccess(defaultStore, {
+    actorId: actor.id,
+    spaceId,
+    minimumRole: "owner",
+  });
   await deleteSpaceRecord(defaultStore, spaceId);
 
   revalidatePath("/");
@@ -210,19 +287,47 @@ export async function deleteSpace(formData: FormData) {
 }
 
 export async function runSyncAll() {
-  const result = await syncAllSources(defaultStore);
+  const actor = await requireSessionActor();
+  const sources = await listSources(defaultStore, { actorId: actor.id });
+  let synced = 0;
+  let failed = 0;
+
+  for (const source of sources) {
+    if (source.status === "error") {
+      continue;
+    }
+
+    try {
+      await assertSourceAccess(defaultStore, {
+        actorId: actor.id,
+        sourceId: source.id,
+        minimumRole: "editor",
+      });
+    } catch {
+      continue;
+    }
+
+    const result = await syncSourceById(defaultStore, source.id);
+
+    if (result.ok) {
+      synced += 1;
+    } else {
+      failed += 1;
+    }
+  }
 
   revalidatePath("/sources");
   revalidatePath("/inbox");
 
-  if (result.failed > 0) {
-    redirect(`/sources?error=Synced%20${result.synced}%20sources,%20but%20${result.failed}%20failed.`);
+  if (failed > 0) {
+    redirect(`/sources?error=Synced%20${synced}%20sources,%20but%20${failed}%20failed.`);
   }
 
   redirect(`/sources?synced=all`);
 }
 
 export async function saveWebhookEndpoint(formData: FormData) {
+  await requireSessionActor();
   const parsed = webhookEndpointSchema.safeParse(getString(formData, "endpoint"));
 
   if (!parsed.success) {
@@ -237,7 +342,13 @@ export async function saveWebhookEndpoint(formData: FormData) {
 }
 
 export async function sendBriefToWebhook(formData: FormData) {
+  const actor = await requireSessionActor();
   const briefId = getString(formData, "briefId");
+  await assertBriefAccess(defaultStore, {
+    actorId: actor.id,
+    briefId,
+    minimumRole: "viewer",
+  });
   const brief = await getBriefById(defaultStore, briefId);
 
   if (!brief) {

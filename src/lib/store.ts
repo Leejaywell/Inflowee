@@ -1552,6 +1552,46 @@ export async function getSpaceMembershipForTask(
   return getSpaceMembership(store, actorId, task.spaceId);
 }
 
+export async function getTaskByBriefId(
+  store: Store,
+  briefId: string,
+): Promise<TaskRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.brief.findUnique({
+      where: { id: briefId },
+      include: { task: true },
+    });
+
+    return row ? mapPrismaTask(row.task) : null;
+  }
+
+  const row = store.database
+    .prepare(
+      `SELECT tasks.*
+       FROM tasks
+       JOIN briefs ON briefs.task_id = tasks.id
+       WHERE briefs.id = ?
+       LIMIT 1`,
+    )
+    .get(briefId) as TaskRow | undefined;
+
+  return row ? mapTask(row) : null;
+}
+
+export async function getSpaceMembershipForBrief(
+  store: Store,
+  actorId: string,
+  briefId: string,
+): Promise<SpaceMemberRecord | null> {
+  const task = await getTaskByBriefId(store, briefId);
+
+  if (!task) {
+    return null;
+  }
+
+  return getSpaceMembership(store, actorId, task.spaceId);
+}
+
 export function createSpaceRecord(input: CreateSpaceInput): Promise<string>;
 export function createSpaceRecord(
   store: Store,
@@ -2573,53 +2613,128 @@ export async function listRecentDeliveryLogsByBrief(
 export async function listRecentDeliveryLogs(
   store: Store,
   limit = 20,
+  filters: { actorId?: string } = {},
 ): Promise<DeliveryLogRecord[]> {
   if (store.prisma) {
-    const rows = await store.prisma.$queryRaw<PrismaDeliveryLogRow[]>`
-      SELECT
-        "id",
-        "briefId" AS brief_id,
-        "endpoint",
-        "payloadType" AS payload_type,
-        "status",
-        "attemptCount" AS attempt_count,
-        "responseStatus" AS response_status,
-        "error",
-        "startedAt" AS started_at,
-        "finishedAt" AS finished_at
-      FROM "DeliveryLog"
-      ORDER BY "startedAt" DESC
-      LIMIT ${limit}
-    `;
+    const rows = filters.actorId
+      ? await store.prisma.$queryRaw<PrismaDeliveryLogRow[]>`
+          SELECT
+            dl."id",
+            dl."briefId" AS brief_id,
+            dl."endpoint",
+            dl."payloadType" AS payload_type,
+            dl."status",
+            dl."attemptCount" AS attempt_count,
+            dl."responseStatus" AS response_status,
+            dl."error",
+            dl."startedAt" AS started_at,
+            dl."finishedAt" AS finished_at
+          FROM "DeliveryLog" dl
+          JOIN "Brief" b ON b."id" = dl."briefId"
+          JOIN "Task" t ON t."id" = b."taskId"
+          JOIN "Space" s ON s."id" = t."spaceId"
+          LEFT JOIN "SpaceMember" sm
+            ON sm."spaceId" = s."id"
+           AND sm."userId" = ${filters.actorId}
+          WHERE s."ownerId" = ${filters.actorId}
+             OR sm."userId" IS NOT NULL
+          ORDER BY dl."startedAt" DESC
+          LIMIT ${limit}
+        `
+      : await store.prisma.$queryRaw<PrismaDeliveryLogRow[]>`
+          SELECT
+            "id",
+            "briefId" AS brief_id,
+            "endpoint",
+            "payloadType" AS payload_type,
+            "status",
+            "attemptCount" AS attempt_count,
+            "responseStatus" AS response_status,
+            "error",
+            "startedAt" AS started_at,
+            "finishedAt" AS finished_at
+          FROM "DeliveryLog"
+          ORDER BY "startedAt" DESC
+          LIMIT ${limit}
+        `;
 
     return rows.map(mapPrismaDeliveryLogRow);
   }
 
-  const rows = store.database
-    .prepare(
-      `SELECT * FROM delivery_logs
-       ORDER BY started_at DESC
-       LIMIT ?`,
-    )
-    .all(limit) as DeliveryLogRow[];
+  const rows = (
+    filters.actorId
+      ? store.database
+          .prepare(
+            `SELECT delivery_logs.*
+             FROM delivery_logs
+             JOIN briefs ON briefs.id = delivery_logs.brief_id
+             JOIN tasks ON tasks.id = briefs.task_id
+             JOIN spaces ON spaces.id = tasks.space_id
+             LEFT JOIN space_members
+               ON space_members.space_id = spaces.id
+              AND space_members.user_id = ?
+             WHERE spaces.owner_id = ?
+                OR space_members.user_id IS NOT NULL
+             ORDER BY delivery_logs.started_at DESC
+             LIMIT ?`,
+          )
+          .all(filters.actorId, filters.actorId, limit)
+      : store.database
+          .prepare(
+            `SELECT * FROM delivery_logs
+             ORDER BY started_at DESC
+             LIMIT ?`,
+          )
+          .all(limit)
+  ) as DeliveryLogRow[];
 
   return rows.map(mapDeliveryLog);
 }
 
 export async function listSources(
   store: Store = defaultStore,
+  filters: { actorId?: string } = {},
 ): Promise<SourceRecord[]> {
   if (store.prisma) {
     const rows = await store.prisma.source.findMany({
+      where: filters.actorId
+        ? {
+            task: {
+              space: {
+                OR: [
+                  { ownerId: filters.actorId },
+                  { members: { some: { userId: filters.actorId } } },
+                ],
+              },
+            },
+          }
+        : undefined,
       orderBy: { createdAt: "desc" },
     });
 
     return rows.map(mapPrismaSource);
   }
 
-  const rows = store.database
-    .prepare("SELECT * FROM sources ORDER BY created_at DESC")
-    .all() as SourceRow[];
+  const rows = (
+    filters.actorId
+      ? store.database
+          .prepare(
+            `SELECT DISTINCT sources.*
+             FROM sources
+             JOIN tasks ON tasks.id = sources.task_id
+             JOIN spaces ON spaces.id = tasks.space_id
+             LEFT JOIN space_members
+               ON space_members.space_id = spaces.id
+              AND space_members.user_id = ?
+             WHERE spaces.owner_id = ?
+                OR space_members.user_id IS NOT NULL
+             ORDER BY sources.created_at DESC`,
+          )
+          .all(filters.actorId, filters.actorId)
+      : store.database
+          .prepare("SELECT * FROM sources ORDER BY created_at DESC")
+          .all()
+  ) as SourceRow[];
 
   return rows.map(mapSource);
 }
@@ -2784,13 +2899,25 @@ export async function countUnreadBriefs(
 
 export async function listBriefsFiltered(
   store: Store,
-  filters: { taskId?: string; unreadOnly?: boolean } = {},
+  filters: { taskId?: string; unreadOnly?: boolean; actorId?: string } = {},
 ): Promise<BriefRecord[]> {
   if (store.prisma) {
     const rows = await store.prisma.brief.findMany({
       where: {
         ...(filters.taskId ? { taskId: filters.taskId } : {}),
         ...(filters.unreadOnly ? { isRead: false } : {}),
+        ...(filters.actorId
+          ? {
+              task: {
+                space: {
+                  OR: [
+                    { ownerId: filters.actorId },
+                    { members: { some: { userId: filters.actorId } } },
+                  ],
+                },
+              },
+            }
+          : {}),
       },
       orderBy: [
         { importanceScore: "desc" },
@@ -2819,6 +2946,10 @@ export async function listBriefsFiltered(
   if (filters.unreadOnly) {
     conditions.push("briefs.is_read = 0");
   }
+  if (filters.actorId) {
+    conditions.push("(spaces.owner_id = ? OR space_members.user_id IS NOT NULL)");
+    params.push(filters.actorId);
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
 
@@ -2831,10 +2962,13 @@ export async function listBriefsFiltered(
        FROM briefs
        JOIN tasks ON briefs.task_id = tasks.id
        JOIN spaces ON tasks.space_id = spaces.id
+       LEFT JOIN space_members
+         ON space_members.space_id = spaces.id
+        AND space_members.user_id = ?
        ${where}
        ORDER BY briefs.importance_score DESC, briefs.relevance_score DESC, briefs.created_at DESC`,
     )
-    .all(...params) as BriefRow[];
+    .all(filters.actorId ?? "", ...params) as BriefRow[];
 
   return rows.map(mapBrief);
 }

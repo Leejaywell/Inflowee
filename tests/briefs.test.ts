@@ -30,6 +30,12 @@ describe("buildBriefsFromItems", () => {
       listBriefsFiltered: vi.fn().mockResolvedValue([]),
       listSpacesWithTasks: vi.fn().mockResolvedValue([]),
     }));
+    vi.doMock("@/lib/auth", () => ({
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
 
     const { default: InboxPage } = await import("@/app/inbox/page");
     const view = await InboxPage({ searchParams: Promise.resolve({}) });

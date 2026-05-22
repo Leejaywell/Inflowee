@@ -6,6 +6,7 @@ import {
   updateSourceSchedule,
 } from "@/app/actions";
 import Link from "next/link";
+import { requireSessionActor } from "@/lib/auth";
 import {
   defaultStore,
   listRecentSyncRunsBySource,
@@ -42,9 +43,10 @@ type SourceWithRuns = SourceRecord & {
 };
 
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
+  const actor = await requireSessionActor();
   const [spaces, sources, params] = await Promise.all([
-    listSpacesWithTasks(defaultStore),
-    listSources(defaultStore),
+    listSpacesWithTasks(defaultStore, { actorId: actor.id }),
+    listSources(defaultStore, { actorId: actor.id }),
     searchParams,
   ]);
   const sourcesByTask = new Map<string, SourceWithRuns[]>();

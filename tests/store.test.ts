@@ -29,6 +29,7 @@ import {
   hasTaskRecord,
   listBriefItemIds,
   listBriefsFiltered,
+  listRecentDeliveryLogs,
   listRecentDeliveryLogsByBrief,
   listItemsByBriefId,
   listItemsBySource,
@@ -215,6 +216,120 @@ describe("store promise contract", () => {
           role: "viewer",
         }),
       ]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("scopes actor-visible sources briefs and delivery logs", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const actorSpaceId = await createSpaceRecord(store, {
+        ownerId: "user-1",
+        name: "Actor space",
+      });
+      const otherSpaceId = await createSpaceRecord(store, {
+        ownerId: "user-2",
+        name: "Other space",
+      });
+      const actorTaskId = await createTaskRecord(store, {
+        spaceId: actorSpaceId,
+        title: "Actor task",
+        taskType: "TOPIC",
+        userPrompt: "Track actor-owned updates.",
+      });
+      const otherTaskId = await createTaskRecord(store, {
+        spaceId: otherSpaceId,
+        title: "Other task",
+        taskType: "TOPIC",
+        userPrompt: "Track other updates.",
+      });
+      const actorSourceId = await createSourceRecord(store, {
+        taskId: actorTaskId,
+        sourceType: "RSS",
+        title: "Actor feed",
+        url: "https://example.com/actor.xml",
+      });
+      const otherSourceId = await createSourceRecord(store, {
+        taskId: otherTaskId,
+        sourceType: "RSS",
+        title: "Other feed",
+        url: "https://example.com/other.xml",
+      });
+      const actorItem = await createItemRecordResult(store, {
+        sourceId: actorSourceId,
+        title: "Actor item",
+        canonicalUrl: "https://example.com/actor",
+        summary: "Actor summary.",
+      });
+      const otherItem = await createItemRecordResult(store, {
+        sourceId: otherSourceId,
+        title: "Other item",
+        canonicalUrl: "https://example.com/other",
+        summary: "Other summary.",
+      });
+
+      if (!actorItem || !otherItem) {
+        throw new Error("Expected both items to be inserted.");
+      }
+
+      const actorBriefId = await createBriefRecord(store, {
+        taskId: actorTaskId,
+        itemIds: [actorItem.id],
+        title: "Actor brief",
+        summary: "Actor summary.",
+        whyItMatters: "Actor space only.",
+        sourceCitations: ["https://example.com/actor"],
+        relevanceScore: 0.5,
+        importanceScore: 0.5,
+        tags: [],
+      });
+      const otherBriefId = await createBriefRecord(store, {
+        taskId: otherTaskId,
+        itemIds: [otherItem.id],
+        title: "Other brief",
+        summary: "Other summary.",
+        whyItMatters: "Other space only.",
+        sourceCitations: ["https://example.com/other"],
+        relevanceScore: 0.5,
+        importanceScore: 0.5,
+        tags: [],
+      });
+
+      const actorLogId = await createDeliveryLog(store, {
+        briefId: actorBriefId,
+        endpoint: "https://example.com/webhook",
+        payloadType: "html",
+      });
+      const otherLogId = await createDeliveryLog(store, {
+        briefId: otherBriefId,
+        endpoint: "https://example.com/webhook",
+        payloadType: "html",
+      });
+
+      await finishDeliveryLog(store, { logId: actorLogId, status: "success" });
+      await finishDeliveryLog(store, { logId: otherLogId, status: "success" });
+
+      expect(
+        (await listSources(store, { actorId: "user-1" })).map((source) => source.id),
+      ).toEqual([actorSourceId]);
+      expect(
+        (
+          await listBriefsFiltered(store, {
+            actorId: "user-1",
+          })
+        ).map((brief) => brief.id),
+      ).toEqual([actorBriefId]);
+      expect(
+        (
+          await listRecentDeliveryLogs(store, 10, {
+            actorId: "user-1",
+          })
+        ).map((log) => log.briefId),
+      ).toEqual([actorBriefId]);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
