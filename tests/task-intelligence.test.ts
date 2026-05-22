@@ -349,7 +349,12 @@ describe("task intelligence server actions", () => {
     vi.doMock("@/lib/store", () => ({
       createChatMessage,
       createSourceRecord: vi.fn(),
+      deleteChatMessagesByThreadId: vi.fn(),
       defaultStore,
+      getTaskById: vi.fn().mockResolvedValue({
+        id: "task-1",
+        spaceId: "space-1",
+      }),
       getOrCreateChatThread,
       listChatMessages,
       updateTaskControls: vi.fn(),
@@ -495,7 +500,12 @@ describe("refreshTaskIntelligence", () => {
     vi.doMock("@/lib/store", () => ({
       createChatMessage: vi.fn(),
       createSourceRecord,
+      deleteChatMessagesByThreadId: vi.fn(),
       defaultStore,
+      getTaskById: vi.fn().mockResolvedValue({
+        id: "task-123",
+        spaceId: "space-9",
+      }),
       getOrCreateChatThread: vi.fn(),
       listChatMessages: vi.fn(),
       updateTaskControls: vi.fn(),
@@ -536,7 +546,12 @@ describe("refreshTaskIntelligence", () => {
     vi.doMock("@/lib/store", () => ({
       createChatMessage: vi.fn(),
       createSourceRecord,
+      deleteChatMessagesByThreadId: vi.fn(),
       defaultStore,
+      getTaskById: vi.fn().mockResolvedValue({
+        id: "task-123",
+        spaceId: "space-9",
+      }),
       getOrCreateChatThread: vi.fn(),
       listChatMessages: vi.fn(),
       updateTaskControls: vi.fn(),
