@@ -1,8 +1,17 @@
-import { createSource, deleteSource, runSourceSync, runSyncAll } from "@/app/actions";
+import {
+  createSource,
+  deleteSource,
+  runSourceSync,
+  runSyncAll,
+  updateSourceSchedule,
+} from "@/app/actions";
 import {
   defaultStore,
+  listRecentSyncRunsBySource,
   listSources,
   listSpacesWithTasks,
+  type SyncRunRecord,
+  type SourceRecord,
   type SourceStatus,
 } from "@/lib/store";
 
@@ -11,6 +20,7 @@ type SourcesPageProps = {
     created?: string;
     error?: string;
     synced?: string;
+    updated?: string;
   }>;
 };
 
@@ -26,17 +36,24 @@ const statusClasses: Record<SourceStatus, string> = {
   error: "bg-rose-100 text-rose-700",
 };
 
+type SourceWithRuns = SourceRecord & {
+  recentRuns: SyncRunRecord[];
+};
+
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
   const [spaces, sources, params] = await Promise.all([
     Promise.resolve(listSpacesWithTasks(defaultStore)),
     Promise.resolve(listSources(defaultStore)),
     searchParams,
   ]);
-  const sourcesByTask = new Map<string, typeof sources>();
+  const sourcesByTask = new Map<string, SourceWithRuns[]>();
 
   for (const source of sources) {
     const taskSources = sourcesByTask.get(source.taskId) ?? [];
-    taskSources.push(source);
+    taskSources.push({
+      ...source,
+      recentRuns: listRecentSyncRunsBySource(defaultStore, source.id),
+    });
     sourcesByTask.set(source.taskId, taskSources);
   }
 
@@ -50,6 +67,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
   const created = params?.created;
   const error = params?.error;
   const synced = params?.synced;
+  const updated = params?.updated;
 
   return (
     <div className="grid gap-6">
@@ -87,7 +105,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         </div>
       </section>
 
-      {(created || error || synced) && (
+      {(created || error || synced || updated) && (
         <section
           className={`rounded-2xl border px-5 py-4 text-sm ${
             error
@@ -103,6 +121,8 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                 ? "Source synced."
                 : synced === "all"
                   ? "All non-error sources synced."
+                  : updated === "schedule"
+                    ? "Source cadence updated."
                   : "Update applied."}
         </section>
       )}
@@ -279,6 +299,70 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                           <p className="mt-2 break-all text-sm leading-6 text-stone-600">
                             {source.url}
                           </p>
+                          <div className="mt-4 flex flex-wrap items-center gap-3">
+                            <form
+                              action={updateSourceSchedule}
+                              className="flex items-center gap-2"
+                            >
+                              <input
+                                name="sourceId"
+                                type="hidden"
+                                value={source.id}
+                              />
+                              <select
+                                name="syncIntervalMinutes"
+                                defaultValue={String(source.syncIntervalMinutes)}
+                                className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-600"
+                              >
+                                <option value="15">Every 15 min</option>
+                                <option value="60">Every 60 min</option>
+                                <option value="360">Every 6 hr</option>
+                                <option value="1440">Daily</option>
+                              </select>
+                              <button className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-xs font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
+                                Save cadence
+                              </button>
+                            </form>
+                            <span className="text-xs text-stone-500">
+                              Next sync:{" "}
+                              {source.nextSyncAt
+                                ? new Date(source.nextSyncAt).toLocaleString(
+                                    "en-US",
+                                    {
+                                      dateStyle: "medium",
+                                      timeStyle: "short",
+                                    },
+                                  )
+                                : "Not scheduled"}
+                            </span>
+                          </div>
+                          <div className="mt-4 rounded-2xl bg-stone-50 px-4 py-4">
+                            <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">
+                              Recent runs
+                            </div>
+                            {source.recentRuns.length === 0 ? (
+                              <p className="mt-3 text-xs text-stone-500">
+                                No recorded runs yet.
+                              </p>
+                            ) : (
+                              <ul className="mt-3 grid gap-2">
+                                {source.recentRuns.map((run: SyncRunRecord) => (
+                                  <li
+                                    key={run.id}
+                                    className="flex items-center justify-between gap-3 text-xs text-stone-500"
+                                  >
+                                    <span className="font-medium text-stone-700">
+                                      {run.status}
+                                    </span>
+                                    <span>
+                                      {run.insertedItemCount} items /{" "}
+                                      {run.createdBriefCount} briefs
+                                    </span>
+                                  </li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
                         </div>
                       ))
                     )}

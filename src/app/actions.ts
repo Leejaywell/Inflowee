@@ -16,10 +16,16 @@ import {
   hasTaskRecord,
   markBriefRead,
   markBriefUnread,
+  setSourceSchedule,
 } from "@/lib/store";
 import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
 import { refreshTaskIntelligence } from "@/lib/task-intelligence";
-import { createSourceSchema, createSpaceSchema, createTaskSchema } from "@/lib/validation";
+import {
+  createSourceSchema,
+  createSpaceSchema,
+  createTaskSchema,
+  updateSourceScheduleSchema,
+} from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
@@ -125,6 +131,27 @@ export async function runSourceSync(formData: FormData) {
   }
 
   redirect("/sources?synced=source");
+}
+
+export async function updateSourceSchedule(formData: FormData) {
+  const parsed = updateSourceScheduleSchema.safeParse({
+    sourceId: getString(formData, "sourceId"),
+    syncIntervalMinutes: getString(formData, "syncIntervalMinutes"),
+  });
+
+  if (!parsed.success) {
+    redirect(
+      `/sources?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid schedule input.")}`,
+    );
+  }
+
+  setSourceSchedule(
+    defaultStore,
+    parsed.data.sourceId,
+    parsed.data.syncIntervalMinutes,
+  );
+  revalidatePath("/sources");
+  redirect("/sources?updated=schedule");
 }
 
 export async function toggleBriefRead(formData: FormData) {
