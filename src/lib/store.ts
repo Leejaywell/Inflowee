@@ -103,6 +103,7 @@ export type ChatMessageRow = {
   role: "user" | "assistant";
   content: string;
   citations: string | null;
+  provenance: "stored" | "mixed" | null;
   created_at: string;
 };
 
@@ -204,6 +205,7 @@ export type ChatMessageRecord = {
   role: "user" | "assistant";
   content: string;
   citations: string[] | null;
+  provenance: "stored" | "mixed" | null;
   createdAt: string;
 };
 
@@ -312,6 +314,7 @@ function mapChatMessage(row: ChatMessageRow): ChatMessageRecord {
     role: row.role,
     content: row.content,
     citations: row.citations ? (JSON.parse(row.citations) as string[]) : null,
+    provenance: row.provenance,
     createdAt: row.created_at,
   };
 }
@@ -561,6 +564,22 @@ function migrateItemsTable(database: DatabaseSync) {
   `);
 }
 
+function migrateChatMessagesTable(database: DatabaseSync) {
+  const chatMessagesTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'chat_messages'",
+    )
+    .get() as { sql: string } | undefined;
+
+  if (!chatMessagesTable || chatMessagesTable.sql.includes("provenance")) {
+    return;
+  }
+
+  database.exec(
+    "ALTER TABLE chat_messages ADD COLUMN provenance TEXT CHECK(provenance IN ('stored', 'mixed'));",
+  );
+}
+
 export function createStore(
   filename = join(dataDirectory, "inflowee.sqlite"),
 ): Store {
@@ -651,6 +670,7 @@ export function createStore(
         role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
         content TEXT NOT NULL,
         citations TEXT,
+        provenance TEXT CHECK(provenance IN ('stored', 'mixed')),
         created_at TEXT NOT NULL,
         FOREIGN KEY(thread_id) REFERENCES chat_threads(id) ON DELETE CASCADE
       );
@@ -678,6 +698,7 @@ export function createStore(
     migrateBriefsTable(nextDatabase);
     migrateTasksTable(nextDatabase);
     migrateItemsTable(nextDatabase);
+    migrateChatMessagesTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
@@ -1427,18 +1448,28 @@ export function createChatMessage(
     role: "user" | "assistant";
     content: string;
     citations?: string[] | null;
+    provenance?: "stored" | "mixed" | null;
   },
 ): ChatMessageRecord {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
   const citationsStr = input.citations ? JSON.stringify(input.citations) : null;
+  const provenance = input.provenance ?? null;
 
   store.database
     .prepare(
-      `INSERT INTO chat_messages (id, thread_id, role, content, citations, created_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO chat_messages (id, thread_id, role, content, citations, provenance, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, input.threadId, input.role, input.content, citationsStr, timestamp);
+    .run(
+      id,
+      input.threadId,
+      input.role,
+      input.content,
+      citationsStr,
+      provenance,
+      timestamp,
+    );
 
   return {
     id,
@@ -1446,6 +1477,7 @@ export function createChatMessage(
     role: input.role,
     content: input.content,
     citations: input.citations ?? null,
+    provenance,
     createdAt: timestamp,
   };
 }

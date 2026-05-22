@@ -3,8 +3,11 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createElement } from "react";
+import { render, screen } from "@testing-library/react";
 import { vi } from "vitest";
 
+import { ChatConsole } from "@/components/chat-console";
 import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import {
   createSpaceRecord,
@@ -297,6 +300,103 @@ describe("task intelligence server actions", () => {
 
     expect(refreshTaskIntelligenceMock).toHaveBeenCalledWith(defaultStore, "task-123");
     expect(revalidatePath).toHaveBeenCalledWith("/spaces/space-9/tasks/task-123");
+  });
+
+  it("stores assistant provenance in the returned chat payload", async () => {
+    const revalidatePath = vi.fn();
+    const getOrCreateChatThread = vi.fn().mockReturnValue({
+      id: "thread-1",
+      scopeType: "task",
+      scopeId: "task-1",
+      createdAt: "2026-05-22T00:00:00.000Z",
+    });
+    const createChatMessage = vi.fn();
+    const listChatMessages = vi.fn().mockReturnValue([
+      { role: "user", content: "What changed today?" },
+    ]);
+    const answerGroundedQuestion = vi.fn().mockResolvedValue({
+      content: "Stored grounding was empty.",
+      citations: ["https://openai.com/changelog"],
+      provenance: "mixed",
+    });
+    const getGroundingForScope = vi.fn().mockReturnValue({
+      briefs: [],
+      items: [],
+    });
+    const defaultStore = {
+      database: {
+        prepare: vi.fn().mockReturnValue({
+          get: vi.fn().mockReturnValue({ space_id: "space-1" }),
+        }),
+      },
+    };
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath,
+    }));
+    vi.doMock("@/lib/store", () => ({
+      createChatMessage,
+      createSourceRecord: vi.fn(),
+      defaultStore,
+      getOrCreateChatThread,
+      listChatMessages,
+      updateTaskControls: vi.fn(),
+    }));
+    vi.doMock("@/lib/ai", () => ({
+      answerGroundedQuestion,
+    }));
+    vi.doMock("@/lib/grounding", () => ({
+      getGroundingForScope,
+    }));
+    vi.doMock("@/lib/live-fetch", () => ({
+      fetchLiveContext: vi.fn(),
+    }));
+
+    const { submitChatMessage } = await import("@/app/actions-chat");
+    const result = await submitChatMessage("task", "task-1", "What changed today?");
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        success: true,
+        provenance: "mixed",
+      }),
+    );
+    expect(createChatMessage).toHaveBeenNthCalledWith(
+      2,
+      defaultStore,
+      expect.objectContaining({
+        threadId: "thread-1",
+        role: "assistant",
+        provenance: "mixed",
+      }),
+    );
+    expect(revalidatePath).toHaveBeenCalledWith("/spaces/space-1/tasks/task-1");
+  });
+});
+
+describe("ChatConsole provenance labels", () => {
+  it("renders a live-context badge when provenance is mixed", () => {
+    window.HTMLElement.prototype.scrollIntoView = vi.fn();
+
+    render(
+      createElement(ChatConsole, {
+        scopeType: "task",
+        scopeId: "task-1",
+        initialMessages: [
+          {
+            id: "m-1",
+            threadId: "t-1",
+            role: "assistant",
+            content: "Stored grounding was empty.",
+            citations: ["https://openai.com/changelog"],
+            provenance: "mixed",
+            createdAt: "2026-05-22T00:00:00.000Z",
+          },
+        ],
+      }),
+    );
+
+    expect(screen.getByText("Live context")).toBeInTheDocument();
   });
 });
 

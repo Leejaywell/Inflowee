@@ -9,8 +9,9 @@ import {
   createSourceRecord,
   updateTaskControls,
 } from "@/lib/store";
-import { generateChatResponse } from "@/lib/ai";
+import { answerGroundedQuestion } from "@/lib/ai";
 import { getGroundingForScope, type GroundingResult } from "@/lib/grounding";
+import { fetchLiveContext } from "@/lib/live-fetch";
 import { createSourceSchema } from "@/lib/validation";
 
 type ChatScope = "global" | "space" | "task" | "brief";
@@ -57,15 +58,19 @@ export async function submitChatMessage(
   // 5. Generate AI Response
   let responseContent = "I apologize, but I encountered an error while formulating my response.";
   let responseCitations: string[] = [];
+  let responseProvenance: "stored" | "mixed" = "stored";
 
   try {
-    const response = await generateChatResponse(
-      formattedHistory,
-      grounding.briefs,
-      grounding.items,
-    );
+    const latestPrompt = formattedHistory.at(-1)?.content ?? content.trim();
+    const response = await answerGroundedQuestion({
+      prompt: latestPrompt,
+      grounding,
+      messages: formattedHistory,
+      liveFetchImpl: fetchLiveContext,
+    });
     responseContent = response.content;
     responseCitations = response.citations;
+    responseProvenance = response.provenance;
   } catch (e) {
     console.error("AI response generation failed:", e);
   }
@@ -76,6 +81,7 @@ export async function submitChatMessage(
     role: "assistant",
     content: responseContent,
     citations: responseCitations,
+    provenance: responseProvenance,
   });
 
   // 7. Revalidate relevant path
@@ -93,7 +99,11 @@ export async function submitChatMessage(
     revalidatePath(`/spaces/${scopeId}`);
   }
 
-  return { success: true };
+  return {
+    success: true,
+    provenance: responseProvenance,
+    citations: responseCitations,
+  };
 }
 
 export async function clearChatThread(scopeType: ChatScope, scopeId: string) {

@@ -52,6 +52,7 @@ export function ChatConsole({
       role: "user",
       content: userMessage,
       citations: null,
+      provenance: null,
       createdAt: new Date().toISOString(),
     };
 
@@ -147,28 +148,35 @@ export function ChatConsole({
                   >
                     <div className="whitespace-pre-wrap">{message.content}</div>
 
-                    {/* Citations list */}
-                    {!isUser && message.citations && message.citations.length > 0 && (
-                      <div className="mt-3 border-t border-stone-100 pt-2 text-xs">
-                        <span className="font-semibold text-stone-400 block mb-1">
-                          CITATIONS:
-                        </span>
-                        <ul className="space-y-1">
-                          {message.citations.map((cite, idx) => (
-                            <li key={idx} className="truncate">
-                              <a
-                                href={cite}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[#0057ff] hover:underline"
-                              >
-                                {cite}
-                              </a>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                    {!isUser &&
+                      (message.provenance ||
+                        (message.citations && message.citations.length > 0)) && (
+                        <div className="mt-3 border-t border-stone-100 pt-2 text-xs">
+                          {message.provenance && (
+                            <span className="mb-2 inline-flex rounded-full bg-stone-100 px-2 py-0.5 font-semibold text-stone-500">
+                              {message.provenance === "mixed"
+                                ? "Live context"
+                                : "Stored context"}
+                            </span>
+                          )}
+                          {message.citations && message.citations.length > 0 && (
+                            <ul className="space-y-1">
+                              {message.citations.map((cite, idx) => (
+                                <li key={idx} className="truncate">
+                                  <a
+                                    href={cite}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-[#0057ff] hover:underline"
+                                  >
+                                    {cite}
+                                  </a>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      )}
                   </div>
                 </div>
               );

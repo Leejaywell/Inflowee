@@ -707,7 +707,7 @@ describe("store expansions for AI features", () => {
     }
   });
 
-  it("manages chat threads and messages with citations", () => {
+  it("manages chat threads and messages with citations and provenance", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
@@ -731,6 +731,7 @@ describe("store expansions for AI features", () => {
         role: "assistant",
         content: "Devin is an autonomous AI software engineer.",
         citations: ["https://cognition.labs/blog/introducing-devin"],
+        provenance: "mixed",
       });
 
       const messages = listChatMessages(store, thread.id);
@@ -738,10 +739,12 @@ describe("store expansions for AI features", () => {
       expect(messages[0].role).toBe("user");
       expect(messages[0].content).toBe("What is Devin?");
       expect(messages[0].citations).toBeNull();
+      expect(messages[0].provenance).toBeNull();
 
       expect(messages[1].role).toBe("assistant");
       expect(messages[1].content).toBe("Devin is an autonomous AI software engineer.");
       expect(messages[1].citations).toEqual(["https://cognition.labs/blog/introducing-devin"]);
+      expect(messages[1].provenance).toBe("mixed");
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
