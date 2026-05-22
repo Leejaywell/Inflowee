@@ -1,4 +1,4 @@
-import { TaskRecord, ItemRecord, BriefRecord } from "./store";
+import { TaskRecord, ItemRecord, BriefRecord, type SourceType } from "./store";
 
 export type TaskProfile = {
   keywords: string[];
@@ -8,7 +8,7 @@ export type TaskProfile = {
 export type SourceRecommendation = {
   title: string;
   url: string;
-  sourceType: "RSS" | "PAGE" | "STRUCTURED";
+  sourceType: SourceType;
 };
 
 export type SourceBundle = {

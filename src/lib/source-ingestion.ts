@@ -3,6 +3,8 @@ import { parseFeedItems } from "@/lib/rss";
 import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
 import { generateBriefsFromItems } from "@/lib/ai";
 import { extractStructuredList } from "@/lib/structured-extract";
+import { extractUpdateEntries } from "@/lib/update-extract";
+import { extractNewsletterArchiveEntries } from "@/lib/newsletter-archive-extract";
 import {
   briefExistsForItem,
   createBriefRecord,
@@ -147,6 +149,26 @@ async function syncStructuredSource(
   return await extractStructuredList(html, source.url);
 }
 
+async function syncUpdateSource(
+  source: SourceRecord,
+  fetchImpl: typeof fetchSourceFeed,
+) {
+  const html = await fetchImpl(source.url, {
+    signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
+  });
+  return extractUpdateEntries(html, source.url);
+}
+
+async function syncNewsletterSource(
+  source: SourceRecord,
+  fetchImpl: typeof fetchSourceFeed,
+) {
+  const html = await fetchImpl(source.url, {
+    signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
+  });
+  return await extractNewsletterArchiveEntries(html, source.url);
+}
+
 export async function syncSourceById(
   store: Store,
   sourceId: string,
@@ -188,6 +210,10 @@ export async function syncSourceById(
         ? await syncPageSource(source, fetchImpl)
         : source.sourceType === "STRUCTURED"
         ? await syncStructuredSource(source, fetchImpl)
+        : source.sourceType === "UPDATE"
+        ? await syncUpdateSource(source, fetchImpl)
+        : source.sourceType === "NEWSLETTER"
+        ? await syncNewsletterSource(source, fetchImpl)
         : await syncRssSource(source, fetchImpl);
 
     const summary = await storeSourceItemsAndCreateBriefs(store, source, items);

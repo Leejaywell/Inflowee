@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { refreshStoredTaskIntelligence } from "@/app/actions";
 import { subscribeRecommendedSources } from "@/app/actions-chat";
 import { SourceBundle, SourceRecommendation, TaskProfile } from "@/lib/ai";
+import type { SourceType } from "@/lib/store";
 
 type RecommendationWizardProps = {
   taskId: string;
@@ -14,7 +15,7 @@ type RecommendationWizardProps = {
 type SelectedSource = {
   title: string;
   url: string;
-  sourceType: "RSS" | "PAGE" | "STRUCTURED";
+  sourceType: SourceType;
 };
 
 export function RecommendationWizard({

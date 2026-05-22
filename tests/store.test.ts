@@ -98,6 +98,68 @@ describe("store source persistence", () => {
     }
   });
 
+  it("stores UPDATE and NEWSLETTER sources under a task", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, {
+        name: "OpenAI",
+      });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Monitor updates",
+        taskType: "TOPIC",
+        userPrompt: "Track changelogs and newsletter archives",
+      });
+
+      createSourceRecord(store, {
+        taskId,
+        sourceType: "UPDATE",
+        title: "OpenAI Changelog",
+        url: "https://openai.com/changelog",
+      });
+      createSourceRecord(store, {
+        taskId,
+        sourceType: "NEWSLETTER",
+        title: "Agent Archive",
+        url: "https://example.com/archive",
+      });
+
+      expect(listSourcesByTask(store, taskId)).toEqual([
+        expect.objectContaining({
+          taskId,
+          sourceType: "UPDATE",
+          title: "OpenAI Changelog",
+          url: "https://openai.com/changelog",
+          status: "idle",
+        }),
+        expect.objectContaining({
+          taskId,
+          sourceType: "NEWSLETTER",
+          title: "Agent Archive",
+          url: "https://example.com/archive",
+          status: "idle",
+        }),
+      ]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects newsletter archive sources without https", () => {
+    const parsed = createSourceSchema.safeParse({
+      taskId: "task-123",
+      sourceType: "NEWSLETTER",
+      title: "Archive",
+      url: "http://localhost/archive",
+    });
+
+    expect(parsed.success).toBe(false);
+    expect(parsed.error?.issues[0]?.message).toBe("Enter a valid https URL.");
+  });
+
   it("migrates an existing sources table to enforce valid status values", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const filename = join(tempDirectory, "store.sqlite");
@@ -165,6 +227,8 @@ describe("store source persistence", () => {
       expect(sourcesTable.sql).toContain(
         "CHECK(status IN ('idle', 'success', 'error'))",
       );
+      expect(sourcesTable.sql).toContain("'UPDATE'");
+      expect(sourcesTable.sql).toContain("'NEWSLETTER'");
 
       expect(() =>
         store.database

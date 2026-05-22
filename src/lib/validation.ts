@@ -21,10 +21,9 @@ export const createTaskSchema = z.object({
     .max(600, "Prompt must be 600 characters or fewer."),
 });
 
-
 export const createSourceSchema = z.object({
   taskId: z.string().trim().min(1, "Select a task."),
-  sourceType: z.enum(["RSS", "PAGE", "STRUCTURED"]),
+  sourceType: z.enum(["RSS", "PAGE", "STRUCTURED", "UPDATE", "NEWSLETTER"]),
   title: z
     .string()
     .trim()
@@ -41,4 +40,22 @@ export const createSourceSchema = z.object({
         return false;
       }
     }, "Enter a valid http or https URL."),
+}).superRefine((value, context) => {
+  if (value.sourceType !== "NEWSLETTER") {
+    return;
+  }
+
+  try {
+    const url = new URL(value.url);
+
+    if (url.protocol !== "https:") {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["url"],
+        message: "Enter a valid https URL.",
+      });
+    }
+  } catch {
+    // Base schema already reports invalid URLs.
+  }
 });

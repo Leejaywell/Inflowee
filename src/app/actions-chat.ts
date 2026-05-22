@@ -122,7 +122,11 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
 
 export async function subscribeRecommendedSources(
   taskId: string,
-  sources: Array<{ title: string; url: string; sourceType: "RSS" | "PAGE" | "STRUCTURED" }>,
+  sources: Array<{
+    title: string;
+    url: string;
+    sourceType: "RSS" | "PAGE" | "STRUCTURED" | "UPDATE" | "NEWSLETTER";
+  }>,
 ) {
   const store = defaultStore;
   const parsedSources = sources.map((source, index) => ({

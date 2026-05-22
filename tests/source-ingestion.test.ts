@@ -130,6 +130,106 @@ describe("syncSourceById", () => {
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   });
+
+  it("ingests update sources into items and briefs", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "OpenAI" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Monitor updates",
+        taskType: "TOPIC",
+        userPrompt: "Track changelog updates",
+      });
+      const sourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "UPDATE",
+        title: "Changelog",
+        url: "https://example.com/changelog",
+      });
+
+      const html = `
+        <html>
+          <body>
+            <section>
+              <h2>Added task intelligence refresh</h2>
+              <a href="#2026-05-22">Permalink</a>
+              <p>Task recommendations can now be refreshed on demand.</p>
+            </section>
+          </body>
+        </html>
+      `;
+      const result = await syncSourceById(store, sourceId, {
+        fetchSourceFeedImpl: vi.fn().mockResolvedValue(html),
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        insertedItemCount: 1,
+        createdBriefCount: 1,
+      });
+      expect(listItemsBySource(store, sourceId)).toHaveLength(1);
+      expect(listBriefs(store)[0]).toMatchObject({
+        taskId,
+        title: "Added task intelligence refresh",
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("ingests newsletter archive sources into items and briefs", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "AI Watch" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Monitor archives",
+        taskType: "TOPIC",
+        userPrompt: "Track newsletter archives",
+      });
+      const sourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "NEWSLETTER",
+        title: "Archive",
+        url: "https://example.com/archive",
+      });
+
+      const html = `
+        <html>
+          <body>
+            <article>
+              <h2>This Week In Agents #12</h2>
+              <a href="/archive/week-12">Read issue</a>
+              <p>OpenAI, Cursor, and Devin all shipped updates this week.</p>
+            </article>
+          </body>
+        </html>
+      `;
+      const result = await syncSourceById(store, sourceId, {
+        fetchSourceFeedImpl: vi.fn().mockResolvedValue(html),
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        insertedItemCount: 1,
+        createdBriefCount: 1,
+      });
+      expect(listItemsBySource(store, sourceId)).toHaveLength(1);
+      expect(listBriefs(store)[0]).toMatchObject({
+        taskId,
+        title: "This Week In Agents #12",
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("syncAllSources", () => {
@@ -203,4 +303,3 @@ describe("syncAllSources", () => {
     }
   });
 });
-

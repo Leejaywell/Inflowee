@@ -4,7 +4,12 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export type TaskType = "TOPIC" | "QUESTION";
-export type SourceType = "RSS" | "PAGE" | "STRUCTURED";
+export type SourceType =
+  | "RSS"
+  | "PAGE"
+  | "STRUCTURED"
+  | "UPDATE"
+  | "NEWSLETTER";
 export type SourceStatus = "idle" | "success" | "error";
 export type Store = {
   database: DatabaseSync;
@@ -202,7 +207,7 @@ const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER')),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
@@ -295,8 +300,15 @@ function migrateSourcesTable(database: DatabaseSync) {
 
   const needsStatusMigration = !sourcesTable.sql.includes(sourceStatusConstraint);
   const needsStructuredMigration = !sourcesTable.sql.includes("'STRUCTURED'");
+  const needsUpdateMigration = !sourcesTable.sql.includes("'UPDATE'");
+  const needsNewsletterMigration = !sourcesTable.sql.includes("'NEWSLETTER'");
 
-  if (!needsStatusMigration && !needsStructuredMigration) {
+  if (
+    !needsStatusMigration &&
+    !needsStructuredMigration &&
+    !needsUpdateMigration &&
+    !needsNewsletterMigration
+  ) {
     return;
   }
 
@@ -307,7 +319,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
-      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED')),
+      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER')),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
@@ -334,7 +346,7 @@ function migrateSourcesTable(database: DatabaseSync) {
       id,
       task_id,
       CASE
-        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED') THEN source_type
+        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER') THEN source_type
         ELSE 'PAGE'
       END,
       title,

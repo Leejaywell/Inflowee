@@ -115,7 +115,8 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           <div className="space-y-1">
             <h2 className="text-xl font-semibold">Add a source</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Attach an RSS feed or web page to a task.
+              Attach an RSS feed, structured list, update page, or newsletter
+              archive to a task.
             </p>
           </div>
 
@@ -146,6 +147,9 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             >
               <option value="RSS">RSS Feed</option>
               <option value="PAGE">Web Page</option>
+              <option value="STRUCTURED">Structured List</option>
+              <option value="UPDATE">Update Feed</option>
+              <option value="NEWSLETTER">Newsletter Archive</option>
             </select>
           </label>
 
