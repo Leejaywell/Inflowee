@@ -10,13 +10,19 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:reset": "node --experimental-strip-types scripts/reset-dev.ts",
-    "db:seed": "node --experimental-strip-types scripts/seed-dev.ts"
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:reset": "prisma migrate reset --force --skip-seed",
+    "db:seed": "node --experimental-strip-types scripts/seed-dev.ts",
+    "inngest:dev": "inngest-cli dev -u http://localhost:3000/api/inngest"
   },
   "dependencies": {
+    "@prisma/client": "^6.9.0",
     "@resvg/resvg-js": "^2.6.2",
     "cheerio": "^1.2.0",
     "fast-xml-parser": "^5.3.0",
+    "inngest": "^3.31.1",
     "next": "16.2.6",
     "react": "19.2.4",
     "react-dom": "19.2.4",
@@ -33,6 +39,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "jsdom": "^26.1.0",
+    "prisma": "^6.9.0",
     "tailwindcss": "^4",
     "typescript": "^5",
     "vitest": "^3.2.4"

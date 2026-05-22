@@ -1,0 +1,174 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Space {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  tasks       Task[]
+}
+
+model Task {
+  id                    String                 @id @default(uuid())
+  spaceId               String
+  title                 String
+  taskType              String
+  userPrompt            String
+  relevanceLevel        Int
+  summaryPreference     String
+  taskProfile           Json?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  space                 Space                  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+  sources               Source[]
+  briefs                Brief[]
+  recommendationBundles RecommendationBundle[]
+
+  @@index([spaceId, createdAt])
+}
+
+model Source {
+  id                  String    @id @default(uuid())
+  taskId              String
+  sourceType          String
+  title               String
+  url                 String
+  status              String
+  lastSyncedAt        DateTime?
+  lastError           String?
+  syncIntervalMinutes Int
+  nextSyncAt          DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  task                Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  items               Item[]
+  syncRuns            SyncRun[]
+
+  @@index([taskId, createdAt])
+  @@index([nextSyncAt, status])
+}
+
+model Item {
+  id               String    @id @default(uuid())
+  sourceId         String
+  title            String
+  canonicalUrl     String
+  summary          String?
+  rawContent       String?
+  origin           String?
+  language         String?
+  contentHash      String
+  structuredFields Json?
+  publishedAt      DateTime?
+  fetchedAt        DateTime
+  createdAt        DateTime  @default(now())
+  source           Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  briefItems       BriefItem[]
+
+  @@unique([sourceId, contentHash])
+  @@index([sourceId, publishedAt])
+}
+
+model Brief {
+  id              String    @id @default(uuid())
+  taskId          String
+  title           String
+  summary         String
+  whyItMatters    String
+  sourceCitations Json
+  relevanceScore  Float
+  importanceScore Float
+  tagsJson        Json
+  isRead          Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  briefItems      BriefItem[]
+  deliveryLogs    DeliveryLog[]
+
+  @@index([taskId, createdAt])
+}
+
+model BriefItem {
+  briefId String
+  itemId  String
+  brief   Brief @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  item    Item  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@id([briefId, itemId])
+}
+
+model SyncRun {
+  id                String    @id @default(uuid())
+  sourceId          String
+  status            String
+  insertedItemCount Int       @default(0)
+  createdBriefCount Int       @default(0)
+  error             String?
+  startedAt         DateTime
+  finishedAt        DateTime?
+  source            Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@index([sourceId, startedAt])
+}
+
+model AppSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime
+}
+
+model DeliveryLog {
+  id             String    @id @default(uuid())
+  briefId        String
+  endpoint       String
+  payloadType    String
+  status         String
+  responseStatus Int?
+  error          String?
+  startedAt      DateTime
+  finishedAt     DateTime?
+  brief          Brief     @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  @@index([briefId, startedAt])
+}
+
+model RecommendationBundle {
+  id         String   @id @default(uuid())
+  taskId     String
+  position   Int
+  bundleJson Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, position])
+}
+
+model ChatThread {
+  id        String        @id @default(uuid())
+  scopeType String
+  scopeId   String
+  createdAt DateTime      @default(now())
+  messages  ChatMessage[]
+}
+
+model ChatMessage {
+  id         String     @id @default(uuid())
+  threadId   String
+  role       String
+  content    String
+  citations  Json?
+  provenance String?
+  createdAt  DateTime   @default(now())
+  thread     ChatThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId, createdAt])
+}
