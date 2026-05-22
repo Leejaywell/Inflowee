@@ -10,6 +10,8 @@ import {
   briefExistsForItem,
   createBriefRecord,
   createItemRecordResult,
+  createSyncRun,
+  finishSyncRun,
   getSourceById,
   getTaskById,
   listSources,
@@ -205,11 +207,18 @@ export async function syncSourceById(
     };
   }
 
+  const runId = createSyncRun(store, { sourceId: source.id });
+
   const blockedSourceError = getBlockedSourceUrlError(source.url);
 
   if (blockedSourceError) {
     markSourceSyncResult(store, {
       sourceId: source.id,
+      status: "error",
+      error: blockedSourceError,
+    });
+    finishSyncRun(store, {
+      runId,
       status: "error",
       error: blockedSourceError,
     });
@@ -241,6 +250,12 @@ export async function syncSourceById(
       sourceId: source.id,
       status: "success",
     });
+    finishSyncRun(store, {
+      runId,
+      status: "success",
+      insertedItemCount: summary.insertedItemCount,
+      createdBriefCount: summary.createdBriefCount,
+    });
 
     return {
       ok: true,
@@ -252,6 +267,11 @@ export async function syncSourceById(
 
     markSourceSyncResult(store, {
       sourceId: source.id,
+      status: "error",
+      error: syncError,
+    });
+    finishSyncRun(store, {
+      runId,
       status: "error",
       error: syncError,
     });

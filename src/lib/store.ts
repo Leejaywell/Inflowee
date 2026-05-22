@@ -1122,6 +1122,23 @@ export function listSourcesByTask(
   return rows.map(mapSource);
 }
 
+export function listDueSources(
+  store: Store,
+  nowIso = new Date().toISOString(),
+): SourceRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM sources
+       WHERE status != 'error'
+         AND next_sync_at IS NOT NULL
+         AND next_sync_at <= ?
+       ORDER BY next_sync_at ASC, created_at ASC`,
+    )
+    .all(nowIso) as SourceRow[];
+
+  return rows.map(mapSource);
+}
+
 export function listItemsBySource(
   store: Store,
   sourceId: string,
@@ -1253,6 +1270,48 @@ export function markSourceSyncResult(
       timestamp,
       input.sourceId,
     );
+}
+
+export function setSourceSchedule(
+  store: Store,
+  sourceId: string,
+  syncIntervalMinutes: number,
+  nextSyncAt?: string,
+) {
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare(
+      `UPDATE sources
+       SET sync_interval_minutes = ?,
+           next_sync_at = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(syncIntervalMinutes, nextSyncAt ?? timestamp, timestamp, sourceId);
+}
+
+export function scheduleNextSourceSync(
+  store: Store,
+  sourceId: string,
+  syncIntervalMinutes: number,
+  baseTimeIso = new Date().toISOString(),
+) {
+  const baseTime = Date.parse(baseTimeIso);
+  const nextSyncAt = new Date(
+    baseTime + syncIntervalMinutes * 60 * 1000,
+  ).toISOString();
+  const timestamp = new Date().toISOString();
+
+  store.database
+    .prepare(
+      `UPDATE sources
+       SET next_sync_at = ?,
+           updated_at = ?
+       WHERE id = ?`,
+    )
+    .run(nextSyncAt, timestamp, sourceId);
+
+  return nextSyncAt;
 }
 
 export function createSyncRun(

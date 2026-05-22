@@ -10,6 +10,7 @@ import {
   createSpaceRecord,
   createStore,
   createTaskRecord,
+  listRecentSyncRunsBySource,
   listBriefs,
   listItemsBySource,
   listSourcesByTask,
@@ -74,6 +75,15 @@ describe("syncSourceById", () => {
           status: "success",
           lastError: null,
           lastSyncedAt: expect.any(String),
+        }),
+      ]);
+      expect(listRecentSyncRunsBySource(store, sourceId)).toEqual([
+        expect.objectContaining({
+          sourceId,
+          status: "success",
+          insertedItemCount: 1,
+          createdBriefCount: 1,
+          finishedAt: expect.any(String),
         }),
       ]);
     } finally {
