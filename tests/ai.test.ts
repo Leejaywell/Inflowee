@@ -1,6 +1,12 @@
 /// <reference types="vitest/globals" />
 
-import { understandTaskIntent, recommendSourceBundles, generateBriefsFromItems, generateChatResponse } from "@/lib/ai";
+import {
+  understandTaskIntent,
+  recommendSourceBundles,
+  generateBriefsFromItems,
+  generateChatResponse,
+  answerGroundedQuestion,
+} from "@/lib/ai";
 import { TaskRecord, ItemRecord, BriefRecord } from "@/lib/store";
 
 describe("Core AI Orchestration layer", () => {
@@ -171,5 +177,22 @@ describe("Core AI Orchestration layer", () => {
     expect(response.content).toContain("Cognition Labs");
     expect(response.content).toContain("Devin");
     expect(response.citations).toEqual(["https://cognition.labs/blog/devin"]);
+  });
+
+  it("falls back to live fetch when no stored grounding exists", async () => {
+    const response = await answerGroundedQuestion({
+      prompt: "What changed on the OpenAI changelog today?",
+      grounding: { briefs: [], items: [] },
+      liveFetchImpl: vi.fn().mockResolvedValue([
+        {
+          url: "https://openai.com/changelog",
+          content: "OpenAI shipped a new API update today.",
+        },
+      ]),
+    });
+
+    expect(response.provenance).toBe("mixed");
+    expect(response.citations).toEqual(["https://openai.com/changelog"]);
+    expect(response.content).toContain("Stored grounding was empty.");
   });
 });

@@ -1,3 +1,5 @@
+import type { GroundingResult } from "./grounding";
+import { fetchLiveContext, type LiveFetchResult } from "./live-fetch";
 import { TaskRecord, ItemRecord, BriefRecord, type SourceType } from "./store";
 import { clusterItemsForBriefs } from "./brief-clustering";
 
@@ -39,6 +41,12 @@ export type BriefCandidate = {
 export type ChatResponse = {
   content: string;
   citations: string[];
+};
+
+export type GroundedAnswer = {
+  content: string;
+  citations: string[];
+  provenance: "stored" | "mixed";
 };
 
 // Low-dependency standard fetch completion caller for OpenAI GPT models
@@ -506,6 +514,11 @@ You can follow deal tracking in the [TechCrunch Coverage](${matchingUrl}).`;
 
 You can cross-reference this information directly from [this citation](${cited}).`;
       matchedCitations = [cited];
+    } else if (items.length > 0) {
+      const topItem = items[0];
+      const cited = topItem.canonicalUrl;
+      responseContent = `Based on the temporary live context, the strongest current signal is **"${topItem.title}"**.\n\n### Summary of updates:\n* **Main Development**: ${topItem.summary ?? topItem.rawContent ?? "Fresh public-web context was captured for this topic."}\n* **Source**: ${topItem.origin ?? new URL(cited).hostname}`;
+      matchedCitations = [cited];
     } else {
       responseContent = `I am ready to assist you! However, no specific active briefs or source items were found in the current grounding scope. Please ensure you have added valid sources and clicked **Sync** to pull in feed articles.`;
     }
@@ -514,5 +527,70 @@ You can cross-reference this information directly from [this citation](${cited})
   return {
     content: responseContent,
     citations: matchedCitations,
+  };
+}
+
+export async function answerGroundedQuestion(input: {
+  prompt: string;
+  grounding: GroundingResult;
+  messages?: { role: string; content: string }[];
+  liveFetchImpl?: (prompt: string) => Promise<LiveFetchResult[]>;
+}): Promise<GroundedAnswer> {
+  const messages = input.messages ?? [{ role: "user", content: input.prompt }];
+
+  if (input.grounding.briefs.length > 0 || input.grounding.items.length > 0) {
+    const response = await generateChatResponse(
+      messages,
+      input.grounding.briefs,
+      input.grounding.items,
+    );
+
+    return {
+      content: response.content,
+      citations: response.citations,
+      provenance: "stored",
+    };
+  }
+
+  const liveResults = await (input.liveFetchImpl?.(input.prompt) ??
+    fetchLiveContext(input.prompt));
+
+  if (liveResults.length === 0) {
+    return {
+      content:
+        "Stored grounding was empty and no temporary public-web context was available.",
+      citations: [],
+      provenance: "mixed",
+    };
+  }
+
+  const liveItems: ItemRecord[] = liveResults.map((result, index) => ({
+    id: `live-${index}`,
+    sourceId: "live-fetch",
+    title: new URL(result.url).hostname,
+    canonicalUrl: result.url,
+    summary: result.content,
+    rawContent: result.content,
+    origin: new URL(result.url).hostname,
+    language: "en",
+    contentHash: `live-${index}`,
+    structuredFields: null,
+    publishedAt: null,
+    fetchedAt: new Date().toISOString(),
+    createdAt: new Date().toISOString(),
+  }));
+  const response = await generateChatResponse(
+    messages,
+    [],
+    liveItems,
+  );
+
+  return {
+    content: `Stored grounding was empty. Added temporary live context from public web sources.\n\n${response.content}`,
+    citations:
+      response.citations.length > 0
+        ? response.citations
+        : liveResults.map((result) => result.url),
+    provenance: "mixed",
   };
 }
