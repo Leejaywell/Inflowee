@@ -172,6 +172,31 @@ describe("webhook delivery transport", () => {
     expect(result.attempts).toBe(3);
   });
 
+  it("backs off between failed delivery attempts", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 500 }))
+      .mockResolvedValueOnce(new Response("still nope", { status: 502 }))
+      .mockResolvedValueOnce(new Response("ok", { status: 202 }));
+    const sleepImpl = vi.fn().mockResolvedValue(undefined);
+
+    const result = await deliverBriefWithRetry({
+      endpoint: "https://example.com/hook",
+      payload: samplePayload,
+      fetchImpl,
+      sleepImpl,
+      maxAttempts: 3,
+    });
+
+    expect(result).toEqual({
+      status: "success",
+      responseStatus: 202,
+      attempts: 3,
+    });
+    expect(sleepImpl).toHaveBeenNthCalledWith(1, 250);
+    expect(sleepImpl).toHaveBeenNthCalledWith(2, 500);
+  });
+
   it.runIf(Boolean(process.env.DATABASE_URL))(
     "persists delivery logs through the postgres-backed store",
     async () => {
@@ -280,6 +305,68 @@ describe("webhook delivery transport", () => {
             briefId,
             status: "success",
             responseStatus: 202,
+          }),
+        ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    15_000,
+  );
+
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "persists the failed attempt count in the delivery log error",
+    async () => {
+      const fixture = await createIsolatedPostgresStore();
+
+      try {
+        const spaceId = await createSpaceRecord(fixture.store, {
+          name: "AI Watch",
+        });
+        const taskId = await createTaskRecord(fixture.store, {
+          spaceId,
+          title: "Track OpenAI updates",
+          taskType: "TOPIC",
+          userPrompt: "Track OpenAI updates",
+        });
+        const briefId = await createBriefRecord(fixture.store, {
+          taskId,
+          itemIds: [],
+          title: "OpenAI ships a notable update",
+          summary: "The API changelog added a production-facing update.",
+          whyItMatters:
+            "The change affects teams that rely on the latest API behavior.",
+          sourceCitations: ["https://openai.com/changelog"],
+        });
+
+        await fixture.store.prisma!.appSetting.upsert({
+          where: { key: "webhook_endpoint" },
+          update: {
+            value: "https://example.com/webhook",
+            updatedAt: new Date(),
+          },
+          create: {
+            key: "webhook_endpoint",
+            value: "https://example.com/webhook",
+            updatedAt: new Date(),
+          },
+        });
+
+        const result = await deliverStoredBrief(fixture.store, briefId, {
+          fetchImpl: vi.fn().mockResolvedValue(new Response("nope", { status: 500 })),
+          sleepImpl: vi.fn().mockResolvedValue(undefined),
+          maxAttempts: 3,
+        });
+
+        expect(result).toMatchObject({
+          status: "error",
+          attempts: 3,
+        });
+        expect(await listRecentDeliveryLogsByBrief(fixture.store, briefId)).toEqual([
+          expect.objectContaining({
+            briefId,
+            status: "error",
+            error: expect.stringContaining("Delivery failed after 3 attempts."),
           }),
         ]);
       } finally {

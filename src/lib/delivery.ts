@@ -21,6 +21,7 @@ export type SlackDeliveryPayload = {
 };
 
 type FetchLike = typeof fetch;
+type SleepLike = (durationMs: number) => Promise<void>;
 
 export type DeliveryAttemptResult =
   | {
@@ -33,6 +34,28 @@ export type DeliveryAttemptResult =
       status: "error";
       error: string;
     };
+
+const DELIVERY_RETRY_BASE_DELAY_MS = 250;
+const DELIVERY_RETRY_MAX_DELAY_MS = 2_000;
+
+function sleep(durationMs: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}
+
+function getDeliveryRetryDelayMs(attempt: number) {
+  return Math.min(
+    DELIVERY_RETRY_MAX_DELAY_MS,
+    DELIVERY_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1),
+  );
+}
+
+function formatDeliveryFailureMessage(error: string, attempts: number) {
+  return `${error} Delivery failed after ${attempts} attempt${
+    attempts === 1 ? "" : "s"
+  }.`;
+}
 
 export async function buildDeliveryPayload(input: {
   channel: "webhook";
@@ -107,8 +130,10 @@ export async function deliverBriefWithRetry(input: {
   payload: DeliveryPayload;
   fetchImpl?: FetchLike;
   maxAttempts?: number;
+  sleepImpl?: SleepLike;
 }): Promise<DeliveryAttemptResult> {
   const maxAttempts = Math.max(1, input.maxAttempts ?? 1);
+  const sleepImpl = input.sleepImpl ?? sleep;
   let lastError = "Unknown delivery failure.";
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
@@ -123,6 +148,10 @@ export async function deliverBriefWithRetry(input: {
     } catch (error) {
       lastError =
         error instanceof Error ? error.message : "Unknown delivery failure.";
+
+      if (attempt < maxAttempts) {
+        await sleepImpl(getDeliveryRetryDelayMs(attempt));
+      }
     }
   }
 
@@ -139,6 +168,7 @@ export async function deliverStoredBrief(
   options?: {
     fetchImpl?: FetchLike;
     maxAttempts?: number;
+    sleepImpl?: SleepLike;
   },
 ) {
   const brief = await getBriefById(store, briefId);
@@ -174,6 +204,7 @@ export async function deliverStoredBrief(
     }),
     fetchImpl: options?.fetchImpl,
     maxAttempts: options?.maxAttempts,
+    sleepImpl: options?.sleepImpl,
   });
 
   if (result.status === "success") {
@@ -192,7 +223,7 @@ export async function deliverStoredBrief(
   await finishDeliveryLog(store, {
     logId,
     status: "error",
-    error: result.error,
+    error: formatDeliveryFailureMessage(result.error, result.attempts),
   });
 
   return {
