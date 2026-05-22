@@ -8,20 +8,13 @@ import {
   getSpaceById,
   getOrCreateChatThread,
   listChatMessages,
+  listTasksBySpace,
 } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 type SpacePageProps = {
   params: Promise<{ spaceId: string }>;
-};
-
-type TaskRow = {
-  id: string;
-  title: string;
-  task_type: "TOPIC" | "QUESTION";
-  user_prompt: string;
-  created_at: string;
 };
 
 export default async function SpaceDetailPage({ params }: SpacePageProps) {
@@ -36,9 +29,7 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
   }
 
   // 2. Fetch tasks within the space
-  const tasks = store.database
-    .prepare("SELECT * FROM tasks WHERE space_id = ? ORDER BY created_at DESC")
-    .all(spaceId) as TaskRow[];
+  const tasks = await listTasksBySpace(store, spaceId);
 
   // 3. Fetch aggregated briefs in this space
   const { briefs } = await getGroundingForScope(store, "space", spaceId, {
@@ -159,7 +150,7 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
                         </Link>
                       </h4>
                       <p className="text-xs text-stone-500 mt-1 truncate max-w-xs sm:max-w-md">
-                        {task.user_prompt}
+                        {task.userPrompt}
                       </p>
                     </div>
 

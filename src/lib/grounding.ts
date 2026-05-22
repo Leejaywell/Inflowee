@@ -1,6 +1,7 @@
 import {
   type BriefRecord,
   getBriefById,
+  listTasksBySpace,
   listBriefsFiltered,
   listItemsByBriefId,
   listItemsBySource,
@@ -97,11 +98,7 @@ export async function getGroundingForScope(
     return { briefs, items };
   }
 
-  const taskIds = (
-    store.database
-      .prepare("SELECT id FROM tasks WHERE space_id = ? ORDER BY created_at DESC")
-      .all(scopeId) as Array<{ id: string }>
-  ).map((task) => task.id);
+  const taskIds = (await listTasksBySpace(store, scopeId)).map((task) => task.id);
 
   if (taskIds.length === 0) {
     return { briefs: [], items: [] };

@@ -960,6 +960,17 @@ export async function getSpaceById(
   };
 }
 
+export async function listTasksBySpace(
+  store: Store,
+  spaceId: string,
+): Promise<TaskRecord[]> {
+  const rows = store.database
+    .prepare("SELECT * FROM tasks WHERE space_id = ? ORDER BY created_at DESC")
+    .all(spaceId) as TaskRow[];
+
+  return rows.map(mapTask);
+}
+
 export function createSpaceRecord(input: CreateSpaceInput): Promise<string>;
 export function createSpaceRecord(
   store: Store,
@@ -1961,4 +1972,13 @@ export async function listChatMessages(
     .all(threadId) as ChatMessageRow[];
 
   return rows.map(mapChatMessage);
+}
+
+export async function deleteChatMessagesByThreadId(
+  store: Store,
+  threadId: string,
+): Promise<void> {
+  store.database
+    .prepare("DELETE FROM chat_messages WHERE thread_id = ?")
+    .run(threadId);
 }

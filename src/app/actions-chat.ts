@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  deleteChatMessagesByThreadId,
   defaultStore,
-  getOrCreateChatThread,
   createChatMessage,
-  listChatMessages,
   createSourceRecord,
+  getOrCreateChatThread,
+  getTaskById,
+  listChatMessages,
   updateTaskControls,
 } from "@/lib/store";
 import { answerGroundedQuestion } from "@/lib/ai";
@@ -88,12 +90,9 @@ export async function submitChatMessage(
   if (scopeType === "brief") {
     revalidatePath(`/inbox/${scopeId}`);
   } else if (scopeType === "task") {
-    // Get task to know spaceId for revalidation
-    const task = store.database
-      .prepare("SELECT space_id FROM tasks WHERE id = ?")
-      .get(scopeId) as { space_id: string } | undefined;
+    const task = await getTaskById(store, scopeId);
     if (task) {
-      revalidatePath(`/spaces/${task.space_id}/tasks/${scopeId}`);
+      revalidatePath(`/spaces/${task.spaceId}/tasks/${scopeId}`);
     }
   } else if (scopeType === "space") {
     revalidatePath(`/spaces/${scopeId}`);
@@ -110,18 +109,14 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
   const store = defaultStore;
   const thread = await getOrCreateChatThread(store, scopeType, scopeId);
 
-  store.database
-    .prepare("DELETE FROM chat_messages WHERE thread_id = ?")
-    .run(thread.id);
+  await deleteChatMessagesByThreadId(store, thread.id);
 
   if (scopeType === "brief") {
     revalidatePath(`/inbox/${scopeId}`);
   } else if (scopeType === "task") {
-    const task = store.database
-      .prepare("SELECT space_id FROM tasks WHERE id = ?")
-      .get(scopeId) as { space_id: string } | undefined;
+    const task = await getTaskById(store, scopeId);
     if (task) {
-      revalidatePath(`/spaces/${task.space_id}/tasks/${scopeId}`);
+      revalidatePath(`/spaces/${task.spaceId}/tasks/${scopeId}`);
     }
   } else if (scopeType === "space") {
     revalidatePath(`/spaces/${scopeId}`);
@@ -170,11 +165,9 @@ export async function subscribeRecommendedSources(
     });
   }
 
-  const task = store.database
-    .prepare("SELECT space_id FROM tasks WHERE id = ?")
-    .get(taskId) as { space_id: string } | undefined;
+  const task = await getTaskById(store, taskId);
   if (task) {
-    revalidatePath(`/spaces/${task.space_id}/tasks/${taskId}`);
+    revalidatePath(`/spaces/${task.spaceId}/tasks/${taskId}`);
     revalidatePath("/sources");
   }
 
@@ -193,11 +186,9 @@ export async function updateTaskControlSettings(
     summaryPreference,
   );
 
-  const task = defaultStore.database
-    .prepare("SELECT space_id FROM tasks WHERE id = ?")
-    .get(taskId) as { space_id: string } | undefined;
+  const task = await getTaskById(defaultStore, taskId);
   if (task) {
-    revalidatePath(`/spaces/${task.space_id}/tasks/${taskId}`);
+    revalidatePath(`/spaces/${task.spaceId}/tasks/${taskId}`);
   }
 
   return { success: true };
