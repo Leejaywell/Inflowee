@@ -2,8 +2,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { envSchema } from "@/lib/env";
 import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
+import { envSchema } from "@/lib/env";
 
 describe("env schema", () => {
   it("accepts the cloud persistence contract", () => {
@@ -29,11 +29,9 @@ describe("env schema", () => {
     expect(parsed.error?.issues[0]?.path).toEqual(["DATABASE_URL"]);
   });
 
-  it("creates an isolated postgres runtime fixture", async () => {
-    const previousDatabaseUrl = process.env.DATABASE_URL;
-    process.env.DATABASE_URL ??=
-      "postgresql://postgres:postgres@127.0.0.1:5432/inflowee";
-
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "creates an isolated postgres runtime fixture",
+    async () => {
     const fixture = await createIsolatedPostgresStore();
 
     try {
@@ -45,12 +43,7 @@ describe("env schema", () => {
       ).toEqual([{ value: 1 }]);
     } finally {
       await fixture.cleanup();
-
-      if (previousDatabaseUrl === undefined) {
-        delete process.env.DATABASE_URL;
-      } else {
-        process.env.DATABASE_URL = previousDatabaseUrl;
-      }
     }
-  });
+    },
+  );
 });

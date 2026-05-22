@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 
 import { PrismaClient } from "@prisma/client";
+
+const execFileAsync = promisify(execFile);
 
 export async function createIsolatedPostgresStore(): Promise<{
   prisma: PrismaClient;
@@ -24,6 +28,17 @@ export async function createIsolatedPostgresStore(): Promise<{
   });
 
   await adminPrisma.$executeRawUnsafe(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
+  await execFileAsync(
+    "pnpm",
+    ["prisma", "db", "push", "--skip-generate"],
+    {
+      cwd: process.cwd(),
+      env: {
+        ...process.env,
+        DATABASE_URL: databaseUrl,
+      },
+    },
+  );
 
   return {
     prisma,
