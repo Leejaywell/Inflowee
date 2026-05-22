@@ -1,10 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Prisma, PrismaClient } from "@prisma/client";
 
-import { getPrisma } from "./db.ts";
+import { getDatabaseUrl, getPrisma, requireDatabaseUrl } from "./db.ts";
 
 export type TaskType = "TOPIC" | "QUESTION";
 export type SourceType =
@@ -17,10 +17,12 @@ export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
 export type DeliveryStatus = "running" | "success" | "error";
 export type SqliteStore = {
+  runtime: "sqlite";
   database: DatabaseSync;
   prisma?: undefined;
 };
 export type PrismaStore = {
+  runtime: "prisma";
   database: DatabaseSync;
   prisma: PrismaClient;
 };
@@ -30,6 +32,14 @@ function createUnavailableDatabaseHandle(): DatabaseSync {
   return new Proxy({} as DatabaseSync, {
     get() {
       throw new Error("SQLite database is unavailable for Prisma-backed store.");
+    },
+  });
+}
+
+function createUnavailablePrismaHandle(): PrismaClient {
+  return new Proxy({} as PrismaClient, {
+    get() {
+      throw new Error("DATABASE_URL is required for cloud runtime.");
     },
   });
 }
@@ -318,7 +328,6 @@ type CreateTaskInput = {
   userPrompt: string;
 };
 
-const dataDirectory = join(process.cwd(), "data");
 const sourceStatusConstraint = "CHECK(status IN ('idle', 'success', 'error'))";
 const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
@@ -813,7 +822,30 @@ function migrateSpaceMembersTable(database: DatabaseSync) {
   `);
 }
 
-export function createStore(): SqliteStore;
+function createPrismaStore(databaseUrl?: string): PrismaStore {
+  if (!databaseUrl) {
+    return {
+      runtime: "prisma",
+      database: createUnavailableDatabaseHandle(),
+      prisma: createUnavailablePrismaHandle(),
+    };
+  }
+
+  const prismaClient =
+    databaseUrl === process.env.DATABASE_URL
+      ? getPrisma()
+      : new PrismaClient({
+          datasourceUrl: databaseUrl,
+        });
+
+  return {
+    runtime: "prisma",
+    database: createUnavailableDatabaseHandle(),
+    prisma: prismaClient,
+  };
+}
+
+export function createStore(): PrismaStore;
 export function createStore(filename: string): SqliteStore;
 export function createStore(options: { databaseUrl: string }): PrismaStore;
 export function createStore(
@@ -821,24 +853,19 @@ export function createStore(
     | string
     | {
         databaseUrl: string;
-      } = join(dataDirectory, "inflowee.sqlite"),
+      }
+    | undefined,
 ): Store {
+  if (filenameOrOptions === undefined) {
+    return createPrismaStore(getDatabaseUrl());
+  }
+
   if (
     typeof filenameOrOptions === "object" &&
     filenameOrOptions !== null &&
     "databaseUrl" in filenameOrOptions
   ) {
-    const prismaClient =
-      filenameOrOptions.databaseUrl === process.env.DATABASE_URL
-        ? getPrisma()
-        : new PrismaClient({
-            datasourceUrl: filenameOrOptions.databaseUrl,
-          });
-
-    return {
-      database: createUnavailableDatabaseHandle(),
-      prisma: prismaClient,
-    };
+    return createPrismaStore(filenameOrOptions.databaseUrl);
   }
 
   const filename = filenameOrOptions;
@@ -1021,22 +1048,17 @@ export function createStore(
   };
 
   return {
+    runtime: "sqlite",
     get database() {
       return database ?? initializeDatabase();
     },
   };
 }
 
-export const defaultStore = process.env.DATABASE_URL
-  ? createStore({ databaseUrl: process.env.DATABASE_URL })
-  : createStore();
+export const defaultStore = createStore();
 
 export function getDefaultRuntimeStore(): Store {
-  if (!process.env.DATABASE_URL) {
-    throw new Error("DATABASE_URL is required for cloud runtime.");
-  }
-
-  return createStore({ databaseUrl: process.env.DATABASE_URL });
+  return createStore({ databaseUrl: requireDatabaseUrl() });
 }
 
 function mapSpace(row: SpaceRow, tasks: TaskRecord[]): SpaceRecord {

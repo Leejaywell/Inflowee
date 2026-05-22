@@ -8,17 +8,20 @@ pnpm prisma generate
 pnpm dev
 ```
 
+The runtime store no longer falls back to a local SQLite database. `DATABASE_URL` is required for `pnpm dev`, `pnpm db:reset`, and `pnpm db:seed`.
+
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 ## Local verification
 
-1. Reset the local database with `pnpm db:reset`
-2. Seed verification data with `pnpm db:seed`
-3. Start the app with `pnpm dev`
-4. Open `/` and confirm the seeded space and task render
-5. Open `/sources` and confirm the seeded RSS source renders
-6. Open `/inbox` and confirm a brief appears
-7. Open `/inbox/<briefId>/html` and confirm the HTML digest renders
+1. Export `DATABASE_URL`
+2. Reset the local database with `pnpm db:reset`
+3. Seed verification data with `pnpm db:seed`
+4. Start the app with `pnpm dev`
+5. Open `/` and confirm the seeded space and task render
+6. Open `/sources` and confirm the seeded RSS source renders
+7. Open `/inbox` and confirm a brief appears
+8. Open `/inbox/<briefId>/html` and confirm the HTML digest renders
 
 ## Deployment
 

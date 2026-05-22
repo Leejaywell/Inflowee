@@ -15,6 +15,20 @@ export function createPrismaClient() {
   });
 }
 
+export function getDatabaseUrl() {
+  return process.env.DATABASE_URL;
+}
+
+export function requireDatabaseUrl() {
+  const databaseUrl = getDatabaseUrl();
+
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is required for cloud runtime.");
+  }
+
+  return databaseUrl;
+}
+
 export function getPrisma() {
   if (!globalForPrisma.__infloweePrisma) {
     globalForPrisma.__infloweePrisma = createPrismaClient();

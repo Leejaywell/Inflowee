@@ -3,17 +3,15 @@ import {
   createItemRecordResult,
   createSourceRecord,
   createSpaceRecord,
-  createStore,
   createTaskRecord,
+  getDefaultRuntimeStore,
   listSpacesWithTasks,
   markBriefRead,
   markSourceSyncResult,
 } from "../src/lib/store.ts";
 
 async function main() {
-  const store = process.env.DATABASE_URL
-    ? createStore({ databaseUrl: process.env.DATABASE_URL })
-    : createStore();
+  const store = getDefaultRuntimeStore();
 
   if ((await listSpacesWithTasks(store)).length > 0) {
     console.log("Database already has data. Skip seeding.");

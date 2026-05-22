@@ -59,6 +59,11 @@ import {
 import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
 describe("store promise contract", () => {
+  it("does not expose a sqlite-backed default runtime store", async () => {
+    const store = await createStore();
+    expect(store.runtime).toBe("prisma");
+  });
+
   it("returns promises for core write helpers", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
