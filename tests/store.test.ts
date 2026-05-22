@@ -124,7 +124,9 @@ describe("store promise contract", () => {
     }
   });
 
-  it("persists spaces tasks and sources through the postgres-backed store", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "persists spaces tasks and sources through the postgres-backed store",
+    async () => {
     const fixture = await createIsolatedPostgresStore();
 
     try {
@@ -153,7 +155,9 @@ describe("store promise contract", () => {
     } finally {
       await fixture.cleanup();
     }
-  }, 15_000);
+    },
+    15_000,
+  );
 });
 
 describe("store source persistence", () => {

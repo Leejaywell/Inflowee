@@ -126,7 +126,9 @@ describe("syncDueSources", () => {
     });
   });
 
-  it("syncs due postgres-backed sources and advances nextSyncAt", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "syncs due postgres-backed sources and advances nextSyncAt",
+    async () => {
     const fixture = await createIsolatedPostgresStore();
 
     try {
@@ -182,7 +184,8 @@ describe("scheduled sync actions and surfaces", () => {
     vi.unmock("next/navigation");
     vi.unmock("@/lib/store");
     vi.unmock("@/app/actions");
-  });
+    },
+  );
 
   it("updates source cadence from a server action", async () => {
     const revalidatePath = vi.fn();

@@ -127,7 +127,9 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("returns task-scoped briefs and items from the postgres-backed store", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "returns task-scoped briefs and items from the postgres-backed store",
+    async () => {
     const fixture = await createIsolatedPostgresStore();
 
     try {
@@ -208,7 +210,8 @@ describe("getGroundingForScope", () => {
     } finally {
       fixture.cleanup();
     }
-  });
+    },
+  );
 
   it("deduplicates task-scoped items by canonical url and keeps the freshest item", async () => {
     const fixture = await createFixture();

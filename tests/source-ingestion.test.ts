@@ -142,7 +142,9 @@ describe("syncSourceById", () => {
     }
   });
 
-  it("ingests a feed into items and briefs through the postgres-backed store", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "ingests a feed into items and briefs through the postgres-backed store",
+    async () => {
     const fixture = await createIsolatedPostgresStore();
 
     try {
@@ -243,7 +245,8 @@ describe("syncSourceById", () => {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
     }
-  });
+    },
+  );
 
   it("ingests newsletter archive sources into items and briefs", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));

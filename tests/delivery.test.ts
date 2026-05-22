@@ -118,13 +118,16 @@ describe("webhook delivery transport", () => {
     ).rejects.toThrow("Webhook delivery failed with status 500: boom");
   });
 
-  it("persists delivery logs through the postgres-backed store", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "persists delivery logs through the postgres-backed store",
+    async () => {
     const fixture = await createIsolatedPostgresStore();
 
     try {
       const spaceId = await createSpaceRecord(fixture.store, {
         name: "AI Watch",
-      });
+    },
+  );
       const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Track OpenAI updates",

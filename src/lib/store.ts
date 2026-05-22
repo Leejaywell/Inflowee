@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Prisma, PrismaClient } from "@prisma/client";
 
-import { prisma as defaultPrisma } from "./db.ts";
+import { getPrisma } from "./db.ts";
 
 export type TaskType = "TOPIC" | "QUESTION";
 export type SourceType =
@@ -751,8 +751,8 @@ export function createStore(
     "databaseUrl" in filenameOrOptions
   ) {
     const prismaClient =
-      filenameOrOptions.databaseUrl === process.env.DATABASE_URL && defaultPrisma
-        ? defaultPrisma
+      filenameOrOptions.databaseUrl === process.env.DATABASE_URL
+        ? getPrisma()
         : new PrismaClient({
             datasourceUrl: filenameOrOptions.databaseUrl,
           });

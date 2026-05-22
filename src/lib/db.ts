@@ -15,9 +15,10 @@ export function createPrismaClient() {
   });
 }
 
-export const prisma =
-  globalForPrisma.__infloweePrisma ?? createPrismaClient();
+export function getPrisma() {
+  if (!globalForPrisma.__infloweePrisma) {
+    globalForPrisma.__infloweePrisma = createPrismaClient();
+  }
 
-if (process.env.NODE_ENV !== "production") {
-  globalForPrisma.__infloweePrisma = prisma;
+  return globalForPrisma.__infloweePrisma;
 }

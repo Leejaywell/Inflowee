@@ -196,7 +196,9 @@ describe("task intelligence store helpers", () => {
     }
   });
 
-  it("persists task profiles and recommendation bundles through the postgres-backed store", async () => {
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "persists task profiles and recommendation bundles through the postgres-backed store",
+    async () => {
     const fixture = await createIsolatedPostgresStore();
 
     try {
@@ -250,7 +252,8 @@ describe("task intelligence server actions", () => {
     vi.unmock("next/navigation");
     vi.unmock("@/lib/store");
     vi.unmock("@/lib/task-intelligence");
-  });
+    },
+  );
 
   it("initializes stored intelligence after createTask succeeds", async () => {
     const revalidatePath = vi.fn();
