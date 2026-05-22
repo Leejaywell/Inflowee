@@ -2,7 +2,17 @@
 
 import { deliverBriefDigest } from "@/lib/delivery";
 import { renderBriefHtmlDigest } from "@/lib/brief-render";
-import type { BriefRecord, ItemRecord } from "@/lib/store";
+import {
+  createBriefRecord,
+  createDeliveryLog,
+  createSpaceRecord,
+  createTaskRecord,
+  finishDeliveryLog,
+  listRecentDeliveryLogsByBrief,
+  type BriefRecord,
+  type ItemRecord,
+} from "@/lib/store";
+import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
 describe("brief HTML rendering", () => {
   const brief: BriefRecord = {
@@ -106,5 +116,53 @@ describe("webhook delivery transport", () => {
         fetchImpl,
       }),
     ).rejects.toThrow("Webhook delivery failed with status 500: boom");
+  });
+
+  it("persists delivery logs through the postgres-backed store", async () => {
+    const fixture = await createIsolatedPostgresStore();
+
+    try {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Watch",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Track OpenAI updates",
+        taskType: "TOPIC",
+        userPrompt: "Track OpenAI updates",
+      });
+      const briefId = await createBriefRecord(fixture.store, {
+        taskId,
+        itemIds: [],
+        title: "OpenAI ships a notable update",
+        summary: "The API changelog added a production-facing update.",
+        whyItMatters:
+          "The change affects teams that rely on the latest API behavior.",
+        sourceCitations: ["https://openai.com/changelog"],
+      });
+
+      const logId = await createDeliveryLog(fixture.store, {
+        briefId,
+        endpoint: "https://example.com/webhook",
+        payloadType: "html",
+      });
+
+      await finishDeliveryLog(fixture.store, {
+        logId,
+        status: "success",
+        responseStatus: 202,
+      });
+
+      expect(await listRecentDeliveryLogsByBrief(fixture.store, briefId)).toEqual([
+        expect.objectContaining({
+          id: logId,
+          briefId,
+          status: "success",
+          responseStatus: 202,
+        }),
+      ]);
+    } finally {
+      await fixture.cleanup();
+    }
   });
 });

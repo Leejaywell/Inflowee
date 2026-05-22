@@ -15,6 +15,7 @@ import {
   listItemsBySource,
   listSourcesByTask,
 } from "@/lib/store";
+import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
 describe("syncSourceById", () => {
   it("ingests a real feed into items and briefs", async () => {
@@ -138,6 +139,59 @@ describe("syncSourceById", () => {
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("ingests a feed into items and briefs through the postgres-backed store", async () => {
+    const fixture = await createIsolatedPostgresStore();
+
+    try {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "OpenAI",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Monitor feed",
+        taskType: "TOPIC",
+        userPrompt: "Track RSS updates",
+      });
+      const sourceId = await createSourceRecord(fixture.store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Example feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      const xml = `
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>Launch roundup</title>
+              <link>https://example.com/posts/launch-roundup</link>
+              <description>Latest launches and product updates.</description>
+              <pubDate>Wed, 21 May 2026 08:00:00 GMT</pubDate>
+            </item>
+          </channel>
+        </rss>
+      `;
+      const result = await syncSourceById(fixture.store, sourceId, {
+        fetchSourceFeedImpl: vi.fn().mockResolvedValue(xml),
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        insertedItemCount: 1,
+        createdBriefCount: 1,
+      });
+      expect(await listItemsBySource(fixture.store, sourceId)).toHaveLength(1);
+      expect(await listBriefs(fixture.store)).toEqual([
+        expect.objectContaining({
+          taskId,
+          title: "Launch roundup",
+        }),
+      ]);
+    } finally {
+      await fixture.cleanup();
     }
   });
 

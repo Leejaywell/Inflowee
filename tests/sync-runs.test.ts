@@ -13,6 +13,7 @@ import {
   getSourceById,
 } from "@/lib/store";
 import { syncDueSources } from "@/lib/sync-runs";
+import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
 function createFixture() {
   const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-runs-test-"));
@@ -123,6 +124,53 @@ describe("syncDueSources", () => {
     expect(enqueueScheduledSyncMock).toHaveBeenCalledWith({
       now: expect.any(String),
     });
+  });
+
+  it("syncs due postgres-backed sources and advances nextSyncAt", async () => {
+    const fixture = await createIsolatedPostgresStore();
+
+    try {
+      const spaceId = await createSpaceRecord(fixture.store, { name: "AI" });
+      const taskId = await createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Task",
+        taskType: "TOPIC",
+        userPrompt: "Track signals",
+      });
+      const dueSourceId = await createSourceRecord(fixture.store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Due source",
+        url: "https://example.com/due.xml",
+      });
+
+      await fixture.prisma.source.update({
+        where: { id: dueSourceId },
+        data: {
+          nextSyncAt: new Date("2026-05-22T07:58:00.000Z"),
+        },
+      });
+
+      const dueSource = await getSourceById(fixture.store, dueSourceId);
+      const result = await syncDueSources(fixture.store, {
+        now: "2026-05-22T08:00:00.000Z",
+        syncSourceByIdImpl: vi.fn().mockResolvedValue({
+          ok: true,
+          source: dueSource!,
+          insertedItemCount: 3,
+          createdBriefCount: 1,
+        }),
+      });
+
+      expect(result.synced).toBe(1);
+      expect(result.failed).toBe(0);
+      expect(result.skipped).toBe(0);
+      expect((await getSourceById(fixture.store, dueSourceId))?.nextSyncAt).toBe(
+        "2026-05-22T14:00:00.000Z",
+      );
+    } finally {
+      await fixture.cleanup();
+    }
   });
 });
 

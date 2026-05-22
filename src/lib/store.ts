@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 
 import { prisma as defaultPrisma } from "@/lib/db";
 
@@ -1004,6 +1004,115 @@ function mapPrismaSource(source: {
   };
 }
 
+function mapPrismaItem(item: {
+  id: string;
+  sourceId: string;
+  title: string;
+  canonicalUrl: string;
+  summary: string | null;
+  rawContent: string | null;
+  origin: string | null;
+  language: string | null;
+  contentHash: string;
+  structuredFields: unknown;
+  publishedAt: Date | null;
+  fetchedAt: Date;
+  createdAt: Date;
+}): ItemRecord {
+  return {
+    id: item.id,
+    sourceId: item.sourceId,
+    title: item.title,
+    canonicalUrl: item.canonicalUrl,
+    summary: item.summary,
+    rawContent: item.rawContent,
+    origin: item.origin,
+    language: item.language,
+    contentHash: item.contentHash,
+    structuredFields: (item.structuredFields as Record<string, unknown> | null) ?? null,
+    publishedAt: item.publishedAt?.toISOString() ?? null,
+    fetchedAt: item.fetchedAt.toISOString(),
+    createdAt: item.createdAt.toISOString(),
+  };
+}
+
+function mapPrismaBrief(brief: {
+  id: string;
+  taskId: string;
+  title: string;
+  summary: string;
+  whyItMatters: string;
+  sourceCitations: unknown;
+  relevanceScore: number;
+  importanceScore: number;
+  tagsJson: unknown;
+  isRead: boolean;
+  createdAt: Date;
+  task?: { title: string; space?: { name: string } | null } | null;
+}): BriefRecord {
+  return {
+    id: brief.id,
+    taskId: brief.taskId,
+    title: brief.title,
+    summary: brief.summary,
+    whyItMatters: brief.whyItMatters,
+    sourceCitations: (brief.sourceCitations as string[]) ?? [],
+    relevanceScore: brief.relevanceScore,
+    importanceScore: brief.importanceScore,
+    tags: (brief.tagsJson as string[]) ?? [],
+    isRead: brief.isRead,
+    createdAt: brief.createdAt.toISOString(),
+    taskTitle: brief.task?.title,
+    spaceName: brief.task?.space?.name,
+  };
+}
+
+function mapPrismaSyncRun(run: {
+  id: string;
+  sourceId: string;
+  status: string;
+  insertedItemCount: number;
+  createdBriefCount: number;
+  error: string | null;
+  startedAt: Date;
+  finishedAt: Date | null;
+}): SyncRunRecord {
+  return {
+    id: run.id,
+    sourceId: run.sourceId,
+    status: run.status as SyncRunStatus,
+    insertedItemCount: run.insertedItemCount,
+    createdBriefCount: run.createdBriefCount,
+    error: run.error,
+    startedAt: run.startedAt.toISOString(),
+    finishedAt: run.finishedAt?.toISOString() ?? null,
+  };
+}
+
+function mapPrismaDeliveryLog(log: {
+  id: string;
+  briefId: string;
+  endpoint: string;
+  payloadType: string;
+  status: string;
+  responseStatus: number | null;
+  error: string | null;
+  startedAt: Date;
+  finishedAt: Date | null;
+}): DeliveryLogRecord {
+  return {
+    id: log.id,
+    briefId: log.briefId,
+    endpoint: log.endpoint,
+    payloadType: log.payloadType as "html",
+    status: log.status as DeliveryStatus,
+    responseStatus: log.responseStatus,
+    error: log.error,
+    startedAt: log.startedAt.toISOString(),
+    finishedAt: log.finishedAt?.toISOString() ?? null,
+  };
+}
+
 export async function listSpacesWithTasks(
   store: Store = defaultStore,
 ): Promise<SpaceRecord[]> {
@@ -1354,6 +1463,50 @@ export async function createItemRecordResult(
     fetchedAt?: string;
   },
 ): Promise<ItemRecord | null> {
+  if (store.prisma) {
+    const timestamp = new Date();
+    const rawContent = input.rawContent ?? input.summary ?? input.title;
+    const contentHash =
+      input.contentHash ??
+      createHash("sha256")
+        .update(`${input.canonicalUrl}\n${input.title}\n${rawContent ?? ""}`)
+        .digest("hex");
+    const fetchedAt = input.fetchedAt ? new Date(input.fetchedAt) : timestamp;
+
+    try {
+      const item = await store.prisma.item.create({
+        data: {
+          sourceId: input.sourceId,
+          title: input.title,
+          canonicalUrl: input.canonicalUrl,
+          summary: input.summary ?? null,
+          rawContent,
+          origin: input.origin ?? new URL(input.canonicalUrl).hostname,
+          language: input.language ?? null,
+          contentHash,
+          structuredFields:
+            (input.structuredFields as Prisma.InputJsonValue | undefined) ??
+            undefined,
+          publishedAt: input.publishedAt ? new Date(input.publishedAt) : null,
+          fetchedAt,
+        },
+      });
+
+      return mapPrismaItem(item);
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        (error as { code?: string }).code === "P2002"
+      ) {
+        return null;
+      }
+
+      throw error;
+    }
+  }
+
   const timestamp = new Date().toISOString();
   const id = randomUUID();
   const rawContent = input.rawContent ?? input.summary ?? input.title;
@@ -1497,6 +1650,15 @@ export async function listItemsBySource(
   store: Store,
   sourceId: string,
 ): Promise<ItemRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.item.findMany({
+      where: { sourceId },
+      orderBy: [{ publishedAt: "desc" }, { createdAt: "desc" }],
+    });
+
+    return rows.map(mapPrismaItem);
+  }
+
   const rows = store.database
     .prepare(
       `SELECT * FROM items
@@ -1512,6 +1674,16 @@ export async function listItemsByBriefId(
   store: Store,
   briefId: string,
 ): Promise<ItemRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.briefItem.findMany({
+      where: { briefId },
+      include: { item: true },
+      orderBy: [{ item: { publishedAt: "desc" } }, { item: { createdAt: "desc" } }],
+    });
+
+    return rows.map((row) => mapPrismaItem(row.item));
+  }
+
   const rows = store.database
     .prepare(
       `SELECT items.*
@@ -1539,6 +1711,37 @@ export async function createBriefRecord(
     tags?: string[];
   },
 ): Promise<string> {
+  if (store.prisma) {
+    const created = await store.prisma.$transaction(async (tx) => {
+      const brief = await tx.brief.create({
+        data: {
+          taskId: input.taskId,
+          title: input.title,
+          summary: input.summary,
+          whyItMatters: input.whyItMatters,
+          sourceCitations: input.sourceCitations,
+          relevanceScore: input.relevanceScore ?? 0.5,
+          importanceScore: input.importanceScore ?? 0.5,
+          tagsJson: input.tags ?? [],
+        },
+      });
+
+      if (input.itemIds.length > 0) {
+        await tx.briefItem.createMany({
+          data: input.itemIds.map((itemId) => ({
+            briefId: brief.id,
+            itemId,
+          })),
+          skipDuplicates: true,
+        });
+      }
+
+      return brief.id;
+    });
+
+    return created;
+  }
+
   const id = randomUUID();
   const timestamp = new Date().toISOString();
 
@@ -1584,6 +1787,21 @@ export async function createBriefRecord(
 export async function listBriefs(
   store: Store = defaultStore,
 ): Promise<BriefRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.brief.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        task: {
+          include: {
+            space: true,
+          },
+        },
+      },
+    });
+
+    return rows.map(mapPrismaBrief);
+  }
+
   const rows = store.database
     .prepare(
       `SELECT
@@ -1608,6 +1826,23 @@ export async function markSourceSyncResult(
     error?: string | null;
   },
 ) {
+  if (store.prisma) {
+    const timestamp = new Date();
+
+    await store.prisma.source.update({
+      where: { id: input.sourceId },
+      data: {
+        status: input.status,
+        lastSyncedAt: timestamp,
+        lastError:
+          input.status === "error" ? (input.error ?? "Unknown sync error.") : null,
+        updatedAt: timestamp,
+      },
+    });
+
+    return;
+  }
+
   const timestamp = new Date().toISOString();
 
   store.database
@@ -1634,6 +1869,20 @@ export async function setSourceSchedule(
   syncIntervalMinutes: number,
   nextSyncAt?: string,
 ): Promise<void> {
+  if (store.prisma) {
+    const timestamp = new Date();
+    await store.prisma.source.update({
+      where: { id: sourceId },
+      data: {
+        syncIntervalMinutes,
+        nextSyncAt: new Date(nextSyncAt ?? timestamp.toISOString()),
+        updatedAt: timestamp,
+      },
+    });
+
+    return;
+  }
+
   const timestamp = new Date().toISOString();
   store.database
     .prepare(
@@ -1652,6 +1901,24 @@ export async function scheduleNextSourceSync(
   syncIntervalMinutes: number,
   baseTimeIso = new Date().toISOString(),
 ): Promise<string> {
+  if (store.prisma) {
+    const baseTime = Date.parse(baseTimeIso);
+    const nextSyncAt = new Date(
+      baseTime + syncIntervalMinutes * 60 * 1000,
+    ).toISOString();
+    const timestamp = new Date();
+
+    await store.prisma.source.update({
+      where: { id: sourceId },
+      data: {
+        nextSyncAt: new Date(nextSyncAt),
+        updatedAt: timestamp,
+      },
+    });
+
+    return nextSyncAt;
+  }
+
   const baseTime = Date.parse(baseTimeIso);
   const nextSyncAt = new Date(
     baseTime + syncIntervalMinutes * 60 * 1000,
@@ -1674,6 +1941,20 @@ export async function createSyncRun(
   store: Store,
   input: { sourceId: string },
 ): Promise<string> {
+  if (store.prisma) {
+    const run = await store.prisma.syncRun.create({
+      data: {
+        sourceId: input.sourceId,
+        status: "running",
+        insertedItemCount: 0,
+        createdBriefCount: 0,
+        startedAt: new Date(),
+      },
+    });
+
+    return run.id;
+  }
+
   const id = randomUUID();
   const startedAt = new Date().toISOString();
 
@@ -1701,6 +1982,22 @@ export async function finishSyncRun(
     error?: string | null;
   },
 ) {
+  if (store.prisma) {
+    await store.prisma.syncRun.update({
+      where: { id: input.runId },
+      data: {
+        status: input.status,
+        insertedItemCount: input.insertedItemCount ?? 0,
+        createdBriefCount: input.createdBriefCount ?? 0,
+        error:
+          input.status === "error" ? (input.error ?? "Unknown sync error.") : null,
+        finishedAt: new Date(),
+      },
+    });
+
+    return;
+  }
+
   store.database
     .prepare(
       `UPDATE sync_runs
@@ -1726,6 +2023,16 @@ export async function listRecentSyncRunsBySource(
   sourceId: string,
   limit = 5,
 ): Promise<SyncRunRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.syncRun.findMany({
+      where: { sourceId },
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
+
+    return rows.map(mapPrismaSyncRun);
+  }
+
   const rows = store.database
     .prepare(
       `SELECT * FROM sync_runs
@@ -1739,6 +2046,23 @@ export async function listRecentSyncRunsBySource(
 }
 
 export async function saveWebhookSettings(store: Store, endpoint: string) {
+  if (store.prisma) {
+    await store.prisma.appSetting.upsert({
+      where: { key: "webhook_endpoint" },
+      update: {
+        value: endpoint,
+        updatedAt: new Date(),
+      },
+      create: {
+        key: "webhook_endpoint",
+        value: endpoint,
+        updatedAt: new Date(),
+      },
+    });
+
+    return;
+  }
+
   const updatedAt = new Date().toISOString();
   store.database
     .prepare(
@@ -1754,6 +2078,17 @@ export async function saveWebhookSettings(store: Store, endpoint: string) {
 export async function getWebhookSettings(
   store: Store,
 ): Promise<WebhookSettingsRecord> {
+  if (store.prisma) {
+    const row = await store.prisma.appSetting.findUnique({
+      where: { key: "webhook_endpoint" },
+    });
+
+    return {
+      endpoint: row?.value ?? null,
+      updatedAt: row?.updatedAt.toISOString() ?? null,
+    };
+  }
+
   const row = store.database
     .prepare(
       `SELECT value, updated_at
@@ -1777,6 +2112,20 @@ export async function createDeliveryLog(
     payloadType: "html";
   },
 ) {
+  if (store.prisma) {
+    const log = await store.prisma.deliveryLog.create({
+      data: {
+        briefId: input.briefId,
+        endpoint: input.endpoint,
+        payloadType: input.payloadType,
+        status: "running",
+        startedAt: new Date(),
+      },
+    });
+
+    return log.id;
+  }
+
   const id = randomUUID();
   const startedAt = new Date().toISOString();
 
@@ -1805,6 +2154,23 @@ export async function finishDeliveryLog(
     error?: string | null;
   },
 ) {
+  if (store.prisma) {
+    await store.prisma.deliveryLog.update({
+      where: { id: input.logId },
+      data: {
+        status: input.status,
+        responseStatus: input.responseStatus ?? null,
+        error:
+          input.status === "error"
+            ? (input.error ?? "Unknown delivery error.")
+            : null,
+        finishedAt: new Date(),
+      },
+    });
+
+    return;
+  }
+
   store.database
     .prepare(
       `UPDATE delivery_logs
@@ -1830,6 +2196,16 @@ export async function listRecentDeliveryLogsByBrief(
   briefId: string,
   limit = 10,
 ): Promise<DeliveryLogRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.deliveryLog.findMany({
+      where: { briefId },
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
+
+    return rows.map(mapPrismaDeliveryLog);
+  }
+
   const rows = store.database
     .prepare(
       `SELECT * FROM delivery_logs
@@ -1846,6 +2222,15 @@ export async function listRecentDeliveryLogs(
   store: Store,
   limit = 20,
 ): Promise<DeliveryLogRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.deliveryLog.findMany({
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
+
+    return rows.map(mapPrismaDeliveryLog);
+  }
+
   const rows = store.database
     .prepare(
       `SELECT * FROM delivery_logs
@@ -1911,6 +2296,14 @@ export async function briefExistsForItem(
   store: Store,
   itemId: string,
 ): Promise<boolean> {
+  if (store.prisma) {
+    const count = await store.prisma.briefItem.count({
+      where: { itemId },
+    });
+
+    return count > 0;
+  }
+
   return Boolean(
     store.database
       .prepare("SELECT 1 FROM brief_items WHERE item_id = ? LIMIT 1")
