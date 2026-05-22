@@ -5,5 +5,7 @@
 3. Run `pnpm prisma migrate deploy`.
 4. Deploy the app.
 5. Register `/api/inngest`.
-6. Trigger one scheduled sync.
-7. Verify inbox, chat, and delivery.
+6. Create at least one space, one task, and one source in the deployed app.
+7. Trigger one scheduled sync.
+8. Save one `https://` webhook endpoint in `/settings`.
+9. Verify inbox, chat, and delivery.

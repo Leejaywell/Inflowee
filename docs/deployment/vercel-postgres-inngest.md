@@ -35,10 +35,12 @@ curl -X POST https://<deployment-url>/api/jobs/sync
 
 ## Smoke Tests
 
-1. Open `/sources` and create a source.
-2. Trigger one sync and confirm a sync run appears.
-3. Open `/inbox` and confirm a brief renders.
-4. Open one brief detail page and confirm the HTML digest renders at `/inbox/<briefId>/html`.
-5. Send one webhook from the brief detail page and confirm the success or failure banner appears.
-6. Open `/settings` and confirm the recent delivery log row appears and the Slack payload preview still renders.
-7. Open one task page and confirm grounded chat still responds.
+1. Create at least one space and one task in the deployed app.
+2. Open `/sources` for that task and create a source.
+3. Trigger one sync and confirm a sync run appears.
+4. Open `/inbox` and confirm a brief renders.
+5. Open `/settings`, save one `https://` webhook endpoint, and confirm the Slack payload preview still renders.
+6. Open one brief detail page and confirm the HTML digest renders at `/inbox/<briefId>/html`.
+7. Send one webhook from the brief detail page and confirm the success or failure banner appears.
+8. Open `/settings` and confirm the recent delivery log row appears.
+9. Open one task page and confirm grounded chat still responds.
