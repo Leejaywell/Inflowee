@@ -8,13 +8,13 @@ export async function GET(
   context: { params: Promise<{ briefId: string }> },
 ) {
   const { briefId } = await context.params;
-  const brief = getBriefById(defaultStore, briefId);
+  const brief = await getBriefById(defaultStore, briefId);
 
   if (!brief) {
     return new NextResponse("Brief not found", { status: 404 });
   }
 
-  const linkedItems = listItemsByBriefId(defaultStore, briefId);
+  const linkedItems = await listItemsByBriefId(defaultStore, briefId);
   const html = renderBriefHtmlDigest({ brief, linkedItems });
 
   return new NextResponse(html, {

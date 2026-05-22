@@ -21,7 +21,7 @@ export async function syncDueSources(
   },
 ): Promise<SyncDueSourcesResult> {
   const now = options?.now ?? new Date().toISOString();
-  const dueSources = listDueSources(store, now);
+  const dueSources = await listDueSources(store, now);
   const syncImpl = options?.syncSourceByIdImpl ?? syncSourceById;
   const results: SyncSourceResult[] = [];
   let synced = 0;
@@ -33,7 +33,12 @@ export async function syncDueSources(
 
     if (result.ok) {
       synced++;
-      scheduleNextSourceSync(store, source.id, source.syncIntervalMinutes, now);
+      await scheduleNextSourceSync(
+        store,
+        source.id,
+        source.syncIntervalMinutes,
+        now,
+      );
     } else {
       failed++;
     }
@@ -42,7 +47,7 @@ export async function syncDueSources(
   return {
     synced,
     failed,
-    skipped: Math.max(0, listSources(store).length - dueSources.length),
+    skipped: Math.max(0, (await listSources(store)).length - dueSources.length),
     results,
   };
 }

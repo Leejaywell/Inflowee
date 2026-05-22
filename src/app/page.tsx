@@ -16,7 +16,7 @@ const taskTypeLabels: Record<TaskType, string> = {
 
 export default async function Home({ searchParams }: HomeProps) {
   const [spaces, params] = await Promise.all([
-    Promise.resolve(listSpacesWithTasks()),
+    listSpacesWithTasks(),
     searchParams,
   ]);
 

@@ -69,27 +69,33 @@ export async function storeSourceItemsAndCreateBriefs(
     ),
   );
 
-  const insertedItems = enrichedItems.flatMap((item) => {
-    const storedItem = createItemRecordResult(store, {
-      sourceId: source.id,
-      title: item.title,
-      canonicalUrl: item.canonicalUrl,
-      summary: item.summary,
-      rawContent: item.rawContent,
-      origin: item.origin,
-      language: item.language,
-      contentHash: item.contentHash,
-      structuredFields: item.structuredFields,
-      publishedAt: item.publishedAt,
-      fetchedAt: item.fetchedAt,
-    });
-
-    return storedItem ? [storedItem] : [];
-  });
-
-  const unbriefedItems = insertedItems.filter(
-    (item) => !briefExistsForItem(store, item.id),
+  const storedItems = await Promise.all(
+    enrichedItems.map((item) =>
+      createItemRecordResult(store, {
+        sourceId: source.id,
+        title: item.title,
+        canonicalUrl: item.canonicalUrl,
+        summary: item.summary,
+        rawContent: item.rawContent,
+        origin: item.origin,
+        language: item.language,
+        contentHash: item.contentHash,
+        structuredFields: item.structuredFields,
+        publishedAt: item.publishedAt,
+        fetchedAt: item.fetchedAt,
+      }),
+    ),
   );
+  const insertedItems = storedItems.filter((item) => item !== null);
+  const unbriefedPairs = await Promise.all(
+    insertedItems.map(async (item) => ({
+      item,
+      exists: await briefExistsForItem(store, item.id),
+    })),
+  );
+  const unbriefedItems = unbriefedPairs
+    .filter((pair) => !pair.exists)
+    .map((pair) => pair.item);
 
   if (unbriefedItems.length === 0) {
     return {
@@ -98,7 +104,7 @@ export async function storeSourceItemsAndCreateBriefs(
     };
   }
 
-  const task = getTaskById(store, source.taskId);
+  const task = await getTaskById(store, source.taskId);
   if (!task) {
     throw new Error(`Task with ID ${source.taskId} not found.`);
   }
@@ -106,7 +112,7 @@ export async function storeSourceItemsAndCreateBriefs(
   const briefs = await generateBriefsFromItems(task, unbriefedItems);
 
   for (const brief of briefs) {
-    createBriefRecord(store, {
+    await createBriefRecord(store, {
       taskId: source.taskId,
       itemIds: brief.itemIds,
       title: brief.title,
@@ -197,7 +203,7 @@ export async function syncSourceById(
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
   },
 ): Promise<SyncSourceResult> {
-  const source = getSourceById(store, sourceId);
+  const source = await getSourceById(store, sourceId);
 
   if (!source) {
     return {
@@ -207,17 +213,17 @@ export async function syncSourceById(
     };
   }
 
-  const runId = createSyncRun(store, { sourceId: source.id });
+  const runId = await createSyncRun(store, { sourceId: source.id });
 
   const blockedSourceError = getBlockedSourceUrlError(source.url);
 
   if (blockedSourceError) {
-    markSourceSyncResult(store, {
+    await markSourceSyncResult(store, {
       sourceId: source.id,
       status: "error",
       error: blockedSourceError,
     });
-    finishSyncRun(store, {
+    await finishSyncRun(store, {
       runId,
       status: "error",
       error: blockedSourceError,
@@ -246,11 +252,11 @@ export async function syncSourceById(
 
     const summary = await storeSourceItemsAndCreateBriefs(store, source, items);
 
-    markSourceSyncResult(store, {
+    await markSourceSyncResult(store, {
       sourceId: source.id,
       status: "success",
     });
-    finishSyncRun(store, {
+    await finishSyncRun(store, {
       runId,
       status: "success",
       insertedItemCount: summary.insertedItemCount,
@@ -265,12 +271,12 @@ export async function syncSourceById(
   } catch (error) {
     const syncError = getSyncErrorMessage(error);
 
-    markSourceSyncResult(store, {
+    await markSourceSyncResult(store, {
       sourceId: source.id,
       status: "error",
       error: syncError,
     });
-    finishSyncRun(store, {
+    await finishSyncRun(store, {
       runId,
       status: "error",
       error: syncError,
@@ -297,7 +303,7 @@ export async function syncAllSources(
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
   },
 ): Promise<SyncAllResult> {
-  const sources = listSources(store);
+  const sources = await listSources(store);
   const results: SyncSourceResult[] = [];
 
   let synced = 0;

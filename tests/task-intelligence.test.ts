@@ -47,12 +47,14 @@ function createIsolatedStore() {
 }
 
 describe("task intelligence store helpers", () => {
-  it("persists task profiles across store instances", () => {
+  it("persists task profiles across store instances", async () => {
     const fixture = createIsolatedStore();
 
     try {
-      const spaceId = createSpaceRecord(fixture.store, { name: "AI Signals" });
-      const taskId = createTaskRecord(fixture.store, {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Signals",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Coding agents",
         taskType: "TOPIC",
@@ -67,13 +69,13 @@ describe("task intelligence store helpers", () => {
         ],
       };
 
-      saveTaskProfile(fixture.store, taskId, profile);
+      await saveTaskProfile(fixture.store, taskId, profile);
       fixture.closeStore();
 
       const reopenedStore = createStore(fixture.filename);
 
       try {
-        expect(getTaskProfile(reopenedStore, taskId)).toEqual(profile);
+        expect(await getTaskProfile(reopenedStore, taskId)).toEqual(profile);
       } finally {
         reopenedStore.database.close();
       }
@@ -82,18 +84,20 @@ describe("task intelligence store helpers", () => {
     }
   });
 
-  it("replaces recommendation bundles for one task without affecting others", () => {
+  it("replaces recommendation bundles for one task without affecting others", async () => {
     const fixture = createIsolatedStore();
 
     try {
-      const spaceId = createSpaceRecord(fixture.store, { name: "AI Signals" });
-      const taskId = createTaskRecord(fixture.store, {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Signals",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Coding agents",
         taskType: "TOPIC",
         userPrompt: "Track coding agent launches and evaluations",
       });
-      const otherTaskId = createTaskRecord(fixture.store, {
+      const otherTaskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Frontier models",
         taskType: "TOPIC",
@@ -160,23 +164,31 @@ describe("task intelligence store helpers", () => {
         },
       ];
 
-      replaceRecommendationBundles(fixture.store, taskId, initialBundles);
-      replaceRecommendationBundles(fixture.store, otherTaskId, otherTaskBundles);
+      await replaceRecommendationBundles(fixture.store, taskId, initialBundles);
+      await replaceRecommendationBundles(
+        fixture.store,
+        otherTaskId,
+        otherTaskBundles,
+      );
 
-      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
         initialBundles,
       );
       expect(
-        listRecommendationBundlesByTask(fixture.store, otherTaskId),
+        await listRecommendationBundlesByTask(fixture.store, otherTaskId),
       ).toEqual(otherTaskBundles);
 
-      replaceRecommendationBundles(fixture.store, taskId, replacementBundles);
+      await replaceRecommendationBundles(
+        fixture.store,
+        taskId,
+        replacementBundles,
+      );
 
-      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
         replacementBundles,
       );
       expect(
-        listRecommendationBundlesByTask(fixture.store, otherTaskId),
+        await listRecommendationBundlesByTask(fixture.store, otherTaskId),
       ).toEqual(otherTaskBundles);
     } finally {
       fixture.cleanup();
@@ -199,7 +211,7 @@ describe("task intelligence server actions", () => {
     const redirect = vi.fn((destination: string) => {
       throw new Error(`NEXT_REDIRECT:${destination}`);
     });
-    const createTaskRecordMock = vi.fn().mockReturnValue("task-123");
+      const createTaskRecordMock = vi.fn().mockResolvedValue("task-123");
     const refreshTaskIntelligenceMock = vi.fn().mockResolvedValue({
       profile: {
         keywords: ["coding agents"],
@@ -412,8 +424,10 @@ describe("refreshTaskIntelligence", () => {
     const fixture = createIsolatedStore();
 
     try {
-      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
-      const taskId = createTaskRecord(fixture.store, {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Watch",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Track agent launches",
         taskType: "QUESTION",
@@ -453,10 +467,10 @@ describe("refreshTaskIntelligence", () => {
       );
       expect(result.profile.keywords).toEqual(["coding agents"]);
       expect(result.bundles).toHaveLength(1);
-      expect(getTaskProfile(fixture.store, taskId)?.keywords).toEqual([
+      expect((await getTaskProfile(fixture.store, taskId))?.keywords).toEqual([
         "coding agents",
       ]);
-      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
         result.bundles,
       );
     } finally {
@@ -566,8 +580,10 @@ describe("refreshTaskIntelligence", () => {
     const fixture = createIsolatedStore();
 
     try {
-      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
-      const taskId = createTaskRecord(fixture.store, {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Watch",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Track agent launches",
         taskType: "QUESTION",
@@ -593,8 +609,12 @@ describe("refreshTaskIntelligence", () => {
         },
       ];
 
-      saveTaskProfile(fixture.store, taskId, existingProfile);
-      replaceRecommendationBundles(fixture.store, taskId, existingBundles);
+      await saveTaskProfile(fixture.store, taskId, existingProfile);
+      await replaceRecommendationBundles(
+        fixture.store,
+        taskId,
+        existingBundles,
+      );
 
       const understandTaskIntentImpl = vi.fn().mockResolvedValue({
         keywords: ["new keyword"],
@@ -611,8 +631,8 @@ describe("refreshTaskIntelligence", () => {
         }),
       ).rejects.toThrow("recommendation failed");
 
-      expect(getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
-      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+      expect(await getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
+      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
         existingBundles,
       );
     } finally {
@@ -624,8 +644,10 @@ describe("refreshTaskIntelligence", () => {
     const fixture = createIsolatedStore();
 
     try {
-      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
-      const taskId = createTaskRecord(fixture.store, {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Watch",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Track agent launches",
         taskType: "QUESTION",
@@ -651,8 +673,12 @@ describe("refreshTaskIntelligence", () => {
         },
       ];
 
-      saveTaskProfile(fixture.store, taskId, existingProfile);
-      replaceRecommendationBundles(fixture.store, taskId, existingBundles);
+      await saveTaskProfile(fixture.store, taskId, existingProfile);
+      await replaceRecommendationBundles(
+        fixture.store,
+        taskId,
+        existingBundles,
+      );
 
       const understandTaskIntentImpl = vi.fn().mockResolvedValue({
         keywords: ["new keyword"],
@@ -684,8 +710,8 @@ describe("refreshTaskIntelligence", () => {
         }),
       ).rejects.toThrow("profile persistence failed");
 
-      expect(getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
-      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+      expect(await getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
+      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
         existingBundles,
       );
     } finally {
@@ -697,8 +723,10 @@ describe("refreshTaskIntelligence", () => {
     const fixture = createIsolatedStore();
 
     try {
-      const spaceId = createSpaceRecord(fixture.store, { name: "AI Watch" });
-      const taskId = createTaskRecord(fixture.store, {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "AI Watch",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Track agent launches",
         taskType: "QUESTION",
@@ -724,8 +752,12 @@ describe("refreshTaskIntelligence", () => {
         },
       ];
 
-      saveTaskProfile(fixture.store, taskId, existingProfile);
-      replaceRecommendationBundles(fixture.store, taskId, existingBundles);
+      await saveTaskProfile(fixture.store, taskId, existingProfile);
+      await replaceRecommendationBundles(
+        fixture.store,
+        taskId,
+        existingBundles,
+      );
 
       const understandTaskIntentImpl = vi.fn().mockResolvedValue({
         keywords: ["new keyword"],
@@ -753,7 +785,7 @@ describe("refreshTaskIntelligence", () => {
             currentTaskId,
             bundles: RecommendationBundle[],
           ) => {
-            replaceRecommendationBundles(currentStore, currentTaskId, bundles);
+            void replaceRecommendationBundles(currentStore, currentTaskId, bundles);
             throw new Error("bundle persistence failed");
           },
         );
@@ -766,8 +798,8 @@ describe("refreshTaskIntelligence", () => {
         }),
       ).rejects.toThrow("bundle persistence failed");
 
-      expect(getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
-      expect(listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
+      expect(await getTaskProfile(fixture.store, taskId)).toEqual(existingProfile);
+      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual(
         existingBundles,
       );
     } finally {

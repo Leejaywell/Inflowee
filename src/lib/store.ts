@@ -910,7 +910,9 @@ function mapTask(row: TaskRow): TaskRecord {
   };
 }
 
-export function listSpacesWithTasks(store: Store = defaultStore): SpaceRecord[] {
+export async function listSpacesWithTasks(
+  store: Store = defaultStore,
+): Promise<SpaceRecord[]> {
   const spaces = store.database
     .prepare("SELECT * FROM spaces ORDER BY created_at DESC")
     .all() as SpaceRow[];
@@ -936,7 +938,10 @@ export function listSpacesWithTasks(store: Store = defaultStore): SpaceRecord[] 
   }));
 }
 
-export function getSpaceById(store: Store, spaceId: string): SpaceRecord | null {
+export async function getSpaceById(
+  store: Store,
+  spaceId: string,
+): Promise<SpaceRecord | null> {
   const row = store.database
     .prepare("SELECT * FROM spaces WHERE id = ? LIMIT 1")
     .get(spaceId) as SpaceRow | undefined;
@@ -955,9 +960,12 @@ export function getSpaceById(store: Store, spaceId: string): SpaceRecord | null 
   };
 }
 
-export function createSpaceRecord(input: CreateSpaceInput): string;
-export function createSpaceRecord(store: Store, input: CreateSpaceInput): string;
+export function createSpaceRecord(input: CreateSpaceInput): Promise<string>;
 export function createSpaceRecord(
+  store: Store,
+  input: CreateSpaceInput,
+): Promise<string>;
+export async function createSpaceRecord(
   storeOrInput: Store | CreateSpaceInput,
   maybeInput?: CreateSpaceInput,
 ) {
@@ -982,9 +990,12 @@ export function createSpaceRecord(
   return id;
 }
 
-export function createTaskRecord(input: CreateTaskInput): string;
-export function createTaskRecord(store: Store, input: CreateTaskInput): string;
+export function createTaskRecord(input: CreateTaskInput): Promise<string>;
 export function createTaskRecord(
+  store: Store,
+  input: CreateTaskInput,
+): Promise<string>;
+export async function createTaskRecord(
   storeOrInput: Store | CreateTaskInput,
   maybeInput?: CreateTaskInput,
 ) {
@@ -1022,7 +1033,10 @@ export function createTaskRecord(
   return id;
 }
 
-export function hasTaskRecord(store: Store, taskId: string): boolean {
+export async function hasTaskRecord(
+  store: Store,
+  taskId: string,
+): Promise<boolean> {
   return Boolean(
     store.database
       .prepare("SELECT 1 FROM tasks WHERE id = ? LIMIT 1")
@@ -1030,10 +1044,10 @@ export function hasTaskRecord(store: Store, taskId: string): boolean {
   );
 }
 
-export function getSourceById(
+export async function getSourceById(
   store: Store,
   sourceId: string,
-): SourceRecord | null {
+): Promise<SourceRecord | null> {
   const row = store.database
     .prepare("SELECT * FROM sources WHERE id = ? LIMIT 1")
     .get(sourceId) as SourceRow | undefined;
@@ -1041,10 +1055,10 @@ export function getSourceById(
   return row ? mapSource(row) : null;
 }
 
-export function getTaskBySourceId(
+export async function getTaskBySourceId(
   store: Store,
   sourceId: string,
-): TaskRecord | null {
+): Promise<TaskRecord | null> {
   const row = store.database
     .prepare(
       `SELECT tasks.*
@@ -1058,7 +1072,7 @@ export function getTaskBySourceId(
   return row ? mapTask(row) : null;
 }
 
-export function createSourceRecord(
+export async function createSourceRecord(
   store: Store,
   input: {
     taskId: string;
@@ -1102,7 +1116,7 @@ export function createSourceRecord(
   return id;
 }
 
-export function createItemRecordResult(
+export async function createItemRecordResult(
   store: Store,
   input: {
     sourceId: string;
@@ -1117,7 +1131,7 @@ export function createItemRecordResult(
     publishedAt?: string | null;
     fetchedAt?: string;
   },
-): ItemRecord | null {
+): Promise<ItemRecord | null> {
   const timestamp = new Date().toISOString();
   const id = randomUUID();
   const rawContent = input.rawContent ?? input.summary ?? input.title;
@@ -1182,7 +1196,7 @@ export function createItemRecordResult(
   };
 }
 
-export function createItemRecord(
+export async function createItemRecord(
   store: Store,
   input: {
     sourceId: string;
@@ -1197,14 +1211,14 @@ export function createItemRecord(
     publishedAt?: string | null;
     fetchedAt?: string;
   },
-): boolean {
-  return createItemRecordResult(store, input) !== null;
+): Promise<boolean> {
+  return (await createItemRecordResult(store, input)) !== null;
 }
 
-export function listSourcesByTask(
+export async function listSourcesByTask(
   store: Store,
   taskId: string,
-): SourceRecord[] {
+): Promise<SourceRecord[]> {
   const rows = store.database
     .prepare(
       "SELECT * FROM sources WHERE task_id = ? ORDER BY created_at DESC",
@@ -1214,10 +1228,10 @@ export function listSourcesByTask(
   return rows.map(mapSource);
 }
 
-export function listDueSources(
+export async function listDueSources(
   store: Store,
   nowIso = new Date().toISOString(),
-): SourceRecord[] {
+): Promise<SourceRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT * FROM sources
@@ -1231,10 +1245,10 @@ export function listDueSources(
   return rows.map(mapSource);
 }
 
-export function listItemsBySource(
+export async function listItemsBySource(
   store: Store,
   sourceId: string,
-): ItemRecord[] {
+): Promise<ItemRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT * FROM items
@@ -1246,10 +1260,10 @@ export function listItemsBySource(
   return rows.map(mapItem);
 }
 
-export function listItemsByBriefId(
+export async function listItemsByBriefId(
   store: Store,
   briefId: string,
-): ItemRecord[] {
+): Promise<ItemRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT items.*
@@ -1263,7 +1277,7 @@ export function listItemsByBriefId(
   return rows.map(mapItem);
 }
 
-export function createBriefRecord(
+export async function createBriefRecord(
   store: Store,
   input: {
     taskId: string;
@@ -1276,7 +1290,7 @@ export function createBriefRecord(
     importanceScore?: number;
     tags?: string[];
   },
-): string {
+): Promise<string> {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
 
@@ -1319,7 +1333,9 @@ export function createBriefRecord(
   return id;
 }
 
-export function listBriefs(store: Store = defaultStore): BriefRecord[] {
+export async function listBriefs(
+  store: Store = defaultStore,
+): Promise<BriefRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT
@@ -1336,7 +1352,7 @@ export function listBriefs(store: Store = defaultStore): BriefRecord[] {
   return rows.map(mapBrief);
 }
 
-export function markSourceSyncResult(
+export async function markSourceSyncResult(
   store: Store,
   input: {
     sourceId: string;
@@ -1364,12 +1380,12 @@ export function markSourceSyncResult(
     );
 }
 
-export function setSourceSchedule(
+export async function setSourceSchedule(
   store: Store,
   sourceId: string,
   syncIntervalMinutes: number,
   nextSyncAt?: string,
-) {
+): Promise<void> {
   const timestamp = new Date().toISOString();
   store.database
     .prepare(
@@ -1382,12 +1398,12 @@ export function setSourceSchedule(
     .run(syncIntervalMinutes, nextSyncAt ?? timestamp, timestamp, sourceId);
 }
 
-export function scheduleNextSourceSync(
+export async function scheduleNextSourceSync(
   store: Store,
   sourceId: string,
   syncIntervalMinutes: number,
   baseTimeIso = new Date().toISOString(),
-) {
+): Promise<string> {
   const baseTime = Date.parse(baseTimeIso);
   const nextSyncAt = new Date(
     baseTime + syncIntervalMinutes * 60 * 1000,
@@ -1406,10 +1422,10 @@ export function scheduleNextSourceSync(
   return nextSyncAt;
 }
 
-export function createSyncRun(
+export async function createSyncRun(
   store: Store,
   input: { sourceId: string },
-): string {
+): Promise<string> {
   const id = randomUUID();
   const startedAt = new Date().toISOString();
 
@@ -1427,7 +1443,7 @@ export function createSyncRun(
   return id;
 }
 
-export function finishSyncRun(
+export async function finishSyncRun(
   store: Store,
   input: {
     runId: string;
@@ -1457,11 +1473,11 @@ export function finishSyncRun(
     );
 }
 
-export function listRecentSyncRunsBySource(
+export async function listRecentSyncRunsBySource(
   store: Store,
   sourceId: string,
   limit = 5,
-): SyncRunRecord[] {
+): Promise<SyncRunRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT * FROM sync_runs
@@ -1474,7 +1490,7 @@ export function listRecentSyncRunsBySource(
   return rows.map(mapSyncRun);
 }
 
-export function saveWebhookSettings(store: Store, endpoint: string) {
+export async function saveWebhookSettings(store: Store, endpoint: string) {
   const updatedAt = new Date().toISOString();
   store.database
     .prepare(
@@ -1487,7 +1503,9 @@ export function saveWebhookSettings(store: Store, endpoint: string) {
     .run(endpoint, updatedAt);
 }
 
-export function getWebhookSettings(store: Store): WebhookSettingsRecord {
+export async function getWebhookSettings(
+  store: Store,
+): Promise<WebhookSettingsRecord> {
   const row = store.database
     .prepare(
       `SELECT value, updated_at
@@ -1503,7 +1521,7 @@ export function getWebhookSettings(store: Store): WebhookSettingsRecord {
   };
 }
 
-export function createDeliveryLog(
+export async function createDeliveryLog(
   store: Store,
   input: {
     briefId: string;
@@ -1530,7 +1548,7 @@ export function createDeliveryLog(
   return id;
 }
 
-export function finishDeliveryLog(
+export async function finishDeliveryLog(
   store: Store,
   input: {
     logId: string;
@@ -1559,11 +1577,11 @@ export function finishDeliveryLog(
     );
 }
 
-export function listRecentDeliveryLogsByBrief(
+export async function listRecentDeliveryLogsByBrief(
   store: Store,
   briefId: string,
   limit = 10,
-): DeliveryLogRecord[] {
+): Promise<DeliveryLogRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT * FROM delivery_logs
@@ -1576,10 +1594,10 @@ export function listRecentDeliveryLogsByBrief(
   return rows.map(mapDeliveryLog);
 }
 
-export function listRecentDeliveryLogs(
+export async function listRecentDeliveryLogs(
   store: Store,
   limit = 20,
-): DeliveryLogRecord[] {
+): Promise<DeliveryLogRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT * FROM delivery_logs
@@ -1591,7 +1609,9 @@ export function listRecentDeliveryLogs(
   return rows.map(mapDeliveryLog);
 }
 
-export function listSources(store: Store = defaultStore): SourceRecord[] {
+export async function listSources(
+  store: Store = defaultStore,
+): Promise<SourceRecord[]> {
   const rows = store.database
     .prepare("SELECT * FROM sources ORDER BY created_at DESC")
     .all() as SourceRow[];
@@ -1599,10 +1619,10 @@ export function listSources(store: Store = defaultStore): SourceRecord[] {
   return rows.map(mapSource);
 }
 
-export function getBriefById(
+export async function getBriefById(
   store: Store,
   briefId: string,
-): BriefRecord | null {
+): Promise<BriefRecord | null> {
   const row = store.database
     .prepare(
       `SELECT
@@ -1620,10 +1640,10 @@ export function getBriefById(
   return row ? mapBrief(row) : null;
 }
 
-export function listBriefItemIds(
+export async function listBriefItemIds(
   store: Store,
   briefId: string,
-): string[] {
+): Promise<string[]> {
   const rows = store.database
     .prepare("SELECT item_id FROM brief_items WHERE brief_id = ?")
     .all(briefId) as Array<{ item_id: string }>;
@@ -1631,10 +1651,10 @@ export function listBriefItemIds(
   return rows.map((row) => row.item_id);
 }
 
-export function briefExistsForItem(
+export async function briefExistsForItem(
   store: Store,
   itemId: string,
-): boolean {
+): Promise<boolean> {
   return Boolean(
     store.database
       .prepare("SELECT 1 FROM brief_items WHERE item_id = ? LIMIT 1")
@@ -1644,19 +1664,25 @@ export function briefExistsForItem(
 
 // --- Slice A: read/unread, filtered listing, unread count ---
 
-export function markBriefRead(store: Store, briefId: string): void {
+export async function markBriefRead(
+  store: Store,
+  briefId: string,
+): Promise<void> {
   store.database
     .prepare("UPDATE briefs SET is_read = 1 WHERE id = ?")
     .run(briefId);
 }
 
-export function markBriefUnread(store: Store, briefId: string): void {
+export async function markBriefUnread(
+  store: Store,
+  briefId: string,
+): Promise<void> {
   store.database
     .prepare("UPDATE briefs SET is_read = 0 WHERE id = ?")
     .run(briefId);
 }
 
-export function countUnreadBriefs(store: Store): number {
+export async function countUnreadBriefs(store: Store): Promise<number> {
   const row = store.database
     .prepare("SELECT COUNT(*) AS count FROM briefs WHERE is_read = 0")
     .get() as { count: number };
@@ -1664,10 +1690,10 @@ export function countUnreadBriefs(store: Store): number {
   return row.count;
 }
 
-export function listBriefsFiltered(
+export async function listBriefsFiltered(
   store: Store,
   filters: { taskId?: string; unreadOnly?: boolean } = {},
-): BriefRecord[] {
+): Promise<BriefRecord[]> {
   const conditions: string[] = [];
   const params: string[] = [];
 
@@ -1700,25 +1726,40 @@ export function listBriefsFiltered(
 
 // --- Slice A + B: delete functions ---
 
-export function deleteBrief(store: Store, briefId: string): void {
+export async function deleteBrief(
+  store: Store,
+  briefId: string,
+): Promise<void> {
   store.database.prepare("DELETE FROM briefs WHERE id = ?").run(briefId);
 }
 
-export function deleteSource(store: Store, sourceId: string): void {
+export async function deleteSource(
+  store: Store,
+  sourceId: string,
+): Promise<void> {
   store.database.prepare("DELETE FROM sources WHERE id = ?").run(sourceId);
 }
 
-export function deleteTask(store: Store, taskId: string): void {
+export async function deleteTask(
+  store: Store,
+  taskId: string,
+): Promise<void> {
   store.database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
 }
 
-export function deleteSpace(store: Store, spaceId: string): void {
+export async function deleteSpace(
+  store: Store,
+  spaceId: string,
+): Promise<void> {
   store.database.prepare("DELETE FROM spaces WHERE id = ?").run(spaceId);
 }
 
 // --- AI Task Intent, Profiles, Controls & Grounded Chat thread store helpers ---
 
-export function getTaskById(store: Store, taskId: string): TaskRecord | null {
+export async function getTaskById(
+  store: Store,
+  taskId: string,
+): Promise<TaskRecord | null> {
   const row = store.database
     .prepare("SELECT * FROM tasks WHERE id = ? LIMIT 1")
     .get(taskId) as TaskRow | undefined;
@@ -1726,30 +1767,30 @@ export function getTaskById(store: Store, taskId: string): TaskRecord | null {
   return row ? mapTask(row) : null;
 }
 
-export function getTaskProfile(
+export async function getTaskProfile(
   store: Store,
   taskId: string,
-): TaskProfile | null {
-  const task = getTaskById(store, taskId);
+): Promise<TaskProfile | null> {
+  const task = await getTaskById(store, taskId);
   return task ? task.taskProfile ?? null : null;
 }
 
-export function saveTaskProfile(
+export async function saveTaskProfile(
   store: Store,
   taskId: string,
   profile: TaskProfile,
-): void {
+): Promise<void> {
   const timestamp = new Date().toISOString();
   store.database
     .prepare("UPDATE tasks SET task_profile = ?, updated_at = ? WHERE id = ?")
     .run(JSON.stringify(profile), timestamp, taskId);
 }
 
-export function replaceRecommendationBundles(
+export async function replaceRecommendationBundles(
   store: Store,
   taskId: string,
   bundles: RecommendationBundle[],
-): void {
+): Promise<void> {
   const deleteStatement = store.database.prepare(
     "DELETE FROM recommendation_bundles WHERE task_id = ?",
   );
@@ -1788,10 +1829,10 @@ export function replaceRecommendationBundles(
   }
 }
 
-export function listRecommendationBundlesByTask(
+export async function listRecommendationBundlesByTask(
   store: Store,
   taskId: string,
-): RecommendationBundle[] {
+): Promise<RecommendationBundle[]> {
   const rows = store.database
     .prepare(
       `SELECT * FROM recommendation_bundles
@@ -1803,12 +1844,12 @@ export function listRecommendationBundlesByTask(
   return rows.map(mapRecommendationBundle);
 }
 
-export function updateTaskControls(
+export async function updateTaskControls(
   store: Store,
   taskId: string,
   relevanceLevel: number,
   summaryPreference: string,
-): void {
+): Promise<void> {
   const timestamp = new Date().toISOString();
   store.database
     .prepare(
@@ -1821,12 +1862,12 @@ export function updateTaskControls(
     .run(relevanceLevel, summaryPreference, timestamp, taskId);
 }
 
-export function getOrCreateChatThread(
+export async function getOrCreateChatThread(
   store: Store,
   scopeType: "global" | "space" | "task" | "brief",
   scopeId: string,
-): ChatThreadRecord {
-  const existing = findChatThread(store, scopeType, scopeId);
+): Promise<ChatThreadRecord> {
+  const existing = await findChatThread(store, scopeType, scopeId);
 
   if (existing) {
     return existing;
@@ -1850,11 +1891,11 @@ export function getOrCreateChatThread(
   };
 }
 
-export function findChatThread(
+export async function findChatThread(
   store: Store,
   scopeType: "global" | "space" | "task" | "brief",
   scopeId: string,
-): ChatThreadRecord | null {
+): Promise<ChatThreadRecord | null> {
   const existing = store.database
     .prepare(
       `SELECT * FROM chat_threads
@@ -1866,7 +1907,7 @@ export function findChatThread(
   return existing ? mapChatThread(existing) : null;
 }
 
-export function createChatMessage(
+export async function createChatMessage(
   store: Store,
   input: {
     threadId: string;
@@ -1875,7 +1916,7 @@ export function createChatMessage(
     citations?: string[] | null;
     provenance?: "stored" | "mixed" | null;
   },
-): ChatMessageRecord {
+): Promise<ChatMessageRecord> {
   const id = randomUUID();
   const timestamp = new Date().toISOString();
   const citationsStr = input.citations ? JSON.stringify(input.citations) : null;
@@ -1907,10 +1948,10 @@ export function createChatMessage(
   };
 }
 
-export function listChatMessages(
+export async function listChatMessages(
   store: Store,
   threadId: string,
-): ChatMessageRecord[] {
+): Promise<ChatMessageRecord[]> {
   const rows = store.database
     .prepare(
       `SELECT * FROM chat_messages

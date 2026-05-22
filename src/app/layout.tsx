@@ -10,12 +10,12 @@ export const metadata: Metadata = {
   description: "AI-powered information hub MVP scaffold",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const unreadCount = countUnreadBriefs(defaultStore);
+  const unreadCount = await countUnreadBriefs(defaultStore);
 
   return (
     <html lang="en" className="h-full antialiased" suppressHydrationWarning>

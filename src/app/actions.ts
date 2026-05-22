@@ -50,7 +50,7 @@ export async function createSpace(formData: FormData) {
     redirect(`/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid space input.")}`);
   }
 
-  createSpaceRecord(parsed.data);
+  await createSpaceRecord(parsed.data);
 
   revalidatePath("/");
   redirect("/?created=space");
@@ -68,7 +68,7 @@ export async function createTask(formData: FormData) {
     redirect(`/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid task input.")}`);
   }
 
-  const taskId = createTaskRecord(parsed.data);
+  const taskId = await createTaskRecord(parsed.data);
 
   try {
     await refreshTaskIntelligence(defaultStore, taskId);
@@ -83,7 +83,7 @@ export async function createTask(formData: FormData) {
 export async function refreshStoredTaskIntelligence(taskId: string) {
   await refreshTaskIntelligence(defaultStore, taskId);
 
-  const task = getTaskById(defaultStore, taskId);
+  const task = await getTaskById(defaultStore, taskId);
 
   if (!task) {
     throw new Error(`Task ${taskId} not found.`);
@@ -106,7 +106,7 @@ export async function createSource(formData: FormData) {
     redirect(`/sources?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid source input.")}`);
   }
 
-  const taskExists = hasTaskRecord(defaultStore, parsed.data.taskId);
+  const taskExists = await hasTaskRecord(defaultStore, parsed.data.taskId);
 
   if (!taskExists) {
     redirect("/sources?error=Select%20a%20valid%20task.");
@@ -115,7 +115,7 @@ export async function createSource(formData: FormData) {
   let destination = "/sources?created=source";
 
   try {
-    createSourceRecord(defaultStore, parsed.data);
+    await createSourceRecord(defaultStore, parsed.data);
   } catch {
     destination = "/sources?error=Unable%20to%20create%20source.";
   }
@@ -154,7 +154,7 @@ export async function updateSourceSchedule(formData: FormData) {
     );
   }
 
-  setSourceSchedule(
+  await setSourceSchedule(
     defaultStore,
     parsed.data.sourceId,
     parsed.data.syncIntervalMinutes,
@@ -168,9 +168,9 @@ export async function toggleBriefRead(formData: FormData) {
   const isRead = getString(formData, "isRead");
 
   if (isRead === "1") {
-    markBriefUnread(defaultStore, briefId);
+    await markBriefUnread(defaultStore, briefId);
   } else {
-    markBriefRead(defaultStore, briefId);
+    await markBriefRead(defaultStore, briefId);
   }
 
   revalidatePath("/inbox");
@@ -178,7 +178,7 @@ export async function toggleBriefRead(formData: FormData) {
 
 export async function deleteBrief(formData: FormData) {
   const briefId = getString(formData, "briefId");
-  deleteBriefRecord(defaultStore, briefId);
+  await deleteBriefRecord(defaultStore, briefId);
 
   revalidatePath("/inbox");
   redirect("/inbox");
@@ -186,7 +186,7 @@ export async function deleteBrief(formData: FormData) {
 
 export async function deleteSource(formData: FormData) {
   const sourceId = getString(formData, "sourceId");
-  deleteSourceRecord(defaultStore, sourceId);
+  await deleteSourceRecord(defaultStore, sourceId);
 
   revalidatePath("/sources");
   revalidatePath("/inbox");
@@ -195,7 +195,7 @@ export async function deleteSource(formData: FormData) {
 
 export async function deleteTask(formData: FormData) {
   const taskId = getString(formData, "taskId");
-  deleteTaskRecord(defaultStore, taskId);
+  await deleteTaskRecord(defaultStore, taskId);
 
   revalidatePath("/");
   revalidatePath("/sources");
@@ -205,7 +205,7 @@ export async function deleteTask(formData: FormData) {
 
 export async function deleteSpace(formData: FormData) {
   const spaceId = getString(formData, "spaceId");
-  deleteSpaceRecord(defaultStore, spaceId);
+  await deleteSpaceRecord(defaultStore, spaceId);
 
   revalidatePath("/");
   revalidatePath("/sources");
@@ -235,28 +235,28 @@ export async function saveWebhookEndpoint(formData: FormData) {
     );
   }
 
-  saveWebhookSettings(defaultStore, parsed.data);
+  await saveWebhookSettings(defaultStore, parsed.data);
   revalidatePath("/settings");
   redirect("/settings?updated=webhook");
 }
 
 export async function sendBriefToWebhook(formData: FormData) {
   const briefId = getString(formData, "briefId");
-  const brief = getBriefById(defaultStore, briefId);
+  const brief = await getBriefById(defaultStore, briefId);
 
   if (!brief) {
     redirect("/inbox?error=Brief%20not%20found.");
   }
 
-  const settings = getWebhookSettings(defaultStore);
+  const settings = await getWebhookSettings(defaultStore);
 
   if (!settings.endpoint) {
     redirect(`/inbox/${briefId}?error=Configure%20a%20webhook%20endpoint%20first.`);
   }
 
-  const linkedItems = listItemsByBriefId(defaultStore, briefId);
+  const linkedItems = await listItemsByBriefId(defaultStore, briefId);
   const html = renderBriefHtmlDigest({ brief, linkedItems });
-  const logId = createDeliveryLog(defaultStore, {
+  const logId = await createDeliveryLog(defaultStore, {
     briefId,
     endpoint: settings.endpoint,
     payloadType: "html",
@@ -273,7 +273,7 @@ export async function sendBriefToWebhook(formData: FormData) {
       },
     });
 
-    finishDeliveryLog(defaultStore, {
+    await finishDeliveryLog(defaultStore, {
       logId,
       status: "success",
       responseStatus,
@@ -282,7 +282,7 @@ export async function sendBriefToWebhook(formData: FormData) {
     const message =
       error instanceof Error ? error.message : "Unknown delivery failure.";
 
-    finishDeliveryLog(defaultStore, {
+    await finishDeliveryLog(defaultStore, {
       logId,
       status: "error",
       error: message,

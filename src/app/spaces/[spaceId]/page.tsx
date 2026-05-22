@@ -29,7 +29,7 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
   const store = defaultStore;
 
   // 1. Fetch space
-  const space = getSpaceById(store, spaceId);
+  const space = await getSpaceById(store, spaceId);
 
   if (!space) {
     notFound();
@@ -41,13 +41,13 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
     .all(spaceId) as TaskRow[];
 
   // 3. Fetch aggregated briefs in this space
-  const { briefs } = getGroundingForScope(store, "space", spaceId, {
+  const { briefs } = await getGroundingForScope(store, "space", spaceId, {
     includeItems: false,
   });
 
   // 4. Fetch Chat history
-  const chatThread = getOrCreateChatThread(store, "space", spaceId);
-  const chatMessages = listChatMessages(store, chatThread.id);
+  const chatThread = await getOrCreateChatThread(store, "space", spaceId);
+  const chatMessages = await listChatMessages(store, chatThread.id);
 
   return (
     <div className="grid gap-6">

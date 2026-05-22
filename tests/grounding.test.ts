@@ -14,26 +14,26 @@ import {
   createTaskRecord,
 } from "@/lib/store";
 
-function createFixture() {
+async function createFixture() {
   const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-grounding-test-"));
   const store = createStore(join(tempDirectory, "store.sqlite"));
 
-  const spaceId = createSpaceRecord(store, {
+  const spaceId = await createSpaceRecord(store, {
     name: "AI Watch",
   });
-  const taskId = createTaskRecord(store, {
+  const taskId = await createTaskRecord(store, {
     spaceId,
     title: "Agent launches",
     taskType: "TOPIC",
     userPrompt: "Track launches",
   });
-  const sourceId = createSourceRecord(store, {
+  const sourceId = await createSourceRecord(store, {
     taskId,
     sourceType: "RSS",
     title: "Feed",
     url: "https://example.com/feed.xml",
   });
-  const item = createItemRecordResult(store, {
+  const item = await createItemRecordResult(store, {
     sourceId,
     title: "Launch roundup",
     canonicalUrl: "https://example.com/launch",
@@ -45,7 +45,7 @@ function createFixture() {
     throw new Error("Expected fixture item to be inserted.");
   }
 
-  const briefId = createBriefRecord(store, {
+  const briefId = await createBriefRecord(store, {
     taskId,
     itemIds: [item.id],
     title: "Launch roundup",
@@ -71,11 +71,11 @@ function createFixture() {
 }
 
 describe("getGroundingForScope", () => {
-  it("returns task-scoped briefs and items", () => {
-    const fixture = createFixture();
+  it("returns task-scoped briefs and items", async () => {
+    const fixture = await createFixture();
 
     try {
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "task",
         fixture.taskId,
@@ -100,11 +100,11 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("returns brief-scoped linked items", () => {
-    const fixture = createFixture();
+  it("returns brief-scoped linked items", async () => {
+    const fixture = await createFixture();
 
     try {
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "brief",
         fixture.briefId,
@@ -126,11 +126,11 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("returns space-scoped briefs and items across child tasks", () => {
-    const fixture = createFixture();
+  it("returns space-scoped briefs and items across child tasks", async () => {
+    const fixture = await createFixture();
 
     try {
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "space",
         fixture.spaceId,
@@ -143,18 +143,18 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("deduplicates task-scoped items by canonical url and keeps the freshest item", () => {
-    const fixture = createFixture();
+  it("deduplicates task-scoped items by canonical url and keeps the freshest item", async () => {
+    const fixture = await createFixture();
 
     try {
-      const secondSourceId = createSourceRecord(fixture.store, {
+      const secondSourceId = await createSourceRecord(fixture.store, {
         taskId: fixture.taskId,
         sourceType: "RSS",
         title: "Backup feed",
         url: "https://example.com/backup.xml",
       });
 
-      const newerDuplicate = createItemRecordResult(fixture.store, {
+      const newerDuplicate = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Launch roundup duplicate",
         canonicalUrl: "https://example.com/launch",
@@ -164,7 +164,7 @@ describe("getGroundingForScope", () => {
 
       expect(newerDuplicate).not.toBeNull();
 
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "task",
         fixture.taskId,
@@ -177,24 +177,24 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("globally sorts task-scoped items across sources by publishedAt then createdAt", () => {
-    const fixture = createFixture();
+  it("globally sorts task-scoped items across sources by publishedAt then createdAt", async () => {
+    const fixture = await createFixture();
 
     try {
-      const secondSourceId = createSourceRecord(fixture.store, {
+      const secondSourceId = await createSourceRecord(fixture.store, {
         taskId: fixture.taskId,
         sourceType: "RSS",
         title: "Second feed",
         url: "https://example.com/second.xml",
       });
 
-      const oldest = createItemRecordResult(fixture.store, {
+      const oldest = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Oldest",
         canonicalUrl: "https://example.com/oldest",
         publishedAt: "2026-05-20T08:00:00.000Z",
       });
-      const newest = createItemRecordResult(fixture.store, {
+      const newest = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Newest",
         canonicalUrl: "https://example.com/newest",
@@ -204,7 +204,7 @@ describe("getGroundingForScope", () => {
       expect(oldest).not.toBeNull();
       expect(newest).not.toBeNull();
 
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "task",
         fixture.taskId,
@@ -220,30 +220,30 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("globally sorts and deduplicates space-scoped items across child tasks", () => {
-    const fixture = createFixture();
+  it("globally sorts and deduplicates space-scoped items across child tasks", async () => {
+    const fixture = await createFixture();
 
     try {
-      const secondTaskId = createTaskRecord(fixture.store, {
+      const secondTaskId = await createTaskRecord(fixture.store, {
         spaceId: fixture.spaceId,
         title: "Funding",
         taskType: "TOPIC",
         userPrompt: "Track funding",
       });
-      const secondSourceId = createSourceRecord(fixture.store, {
+      const secondSourceId = await createSourceRecord(fixture.store, {
         taskId: secondTaskId,
         sourceType: "RSS",
         title: "Funding feed",
         url: "https://example.com/funding.xml",
       });
 
-      const uniqueItem = createItemRecordResult(fixture.store, {
+      const uniqueItem = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Funding round",
         canonicalUrl: "https://example.com/funding",
         publishedAt: "2026-05-24T08:00:00.000Z",
       });
-      const duplicateItem = createItemRecordResult(fixture.store, {
+      const duplicateItem = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Launch roundup mirrored",
         canonicalUrl: "https://example.com/launch",
@@ -253,7 +253,7 @@ describe("getGroundingForScope", () => {
       expect(uniqueItem).not.toBeNull();
       expect(duplicateItem).not.toBeNull();
 
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "space",
         fixture.spaceId,
@@ -269,11 +269,11 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("skips item reads when includeItems is false", () => {
-    const fixture = createFixture();
+  it("skips item reads when includeItems is false", async () => {
+    const fixture = await createFixture();
 
     try {
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "space",
         fixture.spaceId,
@@ -287,30 +287,30 @@ describe("getGroundingForScope", () => {
     }
   });
 
-  it("prefers valid publishedAt over invalid strings for sorting and dedupe freshness", () => {
-    const fixture = createFixture();
+  it("prefers valid publishedAt over invalid strings for sorting and dedupe freshness", async () => {
+    const fixture = await createFixture();
 
     try {
-      const secondSourceId = createSourceRecord(fixture.store, {
+      const secondSourceId = await createSourceRecord(fixture.store, {
         taskId: fixture.taskId,
         sourceType: "RSS",
         title: "Second feed",
         url: "https://example.com/second.xml",
       });
 
-      const invalidPublishedAtItem = createItemRecordResult(fixture.store, {
+      const invalidPublishedAtItem = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Invalid published time",
         canonicalUrl: "https://example.com/invalid-published",
         publishedAt: "not-a-date",
       });
-      const validPublishedAtItem = createItemRecordResult(fixture.store, {
+      const validPublishedAtItem = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Valid published time",
         canonicalUrl: "https://example.com/valid-published",
         publishedAt: "2026-05-25T08:00:00.000Z",
       });
-      const invalidDuplicate = createItemRecordResult(fixture.store, {
+      const invalidDuplicate = await createItemRecordResult(fixture.store, {
         sourceId: secondSourceId,
         title: "Launch roundup invalid duplicate",
         canonicalUrl: "https://example.com/launch",
@@ -321,7 +321,7 @@ describe("getGroundingForScope", () => {
       expect(validPublishedAtItem).not.toBeNull();
       expect(invalidDuplicate).not.toBeNull();
 
-      const grounding = getGroundingForScope(
+      const grounding = await getGroundingForScope(
         fixture.store,
         "task",
         fixture.taskId,

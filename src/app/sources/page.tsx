@@ -42,8 +42,8 @@ type SourceWithRuns = SourceRecord & {
 
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
   const [spaces, sources, params] = await Promise.all([
-    Promise.resolve(listSpacesWithTasks(defaultStore)),
-    Promise.resolve(listSources(defaultStore)),
+    listSpacesWithTasks(defaultStore),
+    listSources(defaultStore),
     searchParams,
   ]);
   const sourcesByTask = new Map<string, SourceWithRuns[]>();
@@ -52,7 +52,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
     const taskSources = sourcesByTask.get(source.taskId) ?? [];
     taskSources.push({
       ...source,
-      recentRuns: listRecentSyncRunsBySource(defaultStore, source.id),
+      recentRuns: await listRecentSyncRunsBySource(defaultStore, source.id),
     });
     sourcesByTask.set(source.taskId, taskSources);
   }

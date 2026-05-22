@@ -23,12 +23,12 @@ export type RefreshTaskIntelligenceOptions = {
     store: Store,
     taskId: string,
     profile: TaskProfile,
-  ) => void;
+  ) => Promise<void>;
   replaceRecommendationBundlesImpl?: (
     store: Store,
     taskId: string,
     bundles: SourceBundle[],
-  ) => void;
+  ) => Promise<void>;
 };
 
 export async function refreshTaskIntelligence(
@@ -36,7 +36,7 @@ export async function refreshTaskIntelligence(
   taskId: string,
   options: RefreshTaskIntelligenceOptions = {},
 ) {
-  const task = getTaskById(store, taskId);
+  const task = await getTaskById(store, taskId);
 
   if (!task) {
     throw new Error(`Task ${taskId} not found.`);
@@ -47,22 +47,22 @@ export async function refreshTaskIntelligence(
   const saveProfile = options.saveTaskProfileImpl ?? saveTaskProfile;
   const replaceBundles =
     options.replaceRecommendationBundlesImpl ?? replaceRecommendationBundles;
-  const previousBundles = listRecommendationBundlesByTask(store, taskId);
+  const previousBundles = await listRecommendationBundlesByTask(store, taskId);
 
   const profile = await understand(task.userPrompt);
   const bundles = await recommend(task.userPrompt, { bypassCache: true });
 
   try {
-    replaceBundles(store, taskId, bundles);
+    await replaceBundles(store, taskId, bundles);
   } catch (error) {
-    replaceRecommendationBundles(store, taskId, previousBundles);
+    await replaceRecommendationBundles(store, taskId, previousBundles);
     throw error;
   }
 
   try {
-    saveProfile(store, taskId, profile);
+    await saveProfile(store, taskId, profile);
   } catch (error) {
-    replaceRecommendationBundles(store, taskId, previousBundles);
+    await replaceRecommendationBundles(store, taskId, previousBundles);
     throw error;
   }
 

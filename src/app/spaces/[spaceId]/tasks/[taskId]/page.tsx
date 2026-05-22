@@ -25,31 +25,33 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const store = defaultStore;
 
   // 1. Fetch task details
-  const task = getTaskById(store, taskId);
+  const task = await getTaskById(store, taskId);
   if (!task || task.spaceId !== spaceId) {
     notFound();
   }
 
   // 2. Fetch space info for breadcrumbs
-  const space = getSpaceById(store, spaceId);
+  const space = await getSpaceById(store, spaceId);
 
   if (!space) {
     notFound();
   }
 
   // 3. Fetch connected sources list
-  const activeSources = listSourcesByTask(store, taskId);
+  const activeSources = await listSourcesByTask(store, taskId);
 
   // 4. Read stored task intelligence
-  const recommendedBundles = listRecommendationBundlesByTask(store, taskId);
+  const recommendedBundles = await listRecommendationBundlesByTask(store, taskId);
   const recommendationStateKey = JSON.stringify({
     taskProfile: task.taskProfile ?? null,
     recommendedBundles,
   });
 
   // 5. Fetch grounded thread history
-  const chatThread = findChatThread(store, "task", taskId);
-  const chatMessages = chatThread ? listChatMessages(store, chatThread.id) : [];
+  const chatThread = await findChatThread(store, "task", taskId);
+  const chatMessages = chatThread
+    ? await listChatMessages(store, chatThread.id)
+    : [];
 
   return (
     <div className="grid gap-6">

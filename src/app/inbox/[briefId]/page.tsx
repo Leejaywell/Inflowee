@@ -24,7 +24,7 @@ export default async function BriefDetailPage({
   searchParams?: Promise<{ delivered?: string; error?: string }>;
 }) {
   const [{ briefId }, query] = await Promise.all([params, searchParams]);
-  const brief = getBriefById(defaultStore, briefId);
+  const brief = await getBriefById(defaultStore, briefId);
 
   if (!brief) {
     notFound();
@@ -32,13 +32,13 @@ export default async function BriefDetailPage({
 
   const [itemIds, linkedItems, chatThread, webhookSettings, deliveryLogs] =
     await Promise.all([
-      Promise.resolve(listBriefItemIds(defaultStore, briefId)),
-      Promise.resolve(listItemsByBriefId(defaultStore, briefId)),
-      Promise.resolve(getOrCreateChatThread(defaultStore, "brief", briefId)),
-      Promise.resolve(getWebhookSettings(defaultStore)),
-      Promise.resolve(listRecentDeliveryLogsByBrief(defaultStore, briefId)),
+      listBriefItemIds(defaultStore, briefId),
+      listItemsByBriefId(defaultStore, briefId),
+      getOrCreateChatThread(defaultStore, "brief", briefId),
+      getWebhookSettings(defaultStore),
+      listRecentDeliveryLogsByBrief(defaultStore, briefId),
     ]);
-  const chatMessages = listChatMessages(defaultStore, chatThread.id);
+  const chatMessages = await listChatMessages(defaultStore, chatThread.id);
   const delivered = query?.delivered;
   const error = query?.error;
 

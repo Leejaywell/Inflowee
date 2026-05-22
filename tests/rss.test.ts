@@ -213,21 +213,21 @@ describe("parseFeedItems", () => {
     expect(lookupFn).toHaveBeenCalledTimes(2);
   });
 
-  it("stores feed items per source and ignores duplicate canonical urls", () => {
+  it("stores feed items per source and ignores duplicate canonical urls", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-rss-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "OpenAI News",
@@ -235,7 +235,7 @@ describe("parseFeedItems", () => {
       });
 
       expect(
-        createItemRecord(store, {
+        await createItemRecord(store, {
           sourceId,
           title: "Older update",
           canonicalUrl: "https://example.com/posts/older-update",
@@ -244,7 +244,7 @@ describe("parseFeedItems", () => {
         }),
       ).toBe(true);
       expect(
-        createItemRecord(store, {
+        await createItemRecord(store, {
           sourceId,
           title: "Launch roundup",
           canonicalUrl: "https://example.com/posts/launch-roundup",
@@ -253,7 +253,7 @@ describe("parseFeedItems", () => {
         }),
       ).toBe(true);
       expect(
-        createItemRecord(store, {
+        await createItemRecord(store, {
           sourceId,
           title: "Duplicate launch roundup",
           canonicalUrl: "https://example.com/posts/launch-roundup",
@@ -262,7 +262,7 @@ describe("parseFeedItems", () => {
         }),
       ).toBe(false);
 
-      expect(listItemsBySource(store, sourceId)).toEqual([
+      expect(await listItemsBySource(store, sourceId)).toEqual([
         expect.objectContaining({
           sourceId,
           title: "Launch roundup",
@@ -284,34 +284,34 @@ describe("parseFeedItems", () => {
     }
   });
 
-  it("marks source sync results with status and error details", () => {
+  it("marks source sync results with status and error details", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-rss-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "OpenAI News",
         url: "https://example.com/feed.xml",
       });
 
-      markSourceSyncResult(store, {
+      await markSourceSyncResult(store, {
         sourceId,
         status: "error",
         error: "Feed request failed with 500",
       });
 
-      expect(listSourcesByTask(store, taskId)).toEqual([
+      expect(await listSourcesByTask(store, taskId)).toEqual([
         expect.objectContaining({
           id: sourceId,
           status: "error",

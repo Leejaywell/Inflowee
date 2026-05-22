@@ -33,6 +33,7 @@ import {
   listItemsBySource,
   listRecentSyncRunsBySource,
   listSources,
+  listSpacesWithTasks,
   listSourcesByTask,
   markBriefRead,
   markBriefUnread,
@@ -53,8 +54,77 @@ import {
   webhookEndpointSchema,
 } from "@/lib/validation";
 
+describe("store promise contract", () => {
+  it("returns promises for core write helpers", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const createSpaceResult = createSpaceRecord(store, {
+        name: "Async Surface",
+        description: "Promise contract check",
+      });
+
+      expect(createSpaceResult).toBeInstanceOf(Promise);
+
+      const spaceId = await createSpaceResult;
+      const taskId = await createTaskRecord(store, {
+        spaceId,
+        title: "Async task",
+        taskType: "TOPIC",
+        userPrompt: "Track promise-based store behavior.",
+      });
+
+      const sourceId = await createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Example feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      expect(typeof sourceId).toBe("string");
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("returns promises for core read helpers", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, {
+        name: "Async Reads",
+        description: undefined,
+      });
+
+      await createTaskRecord(store, {
+        spaceId,
+        title: "Read task",
+        taskType: "TOPIC",
+        userPrompt: "Track async reads.",
+      });
+
+      const listResult = listSpacesWithTasks(store);
+      expect(listResult).toBeInstanceOf(Promise);
+
+      const spaces = await listResult;
+      expect(spaces).toEqual([
+        expect.objectContaining({
+          id: spaceId,
+          tasks: [expect.objectContaining({ title: "Read task" })],
+        }),
+      ]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("store source persistence", () => {
-  it("rejects non-http source URLs", () => {
+  it("rejects non-http source URLs", async () => {
     const parsed = createSourceSchema.safeParse({
       taskId: "task-123",
       sourceType: "RSS",
@@ -68,29 +138,29 @@ describe("store source persistence", () => {
     );
   });
 
-  it("lists RSS sources by task from an isolated database", () => {
+  it("lists RSS sources by task from an isolated database", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
 
-      createSourceRecord(store, {
+      await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "OpenAI News",
         url: "https://example.com/feed.xml",
       });
 
-      expect(listSourcesByTask(store, taskId)).toEqual([
+      expect(await listSourcesByTask(store, taskId)).toEqual([
         expect.objectContaining({
           taskId,
           sourceType: "RSS",
@@ -99,7 +169,7 @@ describe("store source persistence", () => {
           status: "idle",
         }),
       ]);
-      expect(listSources(store)).toEqual([
+      expect(await listSources(store)).toEqual([
         expect.objectContaining({
           taskId,
           sourceType: "RSS",
@@ -114,35 +184,35 @@ describe("store source persistence", () => {
     }
   });
 
-  it("stores UPDATE and NEWSLETTER sources under a task", () => {
+  it("stores UPDATE and NEWSLETTER sources under a task", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor updates",
         taskType: "TOPIC",
         userPrompt: "Track changelogs and newsletter archives",
       });
 
-      createSourceRecord(store, {
+      await createSourceRecord(store, {
         taskId,
         sourceType: "UPDATE",
         title: "OpenAI Changelog",
         url: "https://openai.com/changelog",
       });
-      createSourceRecord(store, {
+      await createSourceRecord(store, {
         taskId,
         sourceType: "NEWSLETTER",
         title: "Agent Archive",
         url: "https://example.com/archive",
       });
 
-      expect(listSourcesByTask(store, taskId)).toEqual(
+      expect(await listSourcesByTask(store, taskId)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             taskId,
@@ -166,27 +236,27 @@ describe("store source persistence", () => {
     }
   });
 
-  it("stores default source cadence and next sync timestamp", () => {
+  it("stores default source cadence and next sync timestamp", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "OpenAI" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "OpenAI" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
 
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "OpenAI feed",
         url: "https://example.com/feed.xml",
       });
 
-      const source = getSourceById(store, sourceId);
+      const source = await getSourceById(store, sourceId);
 
       expect(source?.syncIntervalMinutes).toBe(360);
       expect(source?.nextSyncAt).toEqual(expect.any(String));
@@ -196,35 +266,35 @@ describe("store source persistence", () => {
     }
   });
 
-  it("persists sync run rows for a source", () => {
+  it("persists sync run rows for a source", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "OpenAI" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "OpenAI" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "OpenAI feed",
         url: "https://example.com/feed.xml",
       });
 
-      const runId = createSyncRun(store, { sourceId });
+      const runId = await createSyncRun(store, { sourceId });
 
-      finishSyncRun(store, {
+      await finishSyncRun(store, {
         runId,
         status: "success",
         insertedItemCount: 2,
         createdBriefCount: 1,
       });
 
-      expect(listRecentSyncRunsBySource(store, sourceId)).toEqual([
+      expect(await listRecentSyncRunsBySource(store, sourceId)).toEqual([
         expect.objectContaining({
           sourceId,
           status: "success",
@@ -238,7 +308,7 @@ describe("store source persistence", () => {
     }
   });
 
-  it("validates source cadence updates", () => {
+  it("validates source cadence updates", async () => {
     const parsed = updateSourceScheduleSchema.safeParse({
       sourceId: "source-1",
       syncIntervalMinutes: "45",
@@ -248,7 +318,7 @@ describe("store source persistence", () => {
     expect(parsed.data?.syncIntervalMinutes).toBe(45);
   });
 
-  it("rejects newsletter archive sources without https", () => {
+  it("rejects newsletter archive sources without https", async () => {
     const parsed = createSourceSchema.safeParse({
       taskId: "task-123",
       sourceType: "NEWSLETTER",
@@ -260,7 +330,7 @@ describe("store source persistence", () => {
     expect(parsed.error?.issues[0]?.message).toBe("Enter a valid https URL.");
   });
 
-  it("migrates an existing sources table to enforce valid status values", () => {
+  it("migrates an existing sources table to enforce valid status values", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const filename = join(tempDirectory, "store.sqlite");
     const legacyDatabase = new DatabaseSync(filename);
@@ -308,10 +378,10 @@ describe("store source persistence", () => {
     const store = createStore(filename);
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "Migrated space",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Migrated task",
         taskType: "TOPIC",
@@ -361,15 +431,15 @@ describe("store source persistence", () => {
     }
   });
 
-  it("rejects stale task ids after the task has been removed", () => {
+  it("rejects stale task ids after the task has been removed", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
@@ -378,15 +448,15 @@ describe("store source persistence", () => {
 
       store.database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
 
-      expect(hasTaskRecord(store, taskId)).toBe(false);
-      expect(() =>
+      expect(await hasTaskRecord(store, taskId)).toBe(false);
+      await expect(
         createSourceRecord(store, {
           taskId,
           sourceType: "RSS",
           title: "OpenAI News",
           url: "https://example.com/feed.xml",
         }),
-      ).toThrow();
+      ).rejects.toThrow();
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
@@ -395,14 +465,14 @@ describe("store source persistence", () => {
 });
 
 describe("store delivery persistence", () => {
-  it("stores a single webhook endpoint in app settings", () => {
+  it("stores a single webhook endpoint in app settings", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-delivery-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      saveWebhookSettings(store, "https://example.com/webhook");
+      await saveWebhookSettings(store, "https://example.com/webhook");
 
-      expect(getWebhookSettings(store)).toEqual({
+      expect(await getWebhookSettings(store)).toEqual({
         endpoint: "https://example.com/webhook",
         updatedAt: expect.any(String),
       });
@@ -412,23 +482,23 @@ describe("store delivery persistence", () => {
     }
   });
 
-  it("persists delivery logs for a brief", () => {
-    const fixture = seedBriefFixture();
+  it("persists delivery logs for a brief", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      const logId = createDeliveryLog(fixture.store, {
+      const logId = await createDeliveryLog(fixture.store, {
         briefId: fixture.briefId,
         endpoint: "https://example.com/webhook",
         payloadType: "html",
       });
 
-      finishDeliveryLog(fixture.store, {
+      await finishDeliveryLog(fixture.store, {
         logId,
         status: "success",
         responseStatus: 202,
       });
 
-      expect(listRecentDeliveryLogsByBrief(fixture.store, fixture.briefId)).toEqual([
+      expect(await listRecentDeliveryLogsByBrief(fixture.store, fixture.briefId)).toEqual([
         expect.objectContaining({
           briefId: fixture.briefId,
           status: "success",
@@ -440,7 +510,7 @@ describe("store delivery persistence", () => {
     }
   });
 
-  it("validates webhook URLs as https-only", () => {
+  it("validates webhook URLs as https-only", async () => {
     const parsed = webhookEndpointSchema.safeParse("http://example.com/hook");
 
     expect(parsed.success).toBe(false);
@@ -448,26 +518,26 @@ describe("store delivery persistence", () => {
 });
 
 describe("store brief queries", () => {
-  it("retrieves a brief by id with space and task context", () => {
+  it("retrieves a brief by id with space and task context", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "AI Watch" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "AI Watch" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Agent launches",
         taskType: "TOPIC",
         userPrompt: "Track launches",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "Feed",
         url: "https://example.com/feed.xml",
       });
 
-      createItemRecord(store, {
+      await createItemRecord(store, {
         sourceId,
         title: "Launch roundup",
         canonicalUrl: "https://example.com/launch",
@@ -483,7 +553,7 @@ describe("store brief queries", () => {
         .prepare("SELECT id FROM items WHERE source_id = ?")
         .all(sourceId) as Array<{ id: string }>;
 
-      const briefId = createBriefRecord(store, {
+      const briefId = await createBriefRecord(store, {
         taskId,
         itemIds: [itemRows[0].id],
         title: "Launch roundup",
@@ -492,7 +562,7 @@ describe("store brief queries", () => {
         sourceCitations: ["https://example.com/launch"],
       });
 
-      const brief = getBriefById(store, briefId);
+      const brief = await getBriefById(store, briefId);
       expect(brief).toMatchObject({
         id: briefId,
         taskId,
@@ -501,38 +571,38 @@ describe("store brief queries", () => {
         taskTitle: "Agent launches",
       });
 
-      expect(getBriefById(store, "nonexistent")).toBeNull();
+      expect(await getBriefById(store, "nonexistent")).toBeNull();
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   });
 
-  it("lists brief item ids and checks existence", () => {
+  it("lists brief item ids and checks existence", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "Space" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "Space" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Task",
         taskType: "TOPIC",
         userPrompt: "Prompt",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "Feed",
         url: "https://example.com/feed.xml",
       });
 
-      createItemRecord(store, {
+      await createItemRecord(store, {
         sourceId,
         title: "Item A",
         canonicalUrl: "https://example.com/a",
       });
-      createItemRecord(store, {
+      await createItemRecord(store, {
         sourceId,
         title: "Item B",
         canonicalUrl: "https://example.com/b",
@@ -542,7 +612,7 @@ describe("store brief queries", () => {
         .prepare("SELECT id FROM items WHERE source_id = ? ORDER BY created_at")
         .all(sourceId) as Array<{ id: string }>;
 
-      const briefId = createBriefRecord(store, {
+      const briefId = await createBriefRecord(store, {
         taskId,
         itemIds: [itemRows[0].id, itemRows[1].id],
         title: "Combined brief",
@@ -551,26 +621,26 @@ describe("store brief queries", () => {
         sourceCitations: ["https://example.com/a", "https://example.com/b"],
       });
 
-      expect(listBriefItemIds(store, briefId)).toHaveLength(2);
-      expect(listBriefItemIds(store, briefId)).toEqual(
+      expect(await listBriefItemIds(store, briefId)).toHaveLength(2);
+      expect(await listBriefItemIds(store, briefId)).toEqual(
         expect.arrayContaining([itemRows[0].id, itemRows[1].id]),
       );
-      expect(listBriefItemIds(store, "nonexistent")).toEqual([]);
+      expect(await listBriefItemIds(store, "nonexistent")).toEqual([]);
 
-      expect(briefExistsForItem(store, itemRows[0].id)).toBe(true);
-      expect(briefExistsForItem(store, itemRows[1].id)).toBe(true);
-      expect(briefExistsForItem(store, "no-such-item")).toBe(false);
+      expect(await briefExistsForItem(store, itemRows[0].id)).toBe(true);
+      expect(await briefExistsForItem(store, itemRows[1].id)).toBe(true);
+      expect(await briefExistsForItem(store, "no-such-item")).toBe(false);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   });
 
-  it("lists linked item records for a brief", () => {
-    const fixture = seedBriefFixture();
+  it("lists linked item records for a brief", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      const items = listItemsByBriefId(fixture.store, fixture.briefId);
+      const items = await listItemsByBriefId(fixture.store, fixture.briefId);
 
       expect(items).toEqual([
         expect.objectContaining({
@@ -584,25 +654,25 @@ describe("store brief queries", () => {
   });
 });
 
-function seedBriefFixture() {
+async function seedBriefFixture() {
   const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
   const store = createStore(join(tempDirectory, "store.sqlite"));
 
-  const spaceId = createSpaceRecord(store, { name: "AI Watch" });
-  const taskId = createTaskRecord(store, {
+  const spaceId = await createSpaceRecord(store, { name: "AI Watch" });
+  const taskId = await createTaskRecord(store, {
     spaceId,
     title: "Agent launches",
     taskType: "TOPIC",
     userPrompt: "Track launches",
   });
-  const sourceId = createSourceRecord(store, {
+  const sourceId = await createSourceRecord(store, {
     taskId,
     sourceType: "RSS",
     title: "Feed",
     url: "https://example.com/feed.xml",
   });
 
-  createItemRecord(store, {
+  await createItemRecord(store, {
     sourceId,
     title: "Item A",
     canonicalUrl: "https://example.com/a",
@@ -612,7 +682,7 @@ function seedBriefFixture() {
     .prepare("SELECT id FROM items WHERE source_id = ?")
     .all(sourceId) as Array<{ id: string }>;
 
-  const briefId = createBriefRecord(store, {
+  const briefId = await createBriefRecord(store, {
     taskId,
     itemIds: [itemRows[0].id],
     title: "Brief A",
@@ -637,59 +707,63 @@ function seedBriefFixture() {
 }
 
 describe("read/unread and filtered briefs", () => {
-  it("marks a brief as read and unread", () => {
-    const fixture = seedBriefFixture();
+  it("marks a brief as read and unread", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      const brief = getBriefById(fixture.store, fixture.briefId);
+      const brief = await getBriefById(fixture.store, fixture.briefId);
       expect(brief?.isRead).toBe(false);
 
-      markBriefRead(fixture.store, fixture.briefId);
-      expect(getBriefById(fixture.store, fixture.briefId)?.isRead).toBe(true);
+      await markBriefRead(fixture.store, fixture.briefId);
+      expect((await getBriefById(fixture.store, fixture.briefId))?.isRead).toBe(
+        true,
+      );
 
-      markBriefUnread(fixture.store, fixture.briefId);
-      expect(getBriefById(fixture.store, fixture.briefId)?.isRead).toBe(false);
+      await markBriefUnread(fixture.store, fixture.briefId);
+      expect((await getBriefById(fixture.store, fixture.briefId))?.isRead).toBe(
+        false,
+      );
     } finally {
       fixture.cleanup();
     }
   });
 
-  it("counts unread briefs", () => {
-    const fixture = seedBriefFixture();
+  it("counts unread briefs", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      expect(countUnreadBriefs(fixture.store)).toBe(1);
+      expect(await countUnreadBriefs(fixture.store)).toBe(1);
 
-      markBriefRead(fixture.store, fixture.briefId);
-      expect(countUnreadBriefs(fixture.store)).toBe(0);
+      await markBriefRead(fixture.store, fixture.briefId);
+      expect(await countUnreadBriefs(fixture.store)).toBe(0);
     } finally {
       fixture.cleanup();
     }
   });
 
-  it("filters briefs by task and unread status", () => {
-    const fixture = seedBriefFixture();
+  it("filters briefs by task and unread status", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
       // All briefs
-      expect(listBriefsFiltered(fixture.store)).toHaveLength(1);
+      expect(await listBriefsFiltered(fixture.store)).toHaveLength(1);
 
       // By task
       expect(
-        listBriefsFiltered(fixture.store, { taskId: fixture.taskId }),
+        await listBriefsFiltered(fixture.store, { taskId: fixture.taskId }),
       ).toHaveLength(1);
       expect(
-        listBriefsFiltered(fixture.store, { taskId: "nonexistent" }),
+        await listBriefsFiltered(fixture.store, { taskId: "nonexistent" }),
       ).toHaveLength(0);
 
       // Unread only
       expect(
-        listBriefsFiltered(fixture.store, { unreadOnly: true }),
+        await listBriefsFiltered(fixture.store, { unreadOnly: true }),
       ).toHaveLength(1);
 
-      markBriefRead(fixture.store, fixture.briefId);
+      await markBriefRead(fixture.store, fixture.briefId);
       expect(
-        listBriefsFiltered(fixture.store, { unreadOnly: true }),
+        await listBriefsFiltered(fixture.store, { unreadOnly: true }),
       ).toHaveLength(0);
     } finally {
       fixture.cleanup();
@@ -698,52 +772,52 @@ describe("read/unread and filtered briefs", () => {
 });
 
 describe("cascade deletes", () => {
-  it("deletes a brief", () => {
-    const fixture = seedBriefFixture();
+  it("deletes a brief", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      deleteBrief(fixture.store, fixture.briefId);
-      expect(getBriefById(fixture.store, fixture.briefId)).toBeNull();
+      await deleteBrief(fixture.store, fixture.briefId);
+      expect(await getBriefById(fixture.store, fixture.briefId)).toBeNull();
       // Item should still exist
-      expect(briefExistsForItem(fixture.store, fixture.itemId)).toBe(false);
+      expect(await briefExistsForItem(fixture.store, fixture.itemId)).toBe(false);
     } finally {
       fixture.cleanup();
     }
   });
 
-  it("deletes a source and cascades to items and brief_items", () => {
-    const fixture = seedBriefFixture();
+  it("deletes a source and cascades to items and brief_items", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      deleteSource(fixture.store, fixture.sourceId);
-      expect(listSources(fixture.store)).toHaveLength(0);
+      await deleteSource(fixture.store, fixture.sourceId);
+      expect(await listSources(fixture.store)).toHaveLength(0);
       // Brief should still exist (its brief_items orphaned, but CASCADE on items removes brief_items)
-      expect(listBriefItemIds(fixture.store, fixture.briefId)).toHaveLength(0);
+      expect(await listBriefItemIds(fixture.store, fixture.briefId)).toHaveLength(0);
     } finally {
       fixture.cleanup();
     }
   });
 
-  it("deletes a task and cascades to sources, items, and briefs", () => {
-    const fixture = seedBriefFixture();
+  it("deletes a task and cascades to sources, items, and briefs", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      deleteTask(fixture.store, fixture.taskId);
-      expect(listSources(fixture.store)).toHaveLength(0);
-      expect(getBriefById(fixture.store, fixture.briefId)).toBeNull();
+      await deleteTask(fixture.store, fixture.taskId);
+      expect(await listSources(fixture.store)).toHaveLength(0);
+      expect(await getBriefById(fixture.store, fixture.briefId)).toBeNull();
     } finally {
       fixture.cleanup();
     }
   });
 
-  it("deletes a space and cascades everything downstream", () => {
-    const fixture = seedBriefFixture();
+  it("deletes a space and cascades everything downstream", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      deleteSpace(fixture.store, fixture.spaceId);
-      expect(listSources(fixture.store)).toHaveLength(0);
-      expect(getBriefById(fixture.store, fixture.briefId)).toBeNull();
-      expect(hasTaskRecord(fixture.store, fixture.taskId)).toBe(false);
+      await deleteSpace(fixture.store, fixture.spaceId);
+      expect(await listSources(fixture.store)).toHaveLength(0);
+      expect(await getBriefById(fixture.store, fixture.briefId)).toBeNull();
+      expect(await hasTaskRecord(fixture.store, fixture.taskId)).toBe(false);
     } finally {
       fixture.cleanup();
     }
@@ -751,11 +825,11 @@ describe("cascade deletes", () => {
 });
 
 describe("store expansions for AI features", () => {
-  it("stores enriched item metadata", () => {
-    const fixture = seedBriefFixture();
+  it("stores enriched item metadata", async () => {
+    const fixture = await seedBriefFixture();
 
     try {
-      const itemId = createItemRecordResult(fixture.store, {
+      const itemId = await createItemRecordResult(fixture.store, {
         sourceId: fixture.sourceId,
         title: "Launch roundup",
         canonicalUrl: "https://example.com/launch",
@@ -769,7 +843,7 @@ describe("store expansions for AI features", () => {
       });
 
       expect(itemId).not.toBeNull();
-      expect(listItemsBySource(fixture.store, fixture.sourceId)).toEqual(
+      expect(await listItemsBySource(fixture.store, fixture.sourceId)).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
             rawContent: "Launch details and context.",
@@ -785,7 +859,7 @@ describe("store expansions for AI features", () => {
     }
   });
 
-  it("saves and retrieves task profiles", () => {
+  it("saves and retrieves task profiles", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
     const filename = join(tempDirectory, "store.sqlite");
     const store = createStore(filename);
@@ -793,15 +867,15 @@ describe("store expansions for AI features", () => {
     let originalStoreClosed = false;
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "AI Dev" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "AI Dev" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Coding Agents",
         taskType: "TOPIC",
         userPrompt: "Follow AI coding assistant news",
       });
 
-      const originalProfile = getTaskProfile(store, taskId);
+      const originalProfile = await getTaskProfile(store, taskId);
       expect(originalProfile).toBeNull();
 
       const newProfile = {
@@ -809,15 +883,15 @@ describe("store expansions for AI features", () => {
         suggestedQueries: ["cursor agent", "devin release"],
       };
 
-      saveTaskProfile(store, taskId, newProfile);
+      await saveTaskProfile(store, taskId, newProfile);
       store.database.close();
       originalStoreClosed = true;
 
       reopenedStore = createStore(filename);
-      const retrieved = getTaskProfile(reopenedStore, taskId);
+      const retrieved = await getTaskProfile(reopenedStore, taskId);
       expect(retrieved).toEqual(newProfile);
 
-      const task = getTaskById(reopenedStore, taskId);
+      const task = await getTaskById(reopenedStore, taskId);
       expect(task?.taskProfile).toEqual(newProfile);
     } finally {
       reopenedStore?.database.close();
@@ -828,25 +902,25 @@ describe("store expansions for AI features", () => {
     }
   });
 
-  it("updates task controls", () => {
+  it("updates task controls", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "AI Dev" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "AI Dev" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Coding Agents",
         taskType: "TOPIC",
         userPrompt: "Follow AI coding assistant news",
       });
 
-      const initial = getTaskById(store, taskId);
+      const initial = await getTaskById(store, taskId);
       expect(initial?.relevanceLevel).toBe(3);
       expect(initial?.summaryPreference).toBe("balanced");
 
-      updateTaskControls(store, taskId, 5, "detailed");
-      const updated = getTaskById(store, taskId);
+      await updateTaskControls(store, taskId, 5, "detailed");
+      const updated = await getTaskById(store, taskId);
       expect(updated?.relevanceLevel).toBe(5);
       expect(updated?.summaryPreference).toBe("detailed");
     } finally {
@@ -855,26 +929,26 @@ describe("store expansions for AI features", () => {
     }
   });
 
-  it("manages chat threads and messages with citations and provenance", () => {
+  it("manages chat threads and messages with citations and provenance", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const thread = getOrCreateChatThread(store, "task", "task-123");
+      const thread = await getOrCreateChatThread(store, "task", "task-123");
       expect(thread.scopeType).toBe("task");
       expect(thread.scopeId).toBe("task-123");
       expect(thread.id).toBeDefined();
 
-      const secondThread = getOrCreateChatThread(store, "task", "task-123");
+      const secondThread = await getOrCreateChatThread(store, "task", "task-123");
       expect(secondThread.id).toBe(thread.id);
 
-      createChatMessage(store, {
+      await createChatMessage(store, {
         threadId: thread.id,
         role: "user",
         content: "What is Devin?",
       });
 
-      createChatMessage(store, {
+      await createChatMessage(store, {
         threadId: thread.id,
         role: "assistant",
         content: "Devin is an autonomous AI software engineer.",
@@ -882,7 +956,7 @@ describe("store expansions for AI features", () => {
         provenance: "mixed",
       });
 
-      const messages = listChatMessages(store, thread.id);
+      const messages = await listChatMessages(store, thread.id);
       expect(messages).toHaveLength(2);
       expect(messages[0].role).toBe("user");
       expect(messages[0].content).toBe("What is Devin?");
@@ -899,15 +973,17 @@ describe("store expansions for AI features", () => {
     }
   });
 
-  it("finds chat threads without creating them", () => {
+  it("finds chat threads without creating them", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      expect(findChatThread(store, "task", "task-456")).toBeNull();
+      expect(await findChatThread(store, "task", "task-456")).toBeNull();
 
-      const thread = getOrCreateChatThread(store, "task", "task-456");
-      expect(findChatThread(store, "task", "task-456")?.id).toBe(thread.id);
+      const thread = await getOrCreateChatThread(store, "task", "task-456");
+      expect((await findChatThread(store, "task", "task-456"))?.id).toBe(
+        thread.id,
+      );
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });

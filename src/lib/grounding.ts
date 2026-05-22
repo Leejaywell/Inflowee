@@ -53,16 +53,16 @@ function dedupeAndSortItems(items: ItemRecord[]): ItemRecord[] {
   return [...deduped.values()].sort(compareItemsByFreshness);
 }
 
-export function getGroundingForScope(
+export async function getGroundingForScope(
   store: Store,
   scopeType: GroundingScopeType,
   scopeId: string,
   options: GroundingOptions = {},
-): GroundingResult {
+): Promise<GroundingResult> {
   const includeItems = options.includeItems ?? true;
 
   if (scopeType === "brief") {
-    const brief = getBriefById(store, scopeId);
+    const brief = await getBriefById(store, scopeId);
     if (!brief) {
       return { briefs: [], items: [] };
     }
@@ -71,7 +71,7 @@ export function getGroundingForScope(
       return { briefs: [brief], items: [] };
     }
 
-    const items = listItemsByBriefId(store, scopeId);
+    const items = await listItemsByBriefId(store, scopeId);
     if (items.length === 0) {
       return { briefs: [brief], items: [] };
     }
@@ -83,16 +83,16 @@ export function getGroundingForScope(
   }
 
   if (scopeType === "task") {
-    const briefs = listBriefsFiltered(store, { taskId: scopeId });
+    const briefs = await listBriefsFiltered(store, { taskId: scopeId });
     if (!includeItems) {
       return { briefs, items: [] };
     }
 
-    const items = dedupeAndSortItems(
-      listSourcesByTask(store, scopeId).flatMap((source) =>
-        listItemsBySource(store, source.id),
-      ),
+    const sources = await listSourcesByTask(store, scopeId);
+    const itemGroups = await Promise.all(
+      sources.map((source) => listItemsBySource(store, source.id)),
     );
+    const items = dedupeAndSortItems(itemGroups.flat());
 
     return { briefs, items };
   }
@@ -108,18 +108,21 @@ export function getGroundingForScope(
   }
 
   const taskIdSet = new Set(taskIds);
-  const briefs = listBriefsFiltered(store).filter((brief) =>
+  const briefs = (await listBriefsFiltered(store)).filter((brief) =>
     taskIdSet.has(brief.taskId),
   );
   if (!includeItems) {
     return { briefs, items: [] };
   }
 
-  const items = taskIds.flatMap((taskId) =>
-    listSourcesByTask(store, taskId).flatMap((source) =>
-      listItemsBySource(store, source.id),
-    ),
+  const sourceGroups = await Promise.all(
+    taskIds.map((taskId) => listSourcesByTask(store, taskId)),
   );
+  const items = (
+    await Promise.all(
+      sourceGroups.flat().map((source) => listItemsBySource(store, source.id)),
+    )
+  ).flat();
 
   return { briefs, items: dedupeAndSortItems(items) };
 }

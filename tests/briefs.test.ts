@@ -55,27 +55,27 @@ describe("buildBriefsFromItems", () => {
     ]);
   });
 
-  it("stores generated briefs with task and space context", () => {
+  it("stores generated briefs with task and space context", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-briefs-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "OpenAI News",
         url: "https://example.com/feed.xml",
       });
-      const item = createItemRecordResult(store, {
+      const item = await createItemRecordResult(store, {
         sourceId,
         title: "Launch roundup",
         canonicalUrl: "https://example.com/posts/launch-roundup",
@@ -84,15 +84,15 @@ describe("buildBriefsFromItems", () => {
       });
 
       expect(item).not.toBeNull();
-      expect(getTaskBySourceId(store, sourceId)?.id).toBe(taskId);
+      expect((await getTaskBySourceId(store, sourceId))?.id).toBe(taskId);
 
       const briefs = buildBriefsFromItems(taskId, [item!]);
 
       for (const brief of briefs) {
-        createBriefRecord(store, brief);
+        await createBriefRecord(store, brief);
       }
 
-      expect(listBriefs(store)).toEqual([
+      expect(await listBriefs(store)).toEqual([
         expect.objectContaining({
           taskId,
           title: "Launch roundup",
@@ -112,21 +112,21 @@ describe("buildBriefsFromItems", () => {
     }
   });
 
-  it("does not create duplicate briefs when the same source items sync twice", () => {
+  it("does not create duplicate briefs when the same source items sync twice", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-briefs-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "OpenAI News",
@@ -142,39 +142,43 @@ describe("buildBriefsFromItems", () => {
         },
       ];
 
-      const firstInsertedItems = syncPayload.flatMap((item) => {
-        const storedItem = createItemRecordResult(store, {
-          sourceId,
-          title: item.title,
-          canonicalUrl: item.canonicalUrl,
-          summary: item.summary,
-          publishedAt: item.publishedAt,
-        });
-
-        return storedItem ? [storedItem] : [];
-      });
+      const firstInsertedItems = (
+        await Promise.all(
+          syncPayload.map((item) =>
+            createItemRecordResult(store, {
+              sourceId,
+              title: item.title,
+              canonicalUrl: item.canonicalUrl,
+              summary: item.summary,
+              publishedAt: item.publishedAt,
+            }),
+          ),
+        )
+      ).filter((item) => item !== null);
 
       for (const brief of buildBriefsFromItems(taskId, firstInsertedItems)) {
-        createBriefRecord(store, brief);
+        await createBriefRecord(store, brief);
       }
 
-      const secondInsertedItems = syncPayload.flatMap((item) => {
-        const storedItem = createItemRecordResult(store, {
-          sourceId,
-          title: item.title,
-          canonicalUrl: item.canonicalUrl,
-          summary: item.summary,
-          publishedAt: item.publishedAt,
-        });
-
-        return storedItem ? [storedItem] : [];
-      });
+      const secondInsertedItems = (
+        await Promise.all(
+          syncPayload.map((item) =>
+            createItemRecordResult(store, {
+              sourceId,
+              title: item.title,
+              canonicalUrl: item.canonicalUrl,
+              summary: item.summary,
+              publishedAt: item.publishedAt,
+            }),
+          ),
+        )
+      ).filter((item) => item !== null);
 
       for (const brief of buildBriefsFromItems(taskId, secondInsertedItems)) {
-        createBriefRecord(store, brief);
+        await createBriefRecord(store, brief);
       }
 
-      expect(listBriefs(store)).toHaveLength(1);
+      expect(await listBriefs(store)).toHaveLength(1);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });

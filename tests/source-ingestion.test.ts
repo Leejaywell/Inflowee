@@ -22,16 +22,16 @@ describe("syncSourceById", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, {
+      const spaceId = await createSpaceRecord(store, {
         name: "OpenAI",
       });
-      const taskId = createTaskRecord(store, {
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "Example feed",
@@ -60,8 +60,8 @@ describe("syncSourceById", () => {
         createdBriefCount: 1,
       });
 
-      expect(listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect(listBriefs(store)).toEqual([
+      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
+      expect(await listBriefs(store)).toEqual([
         expect.objectContaining({
           taskId,
           title: "Launch roundup",
@@ -69,7 +69,7 @@ describe("syncSourceById", () => {
           sourceCitations: ["https://example.com/posts/launch-roundup"],
         }),
       ]);
-      expect(listSourcesByTask(store, taskId)).toEqual([
+      expect(await listSourcesByTask(store, taskId)).toEqual([
         expect.objectContaining({
           id: sourceId,
           status: "success",
@@ -77,7 +77,7 @@ describe("syncSourceById", () => {
           lastSyncedAt: expect.any(String),
         }),
       ]);
-      expect(listRecentSyncRunsBySource(store, sourceId)).toEqual([
+      expect(await listRecentSyncRunsBySource(store, sourceId)).toEqual([
         expect.objectContaining({
           sourceId,
           status: "success",
@@ -97,14 +97,14 @@ describe("syncSourceById", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "Space" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "Space" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Task",
         taskType: "TOPIC",
         userPrompt: "Prompt",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "Feed",
@@ -134,7 +134,7 @@ describe("syncSourceById", () => {
       });
       expect(second).toMatchObject({ ok: true, createdBriefCount: 0 });
 
-      expect(listBriefs(store)).toHaveLength(1);
+      expect(await listBriefs(store)).toHaveLength(1);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
@@ -146,14 +146,14 @@ describe("syncSourceById", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "OpenAI" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "OpenAI" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor updates",
         taskType: "TOPIC",
         userPrompt: "Track changelog updates",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "UPDATE",
         title: "Changelog",
@@ -180,8 +180,8 @@ describe("syncSourceById", () => {
         insertedItemCount: 1,
         createdBriefCount: 1,
       });
-      expect(listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect(listBriefs(store)[0]).toMatchObject({
+      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
+      expect((await listBriefs(store))[0]).toMatchObject({
         taskId,
         title: "Added task intelligence refresh",
       });
@@ -196,14 +196,14 @@ describe("syncSourceById", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "AI Watch" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "AI Watch" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Monitor archives",
         taskType: "TOPIC",
         userPrompt: "Track newsletter archives",
       });
-      const sourceId = createSourceRecord(store, {
+      const sourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "NEWSLETTER",
         title: "Archive",
@@ -230,8 +230,8 @@ describe("syncSourceById", () => {
         insertedItemCount: 1,
         createdBriefCount: 1,
       });
-      expect(listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect(listBriefs(store)[0]).toMatchObject({
+      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
+      expect((await listBriefs(store))[0]).toMatchObject({
         taskId,
         title: "This Week In Agents #12",
       });
@@ -248,8 +248,8 @@ describe("syncAllSources", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = createSpaceRecord(store, { name: "Space" });
-      const taskId = createTaskRecord(store, {
+      const spaceId = await createSpaceRecord(store, { name: "Space" });
+      const taskId = await createTaskRecord(store, {
         spaceId,
         title: "Task",
         taskType: "TOPIC",
@@ -257,7 +257,7 @@ describe("syncAllSources", () => {
       });
 
       // Healthy source
-      const healthySourceId = createSourceRecord(store, {
+      const healthySourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "Healthy",
@@ -265,7 +265,7 @@ describe("syncAllSources", () => {
       });
 
       // Errored source
-      const errorSourceId = createSourceRecord(store, {
+      const errorSourceId = await createSourceRecord(store, {
         taskId,
         sourceType: "RSS",
         title: "Errored",
@@ -273,7 +273,7 @@ describe("syncAllSources", () => {
       });
       // Force it to have "error" status
       const { markSourceSyncResult } = await import("@/lib/store");
-      markSourceSyncResult(store, {
+      await markSourceSyncResult(store, {
         sourceId: errorSourceId,
         status: "error",
         error: "Failed to connect",

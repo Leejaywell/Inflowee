@@ -16,8 +16,8 @@ export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
   const [settings, recentLogs, params] = await Promise.all([
-    Promise.resolve(getWebhookSettings(defaultStore)),
-    Promise.resolve(listRecentDeliveryLogs(defaultStore, 12)),
+    getWebhookSettings(defaultStore),
+    listRecentDeliveryLogs(defaultStore, 12),
     searchParams,
   ]);
   const error = params?.error;

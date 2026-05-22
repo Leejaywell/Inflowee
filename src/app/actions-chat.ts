@@ -28,17 +28,17 @@ export async function submitChatMessage(
   const store = defaultStore;
 
   // 1. Get or create thread
-  const thread = getOrCreateChatThread(store, scopeType, scopeId);
+  const thread = await getOrCreateChatThread(store, scopeType, scopeId);
 
   // 2. Insert user message
-  createChatMessage(store, {
+  await createChatMessage(store, {
     threadId: thread.id,
     role: "user",
     content: content.trim(),
   });
 
   // 3. Get entire chat history
-  const messages = listChatMessages(store, thread.id);
+  const messages = await listChatMessages(store, thread.id);
   const formattedHistory = messages.map((m) => ({
     role: m.role,
     content: m.content,
@@ -49,7 +49,7 @@ export async function submitChatMessage(
 
   try {
     if (scopeType !== "global") {
-      grounding = getGroundingForScope(store, scopeType, scopeId);
+      grounding = await getGroundingForScope(store, scopeType, scopeId);
     }
   } catch (e) {
     console.error("Error gathering grounding materials for chat:", e);
@@ -76,7 +76,7 @@ export async function submitChatMessage(
   }
 
   // 6. Save AI Response
-  createChatMessage(store, {
+  await createChatMessage(store, {
     threadId: thread.id,
     role: "assistant",
     content: responseContent,
@@ -108,7 +108,7 @@ export async function submitChatMessage(
 
 export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
   const store = defaultStore;
-  const thread = getOrCreateChatThread(store, scopeType, scopeId);
+  const thread = await getOrCreateChatThread(store, scopeType, scopeId);
 
   store.database
     .prepare("DELETE FROM chat_messages WHERE thread_id = ?")
@@ -162,7 +162,7 @@ export async function subscribeRecommendedSources(
       continue;
     }
 
-    createSourceRecord(store, {
+    await createSourceRecord(store, {
       taskId: result.data.taskId,
       sourceType: result.data.sourceType,
       title: result.data.title,
@@ -186,7 +186,12 @@ export async function updateTaskControlSettings(
   relevanceLevel: number,
   summaryPreference: string,
 ) {
-  updateTaskControls(defaultStore, taskId, relevanceLevel, summaryPreference);
+  await updateTaskControls(
+    defaultStore,
+    taskId,
+    relevanceLevel,
+    summaryPreference,
+  );
 
   const task = defaultStore.database
     .prepare("SELECT space_id FROM tasks WHERE id = ?")

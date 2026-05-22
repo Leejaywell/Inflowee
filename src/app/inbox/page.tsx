@@ -21,8 +21,10 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
   const taskId = params?.taskId || undefined;
   const unreadOnly = params?.unread === "1";
 
-  const briefs = listBriefsFiltered(defaultStore, { taskId, unreadOnly });
-  const spaces = listSpacesWithTasks(defaultStore);
+  const [briefs, spaces] = await Promise.all([
+    listBriefsFiltered(defaultStore, { taskId, unreadOnly }),
+    listSpacesWithTasks(defaultStore),
+  ]);
   const tasks = spaces.flatMap((space) =>
     space.tasks.map((task) => ({
       id: task.id,

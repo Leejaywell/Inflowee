@@ -32,26 +32,26 @@ describe("syncDueSources", () => {
     const fixture = createFixture();
 
     try {
-      const spaceId = createSpaceRecord(fixture.store, { name: "AI" });
-      const taskId = createTaskRecord(fixture.store, {
+      const spaceId = await createSpaceRecord(fixture.store, { name: "AI" });
+      const taskId = await createTaskRecord(fixture.store, {
         spaceId,
         title: "Task",
         taskType: "TOPIC",
         userPrompt: "Track signals",
       });
-      const dueSourceId = createSourceRecord(fixture.store, {
+      const dueSourceId = await createSourceRecord(fixture.store, {
         taskId,
         sourceType: "RSS",
         title: "Due source",
         url: "https://example.com/due.xml",
       });
-      const failingSourceId = createSourceRecord(fixture.store, {
+      const failingSourceId = await createSourceRecord(fixture.store, {
         taskId,
         sourceType: "RSS",
         title: "Failing source",
         url: "https://example.com/failing.xml",
       });
-      const futureSourceId = createSourceRecord(fixture.store, {
+      const futureSourceId = await createSourceRecord(fixture.store, {
         taskId,
         sourceType: "RSS",
         title: "Future source",
@@ -68,8 +68,8 @@ describe("syncDueSources", () => {
         .prepare("UPDATE sources SET next_sync_at = ? WHERE id = ?")
         .run("2026-05-22T08:30:00.000Z", futureSourceId);
 
-      const dueSource = getSourceById(fixture.store, dueSourceId)!;
-      const failingSource = getSourceById(fixture.store, failingSourceId)!;
+      const dueSource = await getSourceById(fixture.store, dueSourceId);
+      const failingSource = await getSourceById(fixture.store, failingSourceId);
 
       const result = await syncDueSources(fixture.store, {
         now: "2026-05-22T08:00:00.000Z",
@@ -77,13 +77,13 @@ describe("syncDueSources", () => {
           .fn()
           .mockResolvedValueOnce({
             ok: true,
-            source: dueSource,
+            source: dueSource!,
             insertedItemCount: 3,
             createdBriefCount: 1,
           })
           .mockResolvedValueOnce({
             ok: false,
-            source: failingSource,
+            source: failingSource!,
             error: "Feed request timed out.",
           }),
       });
@@ -91,7 +91,7 @@ describe("syncDueSources", () => {
       expect(result.synced).toBe(1);
       expect(result.failed).toBe(1);
       expect(result.skipped).toBe(1);
-      expect(getSourceById(fixture.store, dueSourceId)?.nextSyncAt).toBe(
+      expect((await getSourceById(fixture.store, dueSourceId))?.nextSyncAt).toBe(
         "2026-05-22T14:00:00.000Z",
       );
     } finally {
