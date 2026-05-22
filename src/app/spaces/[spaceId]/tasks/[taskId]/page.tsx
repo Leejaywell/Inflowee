@@ -172,7 +172,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             scopeId={taskId}
             initialMessages={chatMessages}
             title={`${task.title} Assistant`}
-            subtitle={`Answers grounded strictly in synthesized briefs & items linked to this task.`}
+            subtitle={`Answers grounded in stored briefs and raw items for this task. Any temporary live context is labeled explicitly.`}
           />
         </div>
       </div>

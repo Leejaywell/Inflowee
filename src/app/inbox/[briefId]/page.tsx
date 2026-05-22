@@ -6,6 +6,7 @@ import {
   defaultStore,
   getBriefById,
   listBriefItemIds,
+  listItemsByBriefId,
   getOrCreateChatThread,
   listChatMessages,
 } from "@/lib/store";
@@ -25,6 +26,7 @@ export default async function BriefDetailPage({
   }
 
   const itemIds = listBriefItemIds(defaultStore, briefId);
+  const linkedItems = listItemsByBriefId(defaultStore, briefId);
   const chatThread = getOrCreateChatThread(defaultStore, "brief", briefId);
   const chatMessages = listChatMessages(defaultStore, chatThread.id);
 
@@ -58,6 +60,23 @@ export default async function BriefDetailPage({
               {brief.whyItMatters}
             </p>
           </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
+              {brief.importanceScore >= 0.75 ? "Important" : "Signal"}
+            </span>
+            <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] text-stone-500">
+              Relevance {Math.round(brief.relevanceScore * 100)}%
+            </span>
+            {brief.tags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full border border-stone-200 px-2.5 py-1 text-[11px] text-stone-600"
+              >
+                {tag}
+              </span>
+            ))}
+          </div>
         </div>
       </section>
 
@@ -87,6 +106,18 @@ export default async function BriefDetailPage({
               {itemIds.length} raw item{itemIds.length !== 1 ? "s" : ""} behind
               this brief.
             </p>
+            <ul className="mt-4 grid gap-3">
+              {linkedItems.map((item) => (
+                <li key={item.id} className="rounded-2xl bg-stone-50 px-4 py-3">
+                  <div className="text-sm font-medium text-stone-900">
+                    {item.title}
+                  </div>
+                  <div className="mt-1 text-xs text-stone-500">
+                    {item.canonicalUrl}
+                  </div>
+                </li>
+              ))}
+            </ul>
           </div>
 
           <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">

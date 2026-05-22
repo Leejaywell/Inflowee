@@ -168,6 +168,23 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                 {brief.summary}
               </p>
 
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-semibold text-stone-700">
+                  {brief.importanceScore >= 0.75 ? "Important" : "Signal"}
+                </span>
+                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] text-stone-500">
+                  Relevance {Math.round(brief.relevanceScore * 100)}%
+                </span>
+                {brief.tags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="rounded-full border border-stone-200 px-2.5 py-1 text-[11px] text-stone-600"
+                  >
+                    {tag}
+                  </span>
+                ))}
+              </div>
+
               <div className="mt-4 rounded-[20px] bg-stone-50 px-4 py-4">
                 <div className="text-sm font-medium text-stone-950">
                   Why it matters

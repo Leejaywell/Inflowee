@@ -125,6 +125,44 @@ export function BriefCard({ brief }: { brief: BriefRecord }) {
         >
           {truncatedSummary}
         </p>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            marginTop: 18,
+          }}
+        >
+          <span
+            style={{
+              display: "flex",
+              padding: "6px 10px",
+              borderRadius: 999,
+              background: "rgba(255,255,255,0.1)",
+              fontSize: 12,
+              color: "#fafaf9",
+            }}
+          >
+            {brief.importanceScore >= 0.75 ? "Important" : "Signal"}
+          </span>
+          {brief.tags.slice(0, 3).map((tag) => (
+            <span
+              key={tag}
+              style={{
+                display: "flex",
+                padding: "6px 10px",
+                borderRadius: 999,
+                border: "1px solid rgba(255,255,255,0.14)",
+                fontSize: 12,
+                color: "#d6d3d1",
+              }}
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
       </div>
 
       {/* Footer */}

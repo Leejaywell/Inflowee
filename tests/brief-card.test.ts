@@ -62,4 +62,19 @@ describe("BriefCard", () => {
     // Source count is rendered as children array [3, " source", "s"]
     expect(rendered).toContain('"children":[3," source","s"]');
   });
+
+  it("renders tags and an importance badge on brief cards", () => {
+    const element = BriefCard({
+      brief: {
+        ...baseBrief,
+        importanceScore: 0.9,
+        tags: ["agent", "openai"],
+      },
+    });
+
+    const rendered = JSON.stringify(element);
+    expect(rendered).toContain("Important");
+    expect(rendered).toContain("agent");
+    expect(rendered).toContain("openai");
+  });
 });
