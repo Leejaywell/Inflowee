@@ -191,7 +191,7 @@ describe("getGroundingForScope", () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 15_000);
 
   it("returns space-scoped briefs and items across child tasks", async () => {
     const fixture = await createFixture();

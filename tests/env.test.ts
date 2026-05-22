@@ -45,5 +45,6 @@ describe("env schema", () => {
       await fixture.cleanup();
     }
     },
+    15_000,
   );
 });

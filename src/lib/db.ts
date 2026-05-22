@@ -1,6 +1,6 @@
 import { PrismaClient } from "@prisma/client";
 
-import { getEnv } from "@/lib/env";
+import { getEnv } from "./env.ts";
 
 const globalForPrisma = globalThis as typeof globalThis & {
   __infloweePrisma?: PrismaClient;

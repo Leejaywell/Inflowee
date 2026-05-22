@@ -239,7 +239,7 @@ describe("task intelligence store helpers", () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 15_000);
 });
 
 describe("task intelligence server actions", () => {

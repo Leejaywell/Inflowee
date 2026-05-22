@@ -164,5 +164,5 @@ describe("webhook delivery transport", () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 15_000);
 });

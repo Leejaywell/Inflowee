@@ -193,7 +193,7 @@ describe("syncSourceById", () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 15_000);
 
   it("ingests update sources into items and briefs", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));

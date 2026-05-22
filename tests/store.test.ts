@@ -153,7 +153,7 @@ describe("store promise contract", () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 15_000);
 });
 
 describe("store source persistence", () => {

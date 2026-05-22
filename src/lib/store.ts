@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { Prisma, PrismaClient } from "@prisma/client";
 
-import { prisma as defaultPrisma } from "@/lib/db";
+import { prisma as defaultPrisma } from "./db.ts";
 
 export type TaskType = "TOPIC" | "QUESTION";
 export type SourceType =
@@ -750,11 +750,16 @@ export function createStore(
     filenameOrOptions !== null &&
     "databaseUrl" in filenameOrOptions
   ) {
+    const prismaClient =
+      filenameOrOptions.databaseUrl === process.env.DATABASE_URL && defaultPrisma
+        ? defaultPrisma
+        : new PrismaClient({
+            datasourceUrl: filenameOrOptions.databaseUrl,
+          });
+
     return {
       database: createUnavailableDatabaseHandle(),
-      prisma: new PrismaClient({
-        datasourceUrl: filenameOrOptions.databaseUrl,
-      }),
+      prisma: prismaClient,
     };
   }
 
@@ -931,7 +936,9 @@ export function createStore(
   };
 }
 
-export const defaultStore = createStore();
+export const defaultStore = process.env.DATABASE_URL
+  ? createStore({ databaseUrl: process.env.DATABASE_URL })
+  : createStore();
 
 function mapTask(row: TaskRow): TaskRecord {
   return {
@@ -2444,6 +2451,13 @@ export async function deleteBrief(
   store: Store,
   briefId: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.brief.delete({
+      where: { id: briefId },
+    });
+    return;
+  }
+
   store.database.prepare("DELETE FROM briefs WHERE id = ?").run(briefId);
 }
 
@@ -2451,6 +2465,13 @@ export async function deleteSource(
   store: Store,
   sourceId: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.source.delete({
+      where: { id: sourceId },
+    });
+    return;
+  }
+
   store.database.prepare("DELETE FROM sources WHERE id = ?").run(sourceId);
 }
 
@@ -2458,6 +2479,13 @@ export async function deleteTask(
   store: Store,
   taskId: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.task.delete({
+      where: { id: taskId },
+    });
+    return;
+  }
+
   store.database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
 }
 
@@ -2465,6 +2493,13 @@ export async function deleteSpace(
   store: Store,
   spaceId: string,
 ): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.space.delete({
+      where: { id: spaceId },
+    });
+    return;
+  }
+
   store.database.prepare("DELETE FROM spaces WHERE id = ?").run(spaceId);
 }
 

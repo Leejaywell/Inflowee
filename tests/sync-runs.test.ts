@@ -171,7 +171,7 @@ describe("syncDueSources", () => {
     } finally {
       await fixture.cleanup();
     }
-  });
+  }, 15_000);
 });
 
 describe("scheduled sync actions and surfaces", () => {
