@@ -24,6 +24,8 @@
 .DS_Store
 *.pem
 .antigravitycli/
+/data/inflowee.sqlite
+/docs/superpowers/plans/*.md
 
 # debug
 npm-debug.log*
