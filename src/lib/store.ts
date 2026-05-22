@@ -11,6 +11,7 @@ export type SourceType =
   | "UPDATE"
   | "NEWSLETTER";
 export type SourceStatus = "idle" | "success" | "error";
+export type SyncRunStatus = "running" | "success" | "error";
 export type Store = {
   database: DatabaseSync;
 };
@@ -45,8 +46,21 @@ type SourceRow = {
   status: SourceStatus;
   last_synced_at: string | null;
   last_error: string | null;
+  sync_interval_minutes: number;
+  next_sync_at: string | null;
   created_at: string;
   updated_at: string;
+};
+
+type SyncRunRow = {
+  id: string;
+  source_id: string;
+  status: SyncRunStatus;
+  inserted_item_count: number;
+  created_brief_count: number;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
 };
 
 type ItemRow = {
@@ -156,8 +170,21 @@ export type SourceRecord = {
   status: SourceStatus;
   lastSyncedAt: string | null;
   lastError: string | null;
+  syncIntervalMinutes: number;
+  nextSyncAt: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type SyncRunRecord = {
+  id: string;
+  sourceId: string;
+  status: SyncRunStatus;
+  insertedItemCount: number;
+  createdBriefCount: number;
+  error: string | null;
+  startedAt: string;
+  finishedAt: string | null;
 };
 
 export type ItemRecord = {
@@ -233,6 +260,8 @@ const sourceTableDefinition = `
     status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
     last_synced_at TEXT,
     last_error TEXT,
+    sync_interval_minutes INTEGER NOT NULL DEFAULT 360,
+    next_sync_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
@@ -249,8 +278,23 @@ function mapSource(row: SourceRow): SourceRecord {
     status: row.status,
     lastSyncedAt: row.last_synced_at,
     lastError: row.last_error,
+    syncIntervalMinutes: row.sync_interval_minutes,
+    nextSyncAt: row.next_sync_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+  };
+}
+
+function mapSyncRun(row: SyncRunRow): SyncRunRecord {
+  return {
+    id: row.id,
+    sourceId: row.source_id,
+    status: row.status,
+    insertedItemCount: row.inserted_item_count,
+    createdBriefCount: row.created_brief_count,
+    error: row.error,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at,
   };
 }
 
@@ -334,12 +378,14 @@ function migrateSourcesTable(database: DatabaseSync) {
   const needsStructuredMigration = !sourcesTable.sql.includes("'STRUCTURED'");
   const needsUpdateMigration = !sourcesTable.sql.includes("'UPDATE'");
   const needsNewsletterMigration = !sourcesTable.sql.includes("'NEWSLETTER'");
+  const needsScheduleMigration = !sourcesTable.sql.includes("sync_interval_minutes");
 
   if (
     !needsStatusMigration &&
     !needsStructuredMigration &&
     !needsUpdateMigration &&
-    !needsNewsletterMigration
+    !needsNewsletterMigration &&
+    !needsScheduleMigration
   ) {
     return;
   }
@@ -357,6 +403,8 @@ function migrateSourcesTable(database: DatabaseSync) {
       status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
       last_synced_at TEXT,
       last_error TEXT,
+      sync_interval_minutes INTEGER NOT NULL DEFAULT 360,
+      next_sync_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
@@ -371,6 +419,8 @@ function migrateSourcesTable(database: DatabaseSync) {
       status,
       last_synced_at,
       last_error,
+      sync_interval_minutes,
+      next_sync_at,
       created_at,
       updated_at
     )
@@ -389,6 +439,8 @@ function migrateSourcesTable(database: DatabaseSync) {
       END,
       last_synced_at,
       last_error,
+      360,
+      created_at,
       created_at,
       updated_at
     FROM sources;
@@ -398,6 +450,22 @@ function migrateSourcesTable(database: DatabaseSync) {
 
     COMMIT;
     PRAGMA foreign_keys = ON;
+  `);
+}
+
+function migrateSyncRunsTable(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS sync_runs (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL,
+      status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+      inserted_item_count INTEGER NOT NULL DEFAULT 0,
+      created_brief_count INTEGER NOT NULL DEFAULT 0,
+      error TEXT,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
+    );
   `);
 }
 
@@ -685,6 +753,18 @@ export function createStore(
         FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS sync_runs (
+        id TEXT PRIMARY KEY,
+        source_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+        inserted_item_count INTEGER NOT NULL DEFAULT 0,
+        created_brief_count INTEGER NOT NULL DEFAULT 0,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        FOREIGN KEY(source_id) REFERENCES sources(id) ON DELETE CASCADE
+      );
+
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
@@ -692,6 +772,7 @@ export function createStore(
       CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);
       CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);
+      CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);
     `);
 
     migrateSourcesTable(nextDatabase);
@@ -699,12 +780,15 @@ export function createStore(
     migrateTasksTable(nextDatabase);
     migrateItemsTable(nextDatabase);
     migrateChatMessagesTable(nextDatabase);
+    migrateSyncRunsTable(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_next_sync_at ON sources(next_sync_at);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -893,6 +977,7 @@ export function createSourceRecord(
 ) {
   const timestamp = new Date().toISOString();
   const id = randomUUID();
+  const nextSyncAt = timestamp;
 
   store.database
     .prepare(
@@ -903,9 +988,11 @@ export function createSourceRecord(
         title,
         url,
         status,
+        sync_interval_minutes,
+        next_sync_at,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -914,6 +1001,8 @@ export function createSourceRecord(
       input.title,
       input.url,
       "idle",
+      360,
+      nextSyncAt,
       timestamp,
       timestamp,
     );
@@ -1164,6 +1253,74 @@ export function markSourceSyncResult(
       timestamp,
       input.sourceId,
     );
+}
+
+export function createSyncRun(
+  store: Store,
+  input: { sourceId: string },
+): string {
+  const id = randomUUID();
+  const startedAt = new Date().toISOString();
+
+  store.database
+    .prepare(
+      `INSERT INTO sync_runs (
+        id,
+        source_id,
+        status,
+        started_at
+      ) VALUES (?, ?, 'running', ?)`,
+    )
+    .run(id, input.sourceId, startedAt);
+
+  return id;
+}
+
+export function finishSyncRun(
+  store: Store,
+  input: {
+    runId: string;
+    status: "success" | "error";
+    insertedItemCount?: number;
+    createdBriefCount?: number;
+    error?: string | null;
+  },
+) {
+  store.database
+    .prepare(
+      `UPDATE sync_runs
+       SET status = ?,
+           inserted_item_count = ?,
+           created_brief_count = ?,
+           error = ?,
+           finished_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      input.status,
+      input.insertedItemCount ?? 0,
+      input.createdBriefCount ?? 0,
+      input.status === "error" ? (input.error ?? "Unknown sync error.") : null,
+      new Date().toISOString(),
+      input.runId,
+    );
+}
+
+export function listRecentSyncRunsBySource(
+  store: Store,
+  sourceId: string,
+  limit = 5,
+): SyncRunRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM sync_runs
+       WHERE source_id = ?
+       ORDER BY started_at DESC
+       LIMIT ?`,
+    )
+    .all(sourceId, limit) as SyncRunRow[];
+
+  return rows.map(mapSyncRun);
 }
 
 export function listSources(store: Store = defaultStore): SourceRecord[] {

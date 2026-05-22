@@ -12,6 +12,7 @@ import {
   createItemRecord,
   createItemRecordResult,
   createSourceRecord,
+  createSyncRun,
   createSpaceRecord,
   createStore,
   createTaskRecord,
@@ -26,19 +27,22 @@ import {
   listBriefsFiltered,
   listItemsByBriefId,
   listItemsBySource,
+  listRecentSyncRunsBySource,
   listSources,
   listSourcesByTask,
   markBriefRead,
   markBriefUnread,
+  getSourceById,
   getTaskById,
   getTaskProfile,
   saveTaskProfile,
+  finishSyncRun,
   updateTaskControls,
   getOrCreateChatThread,
   createChatMessage,
   listChatMessages,
 } from "@/lib/store";
-import { createSourceSchema } from "@/lib/validation";
+import { createSourceSchema, updateSourceScheduleSchema } from "@/lib/validation";
 
 describe("store source persistence", () => {
   it("rejects non-http source URLs", () => {
@@ -151,6 +155,88 @@ describe("store source persistence", () => {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("stores default source cadence and next sync timestamp", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "OpenAI" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Monitor feed",
+        taskType: "TOPIC",
+        userPrompt: "Track RSS updates",
+      });
+
+      const sourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "OpenAI feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      const source = getSourceById(store, sourceId);
+
+      expect(source?.syncIntervalMinutes).toBe(360);
+      expect(source?.nextSyncAt).toEqual(expect.any(String));
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("persists sync run rows for a source", () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = createSpaceRecord(store, { name: "OpenAI" });
+      const taskId = createTaskRecord(store, {
+        spaceId,
+        title: "Monitor feed",
+        taskType: "TOPIC",
+        userPrompt: "Track RSS updates",
+      });
+      const sourceId = createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "OpenAI feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      const runId = createSyncRun(store, { sourceId });
+
+      finishSyncRun(store, {
+        runId,
+        status: "success",
+        insertedItemCount: 2,
+        createdBriefCount: 1,
+      });
+
+      expect(listRecentSyncRunsBySource(store, sourceId)).toEqual([
+        expect.objectContaining({
+          sourceId,
+          status: "success",
+          insertedItemCount: 2,
+          createdBriefCount: 1,
+        }),
+      ]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("validates source cadence updates", () => {
+    const parsed = updateSourceScheduleSchema.safeParse({
+      sourceId: "source-1",
+      syncIntervalMinutes: "45",
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data?.syncIntervalMinutes).toBe(45);
   });
 
   it("rejects newsletter archive sources without https", () => {

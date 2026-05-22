@@ -59,3 +59,12 @@ export const createSourceSchema = z.object({
     // Base schema already reports invalid URLs.
   }
 });
+
+export const updateSourceScheduleSchema = z.object({
+  sourceId: z.string().trim().min(1, "Select a source."),
+  syncIntervalMinutes: z.coerce
+    .number()
+    .int()
+    .min(15, "Sync cadence must be at least 15 minutes.")
+    .max(1440, "Sync cadence must be 1440 minutes or fewer."),
+});
