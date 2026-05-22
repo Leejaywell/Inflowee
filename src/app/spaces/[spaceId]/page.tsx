@@ -3,7 +3,11 @@ import { notFound } from "next/navigation";
 
 import { ChatConsole } from "@/components/chat-console";
 import { MemberList } from "@/components/member-list";
-import { assertSpaceAccess, requireSessionActor } from "@/lib/auth";
+import {
+  assertSpaceAccess,
+  getActorScopedChatScopeId,
+  requireSessionActor,
+} from "@/lib/auth";
 import { getGroundingForScope } from "@/lib/grounding";
 import {
   defaultStore,
@@ -62,7 +66,8 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
   });
 
   // 4. Fetch Chat history
-  const chatThread = await getOrCreateChatThread(store, "space", spaceId);
+  const actorScopeId = getActorScopedChatScopeId(actor.id, spaceId);
+  const chatThread = await getOrCreateChatThread(store, "space", actorScopeId);
   const chatMessages = await listChatMessages(store, chatThread.id);
 
   return (

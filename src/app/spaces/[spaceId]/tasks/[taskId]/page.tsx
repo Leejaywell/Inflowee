@@ -4,7 +4,11 @@ import { notFound } from "next/navigation";
 import { TaskControls } from "@/components/task-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
 import { ChatConsole } from "@/components/chat-console";
-import { assertTaskAccess, requireSessionActor } from "@/lib/auth";
+import {
+  assertTaskAccess,
+  getActorScopedChatScopeId,
+  requireSessionActor,
+} from "@/lib/auth";
 import {
   defaultStore,
   findChatThread,
@@ -60,7 +64,8 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   });
 
   // 5. Fetch grounded thread history
-  const chatThread = await findChatThread(store, "task", taskId);
+  const actorScopeId = getActorScopedChatScopeId(actor.id, taskId);
+  const chatThread = await findChatThread(store, "task", actorScopeId);
   const chatMessages = chatThread
     ? await listChatMessages(store, chatThread.id)
     : [];

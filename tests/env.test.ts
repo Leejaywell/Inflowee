@@ -217,4 +217,29 @@ describe("env schema", () => {
       }
     }
   });
+
+  it("rejects missing signed actor context when auth secret is configured", async () => {
+    const previousSecret = process.env.INFLOWEE_SESSION_SECRET;
+    process.env.INFLOWEE_SESSION_SECRET = "test-secret";
+
+    vi.doMock("next/headers", () => ({
+      headers: vi.fn().mockResolvedValue({
+        get() {
+          return null;
+        },
+      }),
+    }));
+
+    try {
+      const { requireSessionActor } = await import("@/lib/auth");
+
+      await expect(requireSessionActor()).rejects.toThrow("Unauthorized");
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.INFLOWEE_SESSION_SECRET;
+      } else {
+        process.env.INFLOWEE_SESSION_SECRET = previousSecret;
+      }
+    }
+  });
 });

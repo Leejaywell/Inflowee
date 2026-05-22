@@ -89,7 +89,7 @@ export async function GET(
   return new NextResponse(new Uint8Array(pngBuffer), {
     headers: {
       "content-type": "image/png",
-      "cache-control": "public, max-age=3600, s-maxage=3600",
+      "cache-control": "private, no-store",
     },
   });
 }

@@ -140,6 +140,70 @@ describe("buildBriefsFromItems", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns private non-cacheable image responses for authorized requests", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)),
+      }),
+    );
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      getBriefById: vi.fn().mockResolvedValue({
+        id: "brief-1",
+        taskId: "task-1",
+        title: "Launch roundup",
+        summary: "Latest launches.",
+        whyItMatters: "New signal.",
+        sourceCitations: [],
+        relevanceScore: 0.5,
+        importanceScore: 0.5,
+        tags: [],
+        isRead: false,
+        createdAt: "2026-05-22T00:00:00.000Z",
+      }),
+    }));
+    vi.doMock("node:fs/promises", async () => {
+      const actual = await vi.importActual<typeof import("node:fs/promises")>(
+        "node:fs/promises",
+      );
+      return {
+        ...actual,
+        readFile: vi.fn().mockResolvedValue(Buffer.from("font")),
+      };
+    });
+    vi.doMock("satori", () => ({
+      default: vi.fn().mockResolvedValue("<svg></svg>"),
+    }));
+    vi.doMock("@resvg/resvg-js", () => ({
+      Resvg: class {
+        render() {
+          return {
+            asPng() {
+              return Buffer.from("png");
+            },
+          };
+        }
+      },
+    }));
+
+    const { GET } = await import("@/app/inbox/[briefId]/image/route");
+    const response = await GET(new Request("https://example.com"), {
+      params: Promise.resolve({ briefId: "brief-1" }),
+    });
+
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("content-type")).toBe("image/png");
+    vi.unstubAllGlobals();
+  });
+
   it("turns new feed items into brief records", () => {
     const briefs = buildBriefsFromItems("task-1", [
       {

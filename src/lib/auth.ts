@@ -97,7 +97,7 @@ async function getValidatedRequestActor():
     const signature = headerStore.get(ACTOR_SIGNATURE_HEADER);
 
     if (!id && !email && !signature) {
-      return null;
+      return "invalid";
     }
 
     if (!id || !email || !signature) {
@@ -112,7 +112,7 @@ async function getValidatedRequestActor():
 
     return { id, email };
   } catch {
-    return null;
+    return "invalid";
   }
 }
 

@@ -409,4 +409,124 @@ describe("scheduled sync actions and surfaces", () => {
     expect(screen.getByText("Recent runs")).toBeInTheDocument();
     expect(screen.getByText("2 items / 1 briefs")).toBeInTheDocument();
   });
+
+  it("reads actor-scoped chat history on the space detail page", async () => {
+    const getOrCreateChatThread = vi.fn().mockResolvedValue({
+      id: "thread-1",
+      scopeType: "space",
+      scopeId: "space-1:actor:local-user",
+      createdAt: "2026-05-22T00:00:00.000Z",
+    });
+
+    vi.doMock("@/lib/auth", () => ({
+      assertSpaceAccess: vi.fn(),
+      getActorScopedChatScopeId: vi.fn((actorId: string, scopeId: string) =>
+        `${scopeId}:actor:${actorId}`,
+      ),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: {},
+      getOrCreateChatThread,
+      getSpaceById: vi.fn().mockResolvedValue({
+        id: "space-1",
+        ownerId: "local-user",
+        name: "AI Signals",
+        description: null,
+        createdAt: "2026-05-22T00:00:00.000Z",
+      }),
+      listChatMessages: vi.fn().mockResolvedValue([]),
+      listSpaceMembers: vi.fn().mockResolvedValue([]),
+      listTasksBySpace: vi.fn().mockResolvedValue([]),
+    }));
+    vi.doMock("@/lib/grounding", () => ({
+      getGroundingForScope: vi.fn().mockResolvedValue({ briefs: [], items: [] }),
+    }));
+    vi.doMock("@/components/chat-console", () => ({
+      ChatConsole: () => null,
+    }));
+    vi.doMock("@/components/member-list", () => ({
+      MemberList: () => null,
+    }));
+
+    const { default: SpaceDetailPage } = await import("@/app/spaces/[spaceId]/page");
+    await SpaceDetailPage({
+      params: Promise.resolve({ spaceId: "space-1" }),
+    });
+
+    expect(getOrCreateChatThread).toHaveBeenCalledWith(
+      {},
+      "space",
+      "space-1:actor:local-user",
+    );
+  });
+
+  it("reads actor-scoped chat history on the task detail page", async () => {
+    const findChatThread = vi.fn().mockResolvedValue({
+      id: "thread-1",
+      scopeType: "task",
+      scopeId: "task-1:actor:local-user",
+      createdAt: "2026-05-22T00:00:00.000Z",
+    });
+
+    vi.doMock("@/lib/auth", () => ({
+      assertTaskAccess: vi.fn(),
+      getActorScopedChatScopeId: vi.fn((actorId: string, scopeId: string) =>
+        `${scopeId}:actor:${actorId}`,
+      ),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: {},
+      findChatThread,
+      getSpaceById: vi.fn().mockResolvedValue({
+        id: "space-1",
+        ownerId: "local-user",
+        name: "AI Signals",
+        description: null,
+        createdAt: "2026-05-22T00:00:00.000Z",
+      }),
+      getTaskById: vi.fn().mockResolvedValue({
+        id: "task-1",
+        spaceId: "space-1",
+        title: "Coding agents",
+        taskType: "TOPIC",
+        userPrompt: "Track coding agents",
+        relevanceLevel: 3,
+        summaryPreference: "balanced",
+        taskProfile: null,
+      }),
+      listChatMessages: vi.fn().mockResolvedValue([]),
+      listRecommendationBundlesByTask: vi.fn().mockResolvedValue([]),
+      listSourcesByTask: vi.fn().mockResolvedValue([]),
+    }));
+    vi.doMock("@/components/chat-console", () => ({
+      ChatConsole: () => null,
+    }));
+    vi.doMock("@/components/task-controls", () => ({
+      TaskControls: () => null,
+    }));
+    vi.doMock("@/components/recommendation-wizard", () => ({
+      RecommendationWizard: () => null,
+    }));
+
+    const { default: TaskDetailPage } = await import(
+      "@/app/spaces/[spaceId]/tasks/[taskId]/page"
+    );
+    await TaskDetailPage({
+      params: Promise.resolve({ spaceId: "space-1", taskId: "task-1" }),
+    });
+
+    expect(findChatThread).toHaveBeenCalledWith(
+      {},
+      "task",
+      "task-1:actor:local-user",
+    );
+  });
 });
