@@ -1,6 +1,10 @@
 /// <reference types="vitest/globals" />
 
-import { deliverBriefDigest } from "@/lib/delivery";
+import {
+  deliverBriefDigest,
+  deliverBriefWithRetry,
+  deliverStoredBrief,
+} from "@/lib/delivery";
 import { renderBriefHtmlDigest } from "@/lib/brief-render";
 import {
   createBriefRecord,
@@ -118,6 +122,38 @@ describe("webhook delivery transport", () => {
     ).rejects.toThrow("Webhook delivery failed with status 500: boom");
   });
 
+  it("retries failed webhook delivery up to the configured attempt limit", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        text: vi.fn().mockResolvedValue("boom"),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 202,
+      });
+
+    const result = await deliverBriefWithRetry({
+      endpoint: "https://example.com/webhook",
+      payload: {
+        briefId: "brief-1",
+        format: "html",
+        title: "OpenAI ships a notable update",
+        html: "<html><body>digest</body></html>",
+      },
+      fetchImpl,
+      maxAttempts: 2,
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(result).toEqual({
+      status: "success",
+      responseStatus: 202,
+    });
+  });
+
   it.runIf(Boolean(process.env.DATABASE_URL))(
     "persists delivery logs through the postgres-backed store",
     async () => {
@@ -167,5 +203,71 @@ describe("webhook delivery transport", () => {
     } finally {
       await fixture.cleanup();
     }
-  }, 15_000);
+    },
+    15_000,
+  );
+
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "delivers a stored brief through the shared retry pipeline",
+    async () => {
+      const fixture = await createIsolatedPostgresStore();
+
+      try {
+        const spaceId = await createSpaceRecord(fixture.store, {
+          name: "AI Watch",
+        });
+        const taskId = await createTaskRecord(fixture.store, {
+          spaceId,
+          title: "Track OpenAI updates",
+          taskType: "TOPIC",
+          userPrompt: "Track OpenAI updates",
+        });
+        const briefId = await createBriefRecord(fixture.store, {
+          taskId,
+          itemIds: [],
+          title: "OpenAI ships a notable update",
+          summary: "The API changelog added a production-facing update.",
+          whyItMatters:
+            "The change affects teams that rely on the latest API behavior.",
+          sourceCitations: ["https://openai.com/changelog"],
+        });
+
+        await fixture.store.prisma!.appSetting.upsert({
+          where: { key: "webhook_endpoint" },
+          update: {
+            value: "https://example.com/webhook",
+            updatedAt: new Date(),
+          },
+          create: {
+            key: "webhook_endpoint",
+            value: "https://example.com/webhook",
+            updatedAt: new Date(),
+          },
+        });
+
+        const fetchImpl = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 202,
+        });
+
+        const result = await deliverStoredBrief(fixture.store, briefId, {
+          fetchImpl,
+          maxAttempts: 2,
+        });
+
+        expect(result.status).toBe("success");
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        expect(await listRecentDeliveryLogsByBrief(fixture.store, briefId)).toEqual([
+          expect.objectContaining({
+            briefId,
+            status: "success",
+            responseStatus: 202,
+          }),
+        ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    15_000,
+  );
 });

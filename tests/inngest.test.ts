@@ -100,4 +100,74 @@ describe("runScheduledSyncEvent", () => {
     expect(route.POST).toBeTypeOf("function");
     expect(route.PUT).toBeTypeOf("function");
   });
+
+  it("queues automatic delivery for a newly created brief", async () => {
+    const sendMock = vi.fn().mockResolvedValue({ ids: ["evt_1"] });
+    const previousEventKey = process.env.INNGEST_EVENT_KEY;
+    const previousBaseUrl = process.env.INNGEST_BASE_URL;
+    process.env.INNGEST_EVENT_KEY = "evt_test_local";
+    process.env.INNGEST_BASE_URL = "http://127.0.0.1:8288";
+
+    try {
+      const { inngest, queueBriefDelivery, BRIEF_DELIVERY_EVENT } = await import(
+        "@/lib/inngest"
+      );
+      vi.spyOn(inngest, "send").mockImplementation(sendMock);
+
+      await queueBriefDelivery("brief-1");
+
+      expect(sendMock).toHaveBeenCalledWith({
+        name: BRIEF_DELIVERY_EVENT,
+        data: { briefId: "brief-1" },
+      });
+    } finally {
+      if (previousEventKey === undefined) {
+        delete process.env.INNGEST_EVENT_KEY;
+      } else {
+        process.env.INNGEST_EVENT_KEY = previousEventKey;
+      }
+      if (previousBaseUrl === undefined) {
+        delete process.env.INNGEST_BASE_URL;
+      } else {
+        process.env.INNGEST_BASE_URL = previousBaseUrl;
+      }
+    }
+  });
+
+  it("delivers a brief through the inngest delivery worker", async () => {
+    const deliverStoredBriefMock = vi.fn().mockResolvedValue({
+      status: "success",
+      responseStatus: 202,
+    });
+    const getDefaultRuntimeStoreMock = vi.fn().mockReturnValue({ prisma: {} });
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@127.0.0.1:5432/inflowee";
+
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      getDefaultRuntimeStore: getDefaultRuntimeStoreMock,
+    }));
+    vi.doMock("@/lib/delivery", () => ({
+      deliverStoredBrief: deliverStoredBriefMock,
+    }));
+
+    try {
+      const { runBriefDeliveryEvent } = await import("@/lib/inngest");
+      await runBriefDeliveryEvent({ briefId: "brief-1" });
+
+      expect(getDefaultRuntimeStoreMock).toHaveBeenCalledTimes(1);
+      expect(deliverStoredBriefMock).toHaveBeenCalledWith(
+        { prisma: {} },
+        "brief-1",
+        { maxAttempts: 2 },
+      );
+    } finally {
+      if (previousDatabaseUrl === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previousDatabaseUrl;
+      }
+    }
+  });
 });

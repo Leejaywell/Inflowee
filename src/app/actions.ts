@@ -3,10 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { renderBriefHtmlDigest } from "@/lib/brief-render";
-import { deliverBriefDigest } from "@/lib/delivery";
+import { deliverStoredBrief } from "@/lib/delivery";
 import {
-  createDeliveryLog,
   createSourceRecord,
   createSpaceRecord,
   createTaskRecord,
@@ -15,12 +13,10 @@ import {
   deleteSource as deleteSourceRecord,
   deleteSpace as deleteSpaceRecord,
   deleteTask as deleteTaskRecord,
-  finishDeliveryLog,
   getBriefById,
   getWebhookSettings,
   getTaskById,
   hasTaskRecord,
-  listItemsByBriefId,
   markBriefRead,
   markBriefUnread,
   saveWebhookSettings,
@@ -254,39 +250,15 @@ export async function sendBriefToWebhook(formData: FormData) {
     redirect(`/inbox/${briefId}?error=Configure%20a%20webhook%20endpoint%20first.`);
   }
 
-  const linkedItems = await listItemsByBriefId(defaultStore, briefId);
-  const html = renderBriefHtmlDigest({ brief, linkedItems });
-  const logId = await createDeliveryLog(defaultStore, {
-    briefId,
-    endpoint: settings.endpoint,
-    payloadType: "html",
-  });
-
   try {
-    const responseStatus = await deliverBriefDigest({
-      endpoint: settings.endpoint,
-      payload: {
-        briefId,
-        format: "html",
-        title: brief.title,
-        html,
-      },
-    });
+    const result = await deliverStoredBrief(defaultStore, briefId);
 
-    await finishDeliveryLog(defaultStore, {
-      logId,
-      status: "success",
-      responseStatus,
-    });
+    if (result.status !== "success") {
+      throw new Error(result.error);
+    }
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Unknown delivery failure.";
-
-    await finishDeliveryLog(defaultStore, {
-      logId,
-      status: "error",
-      error: message,
-    });
 
     revalidatePath(`/inbox/${briefId}`);
     revalidatePath("/settings");

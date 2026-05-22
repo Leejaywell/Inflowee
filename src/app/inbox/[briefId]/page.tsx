@@ -191,7 +191,12 @@ export default async function BriefDetailPage({
                 </Link>
                 .
               </p>
-            ) : null}
+            ) : (
+              <p className="mt-3 text-sm text-stone-500">
+                New briefs now queue automatic webhook delivery. Use this action
+                to resend on demand.
+              </p>
+            )}
           </div>
 
           <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">

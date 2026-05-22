@@ -2,6 +2,7 @@ import { extractPageContent } from "@/lib/page-extract";
 import { parseFeedItems } from "@/lib/rss";
 import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
 import { generateBriefsFromItems } from "@/lib/ai";
+import { queueBriefDelivery } from "@/lib/inngest";
 import { extractStructuredList } from "@/lib/structured-extract";
 import { extractUpdateEntries } from "@/lib/update-extract";
 import { extractNewsletterArchiveEntries } from "@/lib/newsletter-archive-extract";
@@ -14,6 +15,7 @@ import {
   finishSyncRun,
   getSourceById,
   getTaskById,
+  getWebhookSettings,
   listSources,
   markSourceSyncResult,
   type SourceRecord,
@@ -110,9 +112,10 @@ export async function storeSourceItemsAndCreateBriefs(
   }
 
   const briefs = await generateBriefsFromItems(task, unbriefedItems);
+  const webhookSettings = await getWebhookSettings(store);
 
   for (const brief of briefs) {
-    await createBriefRecord(store, {
+    const briefId = await createBriefRecord(store, {
       taskId: source.taskId,
       itemIds: brief.itemIds,
       title: brief.title,
@@ -123,6 +126,14 @@ export async function storeSourceItemsAndCreateBriefs(
       importanceScore: brief.importanceScore,
       tags: brief.tags,
     });
+
+    if (webhookSettings.endpoint) {
+      try {
+        await queueBriefDelivery(briefId);
+      } catch (error) {
+        console.error(`Failed to queue webhook delivery for brief ${briefId}:`, error);
+      }
+    }
   }
 
   return {

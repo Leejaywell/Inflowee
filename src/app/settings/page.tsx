@@ -35,8 +35,8 @@ export default async function SettingsPage({
               Configure a single HTTPS webhook for brief delivery.
             </h1>
             <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-              Manual delivery stays explicit in this slice. Configure one
-              endpoint, then send individual briefs from the inbox detail view.
+              Configure one endpoint for both automatic background delivery on
+              new briefs and explicit resend from the inbox detail view.
             </p>
           </div>
         </div>
