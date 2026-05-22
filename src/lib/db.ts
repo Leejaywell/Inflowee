@@ -1,15 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 
-import { getEnv } from "./env.ts";
-
 const globalForPrisma = globalThis as typeof globalThis & {
   __infloweePrisma?: PrismaClient;
 };
 
 export function createPrismaClient() {
-  getEnv();
+  const databaseUrl = requireDatabaseUrl();
 
   return new PrismaClient({
+    datasourceUrl: databaseUrl,
     log:
       process.env.NODE_ENV === "development" ? ["warn", "error"] : ["error"],
   });

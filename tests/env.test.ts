@@ -94,6 +94,49 @@ describe("env schema", () => {
     }
   });
 
+  it("allows the default prisma runtime to bootstrap with only DATABASE_URL", async () => {
+    const previous = {
+      DATABASE_URL: process.env.DATABASE_URL,
+      INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY,
+      INNGEST_SIGNING_KEY: process.env.INNGEST_SIGNING_KEY,
+      INNGEST_BASE_URL: process.env.INNGEST_BASE_URL,
+    };
+
+    process.env.DATABASE_URL =
+      "postgresql://postgres:postgres@127.0.0.1:5432/inflowee";
+    delete process.env.INNGEST_EVENT_KEY;
+    delete process.env.INNGEST_SIGNING_KEY;
+    delete process.env.INNGEST_BASE_URL;
+
+    try {
+      const { createStore, defaultStore } = await import("@/lib/store");
+
+      expect(defaultStore.runtime).toBe("prisma");
+      expect(createStore().runtime).toBe("prisma");
+    } finally {
+      if (previous.DATABASE_URL === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous.DATABASE_URL;
+      }
+      if (previous.INNGEST_EVENT_KEY === undefined) {
+        delete process.env.INNGEST_EVENT_KEY;
+      } else {
+        process.env.INNGEST_EVENT_KEY = previous.INNGEST_EVENT_KEY;
+      }
+      if (previous.INNGEST_SIGNING_KEY === undefined) {
+        delete process.env.INNGEST_SIGNING_KEY;
+      } else {
+        process.env.INNGEST_SIGNING_KEY = previous.INNGEST_SIGNING_KEY;
+      }
+      if (previous.INNGEST_BASE_URL === undefined) {
+        delete process.env.INNGEST_BASE_URL;
+      } else {
+        process.env.INNGEST_BASE_URL = previous.INNGEST_BASE_URL;
+      }
+    }
+  });
+
   it("returns a single-user default session when no auth provider is configured", async () => {
     const sessionUser = await getSessionUser();
 

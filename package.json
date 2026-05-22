@@ -13,7 +13,7 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
-    "db:reset": "prisma db push --force-reset --skip-generate",
+    "db:reset": "node --experimental-strip-types scripts/reset-dev.ts",
     "db:seed": "node --experimental-strip-types scripts/seed-dev.ts",
     "inngest:dev": "inngest-cli dev -u http://localhost:3000/api/inngest"
   },
