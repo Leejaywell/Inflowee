@@ -4,9 +4,12 @@ import { promisify } from "node:util";
 
 import { PrismaClient } from "@prisma/client";
 
+import { createStore, type Store } from "@/lib/store";
+
 const execFileAsync = promisify(execFile);
 
 export async function createIsolatedPostgresStore(): Promise<{
+  store: Store;
   prisma: PrismaClient;
   databaseUrl: string;
   cleanup: () => Promise<void>;
@@ -26,6 +29,7 @@ export async function createIsolatedPostgresStore(): Promise<{
   const prisma = new PrismaClient({
     datasourceUrl: databaseUrl,
   });
+  const store = createStore({ databaseUrl });
 
   await adminPrisma.$executeRawUnsafe(`CREATE SCHEMA IF NOT EXISTS "${schema}"`);
   await execFileAsync(
@@ -41,11 +45,15 @@ export async function createIsolatedPostgresStore(): Promise<{
   );
 
   return {
+    store,
     prisma,
     databaseUrl,
     async cleanup() {
-      await adminPrisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await prisma.$disconnect();
+      if (store.prisma) {
+        await store.prisma.$disconnect();
+      }
+      await adminPrisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
       await adminPrisma.$disconnect();
     },
   };

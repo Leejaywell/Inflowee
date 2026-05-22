@@ -47,12 +47,14 @@ import {
   getOrCreateChatThread,
   createChatMessage,
   listChatMessages,
+  type Store,
 } from "@/lib/store";
 import {
   createSourceSchema,
   updateSourceScheduleSchema,
   webhookEndpointSchema,
 } from "@/lib/validation";
+import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
 describe("store promise contract", () => {
   it("returns promises for core write helpers", async () => {
@@ -119,6 +121,37 @@ describe("store promise contract", () => {
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("persists spaces tasks and sources through the postgres-backed store", async () => {
+    const fixture = await createIsolatedPostgresStore();
+
+    try {
+      const spaceId = await createSpaceRecord(fixture.store, {
+        name: "Signals",
+      });
+      const taskId = await createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Track agents",
+        taskType: "TOPIC",
+        userPrompt: "Track coding agents",
+      });
+
+      await createSourceRecord(fixture.store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Agent feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      const spaces = await listSpacesWithTasks(fixture.store);
+      const sources = await listSourcesByTask(fixture.store, taskId);
+
+      expect(spaces[0]?.tasks[0]?.id).toBe(taskId);
+      expect(sources[0]?.title).toBe("Agent feed");
+    } finally {
+      await fixture.cleanup();
     }
   });
 });
@@ -863,7 +896,7 @@ describe("store expansions for AI features", () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-expansion-test-"));
     const filename = join(tempDirectory, "store.sqlite");
     const store = createStore(filename);
-    let reopenedStore: ReturnType<typeof createStore> | null = null;
+    let reopenedStore: Store | null = null;
     let originalStoreClosed = false;
 
     try {

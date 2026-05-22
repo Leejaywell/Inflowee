@@ -2,6 +2,9 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { PrismaClient } from "@prisma/client";
+
+import { prisma as defaultPrisma } from "@/lib/db";
 
 export type TaskType = "TOPIC" | "QUESTION";
 export type SourceType =
@@ -13,9 +16,23 @@ export type SourceType =
 export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
 export type DeliveryStatus = "running" | "success" | "error";
-export type Store = {
+export type SqliteStore = {
   database: DatabaseSync;
+  prisma?: undefined;
 };
+export type PrismaStore = {
+  database: DatabaseSync;
+  prisma: PrismaClient;
+};
+export type Store = SqliteStore | PrismaStore;
+
+function createUnavailableDatabaseHandle(): DatabaseSync {
+  return new Proxy({} as DatabaseSync, {
+    get() {
+      throw new Error("SQLite database is unavailable for Prisma-backed store.");
+    },
+  });
+}
 
 type SpaceRow = {
   id: string;
@@ -718,9 +735,30 @@ function migrateChatMessagesTable(database: DatabaseSync) {
   );
 }
 
+export function createStore(): SqliteStore;
+export function createStore(filename: string): SqliteStore;
+export function createStore(options: { databaseUrl: string }): PrismaStore;
 export function createStore(
-  filename = join(dataDirectory, "inflowee.sqlite"),
+  filenameOrOptions:
+    | string
+    | {
+        databaseUrl: string;
+      } = join(dataDirectory, "inflowee.sqlite"),
 ): Store {
+  if (
+    typeof filenameOrOptions === "object" &&
+    filenameOrOptions !== null &&
+    "databaseUrl" in filenameOrOptions
+  ) {
+    return {
+      database: createUnavailableDatabaseHandle(),
+      prisma: new PrismaClient({
+        datasourceUrl: filenameOrOptions.databaseUrl,
+      }),
+    };
+  }
+
+  const filename = filenameOrOptions;
   let database: DatabaseSync | undefined;
 
   const initializeDatabase = () => {
@@ -910,9 +948,85 @@ function mapTask(row: TaskRow): TaskRecord {
   };
 }
 
+function mapPrismaTask(task: {
+  id: string;
+  spaceId: string;
+  title: string;
+  taskType: string;
+  userPrompt: string;
+  relevanceLevel: number;
+  summaryPreference: string;
+  taskProfile: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}): TaskRecord {
+  return {
+    id: task.id,
+    spaceId: task.spaceId,
+    title: task.title,
+    taskType: task.taskType as TaskType,
+    userPrompt: task.userPrompt,
+    relevanceLevel: task.relevanceLevel,
+    summaryPreference: task.summaryPreference,
+    taskProfile: (task.taskProfile as TaskProfile | null) ?? null,
+    createdAt: task.createdAt.toISOString(),
+    updatedAt: task.updatedAt.toISOString(),
+  };
+}
+
+function mapPrismaSource(source: {
+  id: string;
+  taskId: string;
+  sourceType: string;
+  title: string;
+  url: string;
+  status: string;
+  lastSyncedAt: Date | null;
+  lastError: string | null;
+  syncIntervalMinutes: number;
+  nextSyncAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): SourceRecord {
+  return {
+    id: source.id,
+    taskId: source.taskId,
+    sourceType: source.sourceType as SourceType,
+    title: source.title,
+    url: source.url,
+    status: source.status as SourceStatus,
+    lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
+    lastError: source.lastError,
+    syncIntervalMinutes: source.syncIntervalMinutes,
+    nextSyncAt: source.nextSyncAt?.toISOString() ?? null,
+    createdAt: source.createdAt.toISOString(),
+    updatedAt: source.updatedAt.toISOString(),
+  };
+}
+
 export async function listSpacesWithTasks(
   store: Store = defaultStore,
 ): Promise<SpaceRecord[]> {
+  if (store.prisma) {
+    const spaces = await store.prisma.space.findMany({
+      orderBy: { createdAt: "desc" },
+      include: {
+        tasks: {
+          orderBy: { createdAt: "desc" },
+        },
+      },
+    });
+
+    return spaces.map((space) => ({
+      id: space.id,
+      name: space.name,
+      description: space.description,
+      createdAt: space.createdAt.toISOString(),
+      updatedAt: space.updatedAt.toISOString(),
+      tasks: space.tasks.map(mapPrismaTask),
+    }));
+  }
+
   const spaces = store.database
     .prepare("SELECT * FROM spaces ORDER BY created_at DESC")
     .all() as SpaceRow[];
@@ -942,6 +1056,25 @@ export async function getSpaceById(
   store: Store,
   spaceId: string,
 ): Promise<SpaceRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.space.findUnique({
+      where: { id: spaceId },
+    });
+
+    if (!row) {
+      return null;
+    }
+
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      tasks: [],
+    };
+  }
+
   const row = store.database
     .prepare("SELECT * FROM spaces WHERE id = ? LIMIT 1")
     .get(spaceId) as SpaceRow | undefined;
@@ -964,6 +1097,15 @@ export async function listTasksBySpace(
   store: Store,
   spaceId: string,
 ): Promise<TaskRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.task.findMany({
+      where: { spaceId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return rows.map(mapPrismaTask);
+  }
+
   const rows = store.database
     .prepare("SELECT * FROM tasks WHERE space_id = ? ORDER BY created_at DESC")
     .all(spaceId) as TaskRow[];
@@ -982,6 +1124,18 @@ export async function createSpaceRecord(
 ) {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
   const input = maybeInput ?? (storeOrInput as CreateSpaceInput);
+
+  if (store.prisma) {
+    const space = await store.prisma.space.create({
+      data: {
+        name: input.name,
+        description: input.description ?? null,
+      },
+    });
+
+    return space.id;
+  }
+
   const timestamp = new Date().toISOString();
   const id = randomUUID();
 
@@ -1012,6 +1166,22 @@ export async function createTaskRecord(
 ) {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
   const input = maybeInput ?? (storeOrInput as CreateTaskInput);
+
+  if (store.prisma) {
+    const task = await store.prisma.task.create({
+      data: {
+        spaceId: input.spaceId,
+        title: input.title,
+        taskType: input.taskType,
+        userPrompt: input.userPrompt,
+        relevanceLevel: 3,
+        summaryPreference: "balanced",
+      },
+    });
+
+    return task.id;
+  }
+
   const timestamp = new Date().toISOString();
   const id = randomUUID();
 
@@ -1048,6 +1218,14 @@ export async function hasTaskRecord(
   store: Store,
   taskId: string,
 ): Promise<boolean> {
+  if (store.prisma) {
+    const count = await store.prisma.task.count({
+      where: { id: taskId },
+    });
+
+    return count > 0;
+  }
+
   return Boolean(
     store.database
       .prepare("SELECT 1 FROM tasks WHERE id = ? LIMIT 1")
@@ -1059,6 +1237,14 @@ export async function getSourceById(
   store: Store,
   sourceId: string,
 ): Promise<SourceRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.source.findUnique({
+      where: { id: sourceId },
+    });
+
+    return row ? mapPrismaSource(row) : null;
+  }
+
   const row = store.database
     .prepare("SELECT * FROM sources WHERE id = ? LIMIT 1")
     .get(sourceId) as SourceRow | undefined;
@@ -1070,6 +1256,15 @@ export async function getTaskBySourceId(
   store: Store,
   sourceId: string,
 ): Promise<TaskRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.source.findUnique({
+      where: { id: sourceId },
+      include: { task: true },
+    });
+
+    return row ? mapPrismaTask(row.task) : null;
+  }
+
   const row = store.database
     .prepare(
       `SELECT tasks.*
@@ -1092,6 +1287,22 @@ export async function createSourceRecord(
     url: string;
   },
 ) {
+  if (store.prisma) {
+    const source = await store.prisma.source.create({
+      data: {
+        taskId: input.taskId,
+        sourceType: input.sourceType,
+        title: input.title,
+        url: input.url,
+        status: "idle",
+        syncIntervalMinutes: 360,
+        nextSyncAt: new Date(),
+      },
+    });
+
+    return source.id;
+  }
+
   const timestamp = new Date().toISOString();
   const id = randomUUID();
   const nextSyncAt = timestamp;
@@ -1230,6 +1441,15 @@ export async function listSourcesByTask(
   store: Store,
   taskId: string,
 ): Promise<SourceRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.source.findMany({
+      where: { taskId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return rows.map(mapPrismaSource);
+  }
+
   const rows = store.database
     .prepare(
       "SELECT * FROM sources WHERE task_id = ? ORDER BY created_at DESC",
@@ -1243,6 +1463,23 @@ export async function listDueSources(
   store: Store,
   nowIso = new Date().toISOString(),
 ): Promise<SourceRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.source.findMany({
+      where: {
+        status: {
+          not: "error",
+        },
+        nextSyncAt: {
+          not: null,
+          lte: new Date(nowIso),
+        },
+      },
+      orderBy: [{ nextSyncAt: "asc" }, { createdAt: "asc" }],
+    });
+
+    return rows.map(mapPrismaSource);
+  }
+
   const rows = store.database
     .prepare(
       `SELECT * FROM sources
@@ -1623,6 +1860,14 @@ export async function listRecentDeliveryLogs(
 export async function listSources(
   store: Store = defaultStore,
 ): Promise<SourceRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.source.findMany({
+      orderBy: { createdAt: "desc" },
+    });
+
+    return rows.map(mapPrismaSource);
+  }
+
   const rows = store.database
     .prepare("SELECT * FROM sources ORDER BY created_at DESC")
     .all() as SourceRow[];
@@ -1771,6 +2016,14 @@ export async function getTaskById(
   store: Store,
   taskId: string,
 ): Promise<TaskRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.task.findUnique({
+      where: { id: taskId },
+    });
+
+    return row ? mapPrismaTask(row) : null;
+  }
+
   const row = store.database
     .prepare("SELECT * FROM tasks WHERE id = ? LIMIT 1")
     .get(taskId) as TaskRow | undefined;
