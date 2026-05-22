@@ -30,6 +30,17 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 6. Open `/inbox` and confirm a brief appears
 7. Open `/inbox/<briefId>/html` and confirm the HTML digest renders
 
+## Brief Surface Verification
+
+- Run `pnpm test`
+- Run `pnpm lint`
+- Run `pnpm build`
+- Run `pnpm typecheck`
+- Open `/inbox`
+- Open `/inbox/<briefId>`
+- Ask one question from a task or brief chat console
+- Confirm citations render and provenance badges show `Stored context` or `Live context`
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
