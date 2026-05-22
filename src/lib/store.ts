@@ -261,10 +261,12 @@ export type DeliveryLogRecord = {
   finishedAt: string | null;
 };
 
+export type SpaceRole = "viewer" | "editor" | "owner";
+
 export type SpaceMemberRecord = {
   spaceId: string;
   userId: string;
-  role: string;
+  role: SpaceRole;
   createdAt: string;
 };
 
@@ -398,7 +400,7 @@ function mapSpaceMember(row: SpaceMemberRow): SpaceMemberRecord {
   return {
     spaceId: row.space_id,
     userId: row.user_id,
-    role: row.role,
+    role: row.role as SpaceRole,
     createdAt: row.created_at,
   };
 }
@@ -1311,18 +1313,27 @@ function mapPrismaSpaceMember(member: {
   return {
     spaceId: member.spaceId,
     userId: member.userId,
-    role: member.role,
+    role: member.role as SpaceRole,
     createdAt: member.createdAt.toISOString(),
   };
 }
 
 export async function listSpacesWithTasks(
   store: Store = defaultStore,
-  filters: { ownerId?: string } = {},
+  filters: { ownerId?: string; actorId?: string } = {},
 ): Promise<SpaceRecord[]> {
   if (store.prisma) {
     const spaces = await store.prisma.space.findMany({
-      where: filters.ownerId ? { ownerId: filters.ownerId } : undefined,
+      where: filters.actorId
+        ? {
+            OR: [
+              { ownerId: filters.actorId },
+              { members: { some: { userId: filters.actorId } } },
+            ],
+          }
+        : filters.ownerId
+          ? { ownerId: filters.ownerId }
+          : undefined,
       orderBy: { createdAt: "desc" },
       include: {
         tasks: {
@@ -1335,7 +1346,20 @@ export async function listSpacesWithTasks(
   }
 
   const spaces = (
-    filters.ownerId
+    filters.actorId
+      ? store.database
+          .prepare(
+            `SELECT DISTINCT spaces.*
+             FROM spaces
+             LEFT JOIN space_members
+               ON space_members.space_id = spaces.id
+              AND space_members.user_id = ?
+             WHERE spaces.owner_id = ?
+                OR space_members.user_id IS NOT NULL
+             ORDER BY spaces.created_at DESC`,
+          )
+          .all(filters.actorId, filters.actorId)
+      : filters.ownerId
       ? store.database
           .prepare(
             "SELECT * FROM spaces WHERE owner_id = ? ORDER BY created_at DESC",
@@ -1412,7 +1436,7 @@ export async function addSpaceMember(
   input: {
     spaceId: string;
     userId: string;
-    role: string;
+    role: SpaceRole;
   },
 ): Promise<void> {
   if (store.prisma) {
@@ -1467,6 +1491,65 @@ export async function listSpaceMembers(
     .all(spaceId) as SpaceMemberRow[];
 
   return rows.map(mapSpaceMember);
+}
+
+export async function getSpaceMembership(
+  store: Store,
+  actorId: string,
+  spaceId: string,
+): Promise<SpaceMemberRecord | null> {
+  const space = await getSpaceById(store, spaceId);
+
+  if (!space) {
+    return null;
+  }
+
+  if (space.ownerId === actorId) {
+    return {
+      spaceId,
+      userId: actorId,
+      role: "owner",
+      createdAt: space.createdAt,
+    };
+  }
+
+  if (store.prisma) {
+    const member = await store.prisma.spaceMember.findUnique({
+      where: {
+        spaceId_userId: {
+          spaceId,
+          userId: actorId,
+        },
+      },
+    });
+
+    return member ? mapPrismaSpaceMember(member) : null;
+  }
+
+  const member = store.database
+    .prepare(
+      `SELECT * FROM space_members
+       WHERE space_id = ?
+         AND user_id = ?
+       LIMIT 1`,
+    )
+    .get(spaceId, actorId) as SpaceMemberRow | undefined;
+
+  return member ? mapSpaceMember(member) : null;
+}
+
+export async function getSpaceMembershipForTask(
+  store: Store,
+  actorId: string,
+  taskId: string,
+): Promise<SpaceMemberRecord | null> {
+  const task = await getTaskById(store, taskId);
+
+  if (!task) {
+    return null;
+  }
+
+  return getSpaceMembership(store, actorId, task.spaceId);
 }
 
 export function createSpaceRecord(input: CreateSpaceInput): Promise<string>;
@@ -2652,16 +2735,49 @@ export async function markBriefUnread(
     .run(briefId);
 }
 
-export async function countUnreadBriefs(store: Store): Promise<number> {
+export async function countUnreadBriefs(
+  store: Store,
+  filters: { actorId?: string } = {},
+): Promise<number> {
   if (store.prisma) {
     return store.prisma.brief.count({
-      where: { isRead: false },
+      where: {
+        isRead: false,
+        ...(filters.actorId
+          ? {
+              task: {
+                space: {
+                  OR: [
+                    { ownerId: filters.actorId },
+                    { members: { some: { userId: filters.actorId } } },
+                  ],
+                },
+              },
+            }
+          : {}),
+      },
     });
   }
 
-  const row = store.database
-    .prepare("SELECT COUNT(*) AS count FROM briefs WHERE is_read = 0")
-    .get() as { count: number };
+  const row = (
+    filters.actorId
+      ? store.database
+          .prepare(
+            `SELECT COUNT(*) AS count
+             FROM briefs
+             JOIN tasks ON briefs.task_id = tasks.id
+             JOIN spaces ON tasks.space_id = spaces.id
+             LEFT JOIN space_members
+               ON space_members.space_id = spaces.id
+              AND space_members.user_id = ?
+             WHERE briefs.is_read = 0
+               AND (spaces.owner_id = ? OR space_members.user_id IS NOT NULL)`,
+          )
+          .get(filters.actorId, filters.actorId)
+      : store.database
+          .prepare("SELECT COUNT(*) AS count FROM briefs WHERE is_read = 0")
+          .get()
+  ) as { count: number };
 
   return row.count;
 }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import { ChatConsole } from "@/components/chat-console";
 import { MemberList } from "@/components/member-list";
+import { assertSpaceAccess, requireSessionActor } from "@/lib/auth";
 import { getGroundingForScope } from "@/lib/grounding";
 import {
   defaultStore,
@@ -22,6 +23,7 @@ type SpacePageProps = {
 export default async function SpaceDetailPage({ params }: SpacePageProps) {
   const { spaceId } = await params;
   const store = defaultStore;
+  const actor = await requireSessionActor();
 
   // 1. Fetch space
   const space = await getSpaceById(store, spaceId);
@@ -30,20 +32,29 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
     notFound();
   }
 
+  try {
+    await assertSpaceAccess(store, {
+      actorId: actor.id,
+      spaceId,
+      minimumRole: "viewer",
+    });
+  } catch {
+    notFound();
+  }
+
   // 2. Fetch tasks within the space
   const tasks = await listTasksBySpace(store, spaceId);
   const members = await listSpaceMembers(store, spaceId);
-  const effectiveMembers =
-    members.length > 0
-      ? members
-      : [
-          {
-            spaceId,
-            userId: space.ownerId,
-            role: "owner",
-            createdAt: space.createdAt,
-          },
-        ];
+  const ownerMember = {
+    spaceId,
+    userId: space.ownerId,
+    role: "owner" as const,
+    createdAt: space.createdAt,
+  };
+  const effectiveMembers = [
+    ownerMember,
+    ...members.filter((member) => member.userId !== space.ownerId),
+  ];
 
   // 3. Fetch aggregated briefs in this space
   const { briefs } = await getGroundingForScope(store, "space", spaceId, {
@@ -82,7 +93,7 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
             <h2 className="text-xl font-semibold text-stone-950 border-b border-stone-100 pb-4 mb-4">
               Space members
             </h2>
-            <MemberList members={effectiveMembers} />
+            <MemberList actorId={actor.id} members={effectiveMembers} />
           </div>
         </div>
       </section>

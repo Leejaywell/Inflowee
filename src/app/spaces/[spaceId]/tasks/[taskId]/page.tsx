@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { TaskControls } from "@/components/task-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
 import { ChatConsole } from "@/components/chat-console";
+import { assertTaskAccess, requireSessionActor } from "@/lib/auth";
 import {
   defaultStore,
   findChatThread,
@@ -23,10 +24,21 @@ type TaskDetailPageProps = {
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { spaceId, taskId } = await params;
   const store = defaultStore;
+  const actor = await requireSessionActor();
 
   // 1. Fetch task details
   const task = await getTaskById(store, taskId);
   if (!task || task.spaceId !== spaceId) {
+    notFound();
+  }
+
+  try {
+    await assertTaskAccess(store, {
+      actorId: actor.id,
+      taskId,
+      minimumRole: "viewer",
+    });
+  } catch {
     notFound();
   }
 

@@ -5,7 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { getGroundingForScope } from "@/lib/grounding";
+import { assertTaskAccess } from "@/lib/auth";
 import {
+  addSpaceMember,
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
@@ -96,6 +98,28 @@ describe("getGroundingForScope", () => {
           canonicalUrl: "https://example.com/launch",
         }),
       ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("allows task access for a viewer member", async () => {
+    const fixture = await createFixture();
+
+    try {
+      await addSpaceMember(fixture.store, {
+        spaceId: fixture.spaceId,
+        userId: "viewer-1",
+        role: "viewer",
+      });
+
+      await expect(
+        assertTaskAccess(fixture.store, {
+          actorId: "viewer-1",
+          taskId: fixture.taskId,
+          minimumRole: "viewer",
+        }),
+      ).resolves.toBeUndefined();
     } finally {
       fixture.cleanup();
     }

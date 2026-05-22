@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { createSpace, createTask, deleteSpace, deleteTask } from "@/app/actions";
-import { getSessionUser } from "@/lib/auth";
+import { requireSessionActor } from "@/lib/auth";
 import { defaultStore, listSpacesWithTasks, type TaskType } from "@/lib/store";
 
 type HomeProps = {
@@ -16,9 +16,9 @@ const taskTypeLabels: Record<TaskType, string> = {
 };
 
 export default async function Home({ searchParams }: HomeProps) {
-  const sessionUser = await getSessionUser();
+  const actor = await requireSessionActor();
   const [spaces, params] = await Promise.all([
-    listSpacesWithTasks(defaultStore, { ownerId: sessionUser?.id }),
+    listSpacesWithTasks(defaultStore, { actorId: actor.id }),
     searchParams,
   ]);
 

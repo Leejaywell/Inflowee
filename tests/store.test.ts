@@ -51,6 +51,7 @@ import {
   listChatMessages,
   type Store,
 } from "@/lib/store";
+import { assertTaskAccess } from "@/lib/auth";
 import {
   createSourceSchema,
   updateSourceScheduleSchema,
@@ -214,6 +215,55 @@ describe("store promise contract", () => {
           role: "viewer",
         }),
       ]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects task access for a non-member actor", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, {
+        ownerId: "user-1",
+        name: "Signals",
+      });
+      const createdAt = new Date().toISOString();
+      store.database
+        .prepare(
+          `INSERT INTO tasks (
+            id,
+            space_id,
+            title,
+            task_type,
+            user_prompt,
+            relevance_level,
+            summary_preference,
+            created_at,
+            updated_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          "task-owned-by-user-1",
+          spaceId,
+          "Private task",
+          "TOPIC",
+          "Track private signals.",
+          3,
+          "balanced",
+          createdAt,
+          createdAt,
+        );
+
+      await expect(
+        assertTaskAccess(store, {
+          actorId: "user-2",
+          taskId: "task-owned-by-user-1",
+          minimumRole: "viewer",
+        }),
+      ).rejects.toThrow("Forbidden");
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
