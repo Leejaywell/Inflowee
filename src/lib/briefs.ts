@@ -7,6 +7,9 @@ export type BriefCandidate = {
   summary: string;
   whyItMatters: string;
   sourceCitations: string[];
+  relevanceScore: number;
+  importanceScore: number;
+  tags: string[];
 };
 
 export function buildBriefsFromItems(
@@ -23,5 +26,8 @@ export function buildBriefsFromItems(
     summary: item.summary ?? "No summary available.",
     whyItMatters: "New signal captured from subscribed RSS sources.",
     sourceCitations: [item.canonicalUrl],
+    relevanceScore: 0.5,
+    importanceScore: 0.5,
+    tags: [],
   }));
 }

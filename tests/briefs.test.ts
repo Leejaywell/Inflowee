@@ -48,6 +48,9 @@ describe("buildBriefsFromItems", () => {
         summary: "Latest launches and product updates.",
         whyItMatters: "New signal captured from subscribed RSS sources.",
         sourceCitations: ["https://example.com/posts/launch-roundup"],
+        relevanceScore: 0.5,
+        importanceScore: 0.5,
+        tags: [],
       }),
     ]);
   });
@@ -96,6 +99,9 @@ describe("buildBriefsFromItems", () => {
           summary: "Latest launches and product updates.",
           whyItMatters: "New signal captured from subscribed RSS sources.",
           sourceCitations: ["https://example.com/posts/launch-roundup"],
+          relevanceScore: 0.5,
+          importanceScore: 0.5,
+          tags: [],
           taskTitle: "Monitor feed",
           spaceName: "OpenAI",
         }),

@@ -52,6 +52,9 @@ function createFixture() {
     summary: "Latest launches.",
     whyItMatters: "New signal.",
     sourceCitations: ["https://example.com/launch"],
+    relevanceScore: 0.5,
+    importanceScore: 0.5,
+    tags: [],
   });
 
   return {

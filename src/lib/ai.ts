@@ -1,4 +1,5 @@
 import { TaskRecord, ItemRecord, BriefRecord, type SourceType } from "./store";
+import { clusterItemsForBriefs } from "./brief-clustering";
 
 export type TaskProfile = {
   keywords: string[];
@@ -30,50 +31,15 @@ export type BriefCandidate = {
   whyItMatters: string;
   sourceCitations: string[];
   itemIds: string[];
+  relevanceScore: number;
+  importanceScore: number;
+  tags: string[];
 };
 
 export type ChatResponse = {
   content: string;
   citations: string[];
 };
-
-// Simple clean words helper for keyword matchers & Jaccard clustering
-function getSignificantWords(text: string): Set<string> {
-  const stopWords = new Set([
-    "a", "about", "above", "after", "again", "against", "all", "am", "an", "and", "any", "are", "arent", "as", "at",
-    "be", "because", "been", "before", "being", "below", "between", "both", "but", "by", "cant", "cannot", "could",
-    "couldnt", "did", "didnt", "do", "does", "doesnt", "doing", "dont", "down", "during", "each", "few", "for", "from",
-    "further", "had", "hadnt", "has", "hasnt", "have", "havent", "having", "he", "hed", "hell", "hes", "her", "here",
-    "heres", "hers", "herself", "him", "himself", "his", "how", "hows", "i", "id", "ill", "im", "ive", "if", "in",
-    "into", "is", "isnt", "it", "its", "itself", "lets", "me", "more", "most", "mustnt", "my", "myself", "no", "nor",
-    "not", "of", "off", "on", "once", "only", "or", "other", "ought", "our", "ours", "ourselves", "out", "over",
-    "own", "same", "shant", "shell", "should", "shouldnt", "so", "some", "such", "than", "that", "thats", "the", "their",
-    "theirs", "them", "themselves", "then", "there", "theres", "these", "they", "theyd", "theyll", "theyre", "theyve",
-    "this", "those", "through", "to", "too", "under", "until", "up", "very", "was", "wasnt", "we", "wed", "well",
-    "were", "weve", "werent", "what", "whats", "when", "whens", "where", "wheres", "which", "while", "who", "whos",
-    "whom", "why", "whys", "with", "wont", "would", "wouldnt", "you", "youd", "youll", "youre", "youve", "your",
-    "yours", "yourself", "yourselves"
-  ]);
-
-  const words = text
-    .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
-    .split(/\s+/);
-
-  return new Set(words.filter((w) => w.length > 2 && !stopWords.has(w)));
-}
-
-function calculateJaccardSimilarity(textA: string, textB: string): number {
-  const setA = getSignificantWords(textA);
-  const setB = getSignificantWords(textB);
-
-  if (setA.size === 0 || setB.size === 0) return 0;
-
-  const intersection = new Set([...setA].filter((x) => setB.has(x)));
-  const union = new Set([...setA, ...setB]);
-
-  return intersection.size / union.size;
-}
 
 // Low-dependency standard fetch completion caller for OpenAI GPT models
 async function callOpenAIChatCompletion(
@@ -350,38 +316,30 @@ export async function generateBriefsFromItems(
 ): Promise<BriefCandidate[]> {
   if (items.length === 0) return [];
 
-  // Step 1: Run Jaccard-similarity clustering locally
-  const clusters: ItemRecord[][] = [];
-  const visited = new Set<string>();
-
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (visited.has(item.id)) continue;
-
-    const cluster: ItemRecord[] = [item];
-    visited.add(item.id);
-
-    for (let j = i + 1; j < items.length; j++) {
-      const candidate = items[j];
-      if (visited.has(candidate.id)) continue;
-
-      const sim = calculateJaccardSimilarity(item.title, candidate.title);
-      // High-fidelity threshold: 0.25 overlap signifies substantial subject match
-      if (sim >= 0.25) {
-        cluster.push(candidate);
-        visited.add(candidate.id);
-      }
-    }
-    clusters.push(cluster);
-  }
+  const clusters = clusterItemsForBriefs(items);
 
   // Step 2: Synthesize each cluster into a BriefCandidate
   const candidates: BriefCandidate[] = [];
   const apiKey = process.env.OPENAI_API_KEY;
 
   for (const cluster of clusters) {
-    const citations = Array.from(new Set(cluster.map((c) => c.canonicalUrl)));
-    const itemIds = cluster.map((c) => c.id);
+    const citations = cluster.citations;
+    const itemIds = cluster.itemIds;
+    const clusterItems = cluster.items;
+    const clusterText = clusterItems
+      .map((item) => `${item.title} ${item.summary ?? ""}`.toLowerCase())
+      .join(" ");
+    const tags = [
+      clusterText.includes("api") ? "api" : null,
+      clusterText.includes("agent") || clusterText.includes("devin") ? "agent" : null,
+      clusterText.includes("funding") || clusterText.includes("series a") ? "funding" : null,
+      clusterText.includes("openai") ? "openai" : null,
+    ].filter((tag): tag is string => Boolean(tag));
+    const relevanceScore = Math.min(1, 0.55 + clusterItems.length * 0.1);
+    const importanceScore = Math.min(
+      1,
+      0.45 + clusterItems.length * 0.15 + (tags.length > 0 ? 0.1 : 0),
+    );
 
     if (apiKey) {
       try {
@@ -400,7 +358,7 @@ Respond in strict JSON format:
   "summary": "Full summary paragraph details...",
   "whyItMatters": "Why this update is highly relevant to tracking task..."
 }`;
-        const clusterDetails = cluster.map((c) => `- TITLE: "${c.title}"\n  SUMMARY: "${c.summary || "No summary available"}"`).join("\n");
+        const clusterDetails = clusterItems.map((c) => `- TITLE: "${c.title}"\n  SUMMARY: "${c.summary || "No summary available"}"`).join("\n");
         const responseText = await callOpenAIChatCompletion([
           { role: "system", content: systemPrompt },
           { role: "user", content: `Articles to synthesize:\n${clusterDetails}` },
@@ -408,11 +366,14 @@ Respond in strict JSON format:
 
         const data = JSON.parse(responseText);
         candidates.push({
-          title: data.title || cluster[0].title,
-          summary: data.summary || `Synthesized update regarding ${cluster[0].title}.`,
+          title: data.title || clusterItems[0].title,
+          summary: data.summary || `Synthesized update regarding ${clusterItems[0].title}.`,
           whyItMatters: data.whyItMatters || `Directly relates to your monitoring goal: "${task.title}".`,
           sourceCitations: citations,
           itemIds,
+          relevanceScore,
+          importanceScore,
+          tags,
         });
         continue; // Proceed to next cluster
       } catch (e) {
@@ -422,17 +383,17 @@ Respond in strict JSON format:
 
     // High-fidelity Mock Synthesis fallback
     // We dynamically construct the summary based on the items in the cluster
-    const lead = cluster[0];
+    const lead = clusterItems[0];
     const cleanLeadTitle = lead.title.replace(/^(show hn|show|feed|news):?\s*/i, "");
     
     let synthesizedTitle = cleanLeadTitle;
-    if (cluster.length > 1) {
+    if (clusterItems.length > 1) {
       synthesizedTitle = `${cleanLeadTitle} (Multiple Reports)`;
     }
 
     let summaryText = lead.summary || `Latest coverage on ${cleanLeadTitle}.`;
-    if (cluster.length > 1) {
-      summaryText = `Unified coverage from ${cluster.length} sources: ${cluster.map((c) => `"${c.title}"`).join(", ")}. These updates confirm that ${cleanLeadTitle} is gaining significant traction within the industry, providing developers and operators with refined interfaces and expanded API layers.`;
+    if (clusterItems.length > 1) {
+      summaryText = `Unified coverage from ${clusterItems.length} sources: ${clusterItems.map((c) => `"${c.title}"`).join(", ")}. These updates confirm that ${cleanLeadTitle} is gaining significant traction within the industry, providing developers and operators with refined interfaces and expanded API layers.`;
     }
 
     // Construct relevance analysis
@@ -453,6 +414,9 @@ Respond in strict JSON format:
       whyItMatters,
       sourceCitations: citations,
       itemIds,
+      relevanceScore,
+      importanceScore,
+      tags,
     });
   }
 

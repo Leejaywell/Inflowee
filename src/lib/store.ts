@@ -72,6 +72,9 @@ type BriefRow = {
   summary: string;
   why_it_matters: string;
   source_citations: string;
+  relevance_score: number;
+  importance_score: number;
+  tags_json: string;
   is_read: number;
   created_at: string;
   task_title?: string;
@@ -179,6 +182,9 @@ export type BriefRecord = {
   summary: string;
   whyItMatters: string;
   sourceCitations: string[];
+  relevanceScore: number;
+  importanceScore: number;
+  tags: string[];
   isRead: boolean;
   createdAt: string;
   taskTitle?: string;
@@ -274,6 +280,9 @@ function mapBrief(row: BriefRow): BriefRecord {
     summary: row.summary,
     whyItMatters: row.why_it_matters,
     sourceCitations: JSON.parse(row.source_citations) as string[],
+    relevanceScore: row.relevance_score,
+    importanceScore: row.importance_score,
+    tags: JSON.parse(row.tags_json) as string[],
     isRead: Boolean(row.is_read),
     createdAt: row.created_at,
     taskTitle: row.task_title,
@@ -396,11 +405,75 @@ function migrateBriefsTable(database: DatabaseSync) {
     )
     .get() as { sql: string } | undefined;
 
-  if (!briefsTable || briefsTable.sql.includes("is_read")) {
+  if (!briefsTable) {
     return;
   }
 
-  database.exec("ALTER TABLE briefs ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0;");
+  const needsIsRead = !briefsTable.sql.includes("is_read");
+  const needsScores = !briefsTable.sql.includes("relevance_score");
+
+  if (!needsIsRead && !needsScores) {
+    return;
+  }
+
+  if (!needsScores) {
+    database.exec("ALTER TABLE briefs ADD COLUMN is_read INTEGER NOT NULL DEFAULT 0;");
+    return;
+  }
+
+  database.exec(`
+    PRAGMA foreign_keys = OFF;
+    BEGIN;
+
+    CREATE TABLE briefs_migrated (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      why_it_matters TEXT NOT NULL,
+      source_citations TEXT NOT NULL,
+      relevance_score REAL NOT NULL DEFAULT 0,
+      importance_score REAL NOT NULL DEFAULT 0,
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      is_read INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    INSERT INTO briefs_migrated (
+      id,
+      task_id,
+      title,
+      summary,
+      why_it_matters,
+      source_citations,
+      relevance_score,
+      importance_score,
+      tags_json,
+      is_read,
+      created_at
+    )
+    SELECT
+      id,
+      task_id,
+      title,
+      summary,
+      why_it_matters,
+      source_citations,
+      0.5,
+      0.5,
+      '[]',
+      CASE WHEN instr(sql, 'is_read') > 0 THEN is_read ELSE 0 END,
+      created_at
+    FROM briefs
+    CROSS JOIN (SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'briefs');
+
+    DROP TABLE briefs;
+    ALTER TABLE briefs_migrated RENAME TO briefs;
+
+    COMMIT;
+    PRAGMA foreign_keys = ON;
+  `);
 }
 
 function migrateTasksTable(database: DatabaseSync) {
@@ -549,6 +622,9 @@ export function createStore(
         summary TEXT NOT NULL,
         why_it_matters TEXT NOT NULL,
         source_citations TEXT NOT NULL,
+        relevance_score REAL NOT NULL DEFAULT 0,
+        importance_score REAL NOT NULL DEFAULT 0,
+        tags_json TEXT NOT NULL DEFAULT '[]',
         is_read INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
         FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
@@ -960,6 +1036,9 @@ export function createBriefRecord(
     summary: string;
     whyItMatters: string;
     sourceCitations: string[];
+    relevanceScore?: number;
+    importanceScore?: number;
+    tags?: string[];
   },
 ): string {
   const id = randomUUID();
@@ -974,8 +1053,11 @@ export function createBriefRecord(
         summary,
         why_it_matters,
         source_citations,
+        relevance_score,
+        importance_score,
+        tags_json,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -984,6 +1066,9 @@ export function createBriefRecord(
       input.summary,
       input.whyItMatters,
       JSON.stringify(input.sourceCitations),
+      input.relevanceScore ?? 0.5,
+      input.importanceScore ?? 0.5,
+      JSON.stringify(input.tags ?? []),
       timestamp,
     );
 

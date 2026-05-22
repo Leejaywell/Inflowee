@@ -111,6 +111,9 @@ export async function storeSourceItemsAndCreateBriefs(
       summary: brief.summary,
       whyItMatters: brief.whyItMatters,
       sourceCitations: brief.sourceCitations,
+      relevanceScore: brief.relevanceScore,
+      importanceScore: brief.importanceScore,
+      tags: brief.tags,
     });
   }
 

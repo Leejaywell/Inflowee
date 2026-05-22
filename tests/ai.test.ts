@@ -118,6 +118,9 @@ describe("Core AI Orchestration layer", () => {
     expect(devinBrief?.sourceCitations).toContain("https://cognition.labs/blog/devin-updates-1");
     expect(devinBrief?.sourceCitations).toContain("https://cognition.labs/blog/devin-updates-2");
     expect(devinBrief?.whyItMatters).toContain("AI coding assistants are evolving");
+    expect(devinBrief?.importanceScore).toBeGreaterThan(0);
+    expect(devinBrief?.relevanceScore).toBeGreaterThan(0);
+    expect(devinBrief?.tags).toContain("agent");
 
     const fundingBrief = briefs.find((b) => b.title.includes("Series A"));
     expect(fundingBrief).toBeDefined();
@@ -133,6 +136,9 @@ describe("Core AI Orchestration layer", () => {
         summary: "Autonomous coding agent achieves SWE-bench progress.",
         whyItMatters: "Advancements redefine autocompletes.",
         sourceCitations: ["https://cognition.labs/blog/devin"],
+        relevanceScore: 0.8,
+        importanceScore: 0.9,
+        tags: ["agent"],
         isRead: false,
         createdAt: new Date().toISOString(),
       }
