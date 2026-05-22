@@ -593,6 +593,7 @@ describe("store delivery persistence", () => {
       await finishDeliveryLog(fixture.store, {
         logId,
         status: "success",
+        attemptCount: 2,
         responseStatus: 202,
       });
 
@@ -600,6 +601,7 @@ describe("store delivery persistence", () => {
         expect.objectContaining({
           briefId: fixture.briefId,
           status: "success",
+          attemptCount: 2,
           responseStatus: 202,
         }),
       ]);

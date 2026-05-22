@@ -51,12 +51,6 @@ function getDeliveryRetryDelayMs(attempt: number) {
   );
 }
 
-function formatDeliveryFailureMessage(error: string, attempts: number) {
-  return `${error} Delivery failed after ${attempts} attempt${
-    attempts === 1 ? "" : "s"
-  }.`;
-}
-
 export async function buildDeliveryPayload(input: {
   channel: "webhook";
   brief: {
@@ -211,6 +205,7 @@ export async function deliverStoredBrief(
     await finishDeliveryLog(store, {
       logId,
       status: "success",
+      attemptCount: result.attempts,
       responseStatus: result.responseStatus,
     });
 
@@ -223,7 +218,8 @@ export async function deliverStoredBrief(
   await finishDeliveryLog(store, {
     logId,
     status: "error",
-    error: formatDeliveryFailureMessage(result.error, result.attempts),
+    attemptCount: result.attempts,
+    error: result.error,
   });
 
   return {

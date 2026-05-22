@@ -104,6 +104,7 @@ type DeliveryLogRow = {
   endpoint: string;
   payload_type: "html";
   status: DeliveryStatus;
+  attempt_count: number | null;
   response_status: number | null;
   error: string | null;
   started_at: string;
@@ -253,6 +254,7 @@ export type DeliveryLogRecord = {
   endpoint: string;
   payloadType: "html";
   status: DeliveryStatus;
+  attemptCount: number | null;
   responseStatus: number | null;
   error: string | null;
   startedAt: string;
@@ -384,6 +386,7 @@ function mapDeliveryLog(row: DeliveryLogRow): DeliveryLogRecord {
     endpoint: row.endpoint,
     payloadType: row.payload_type,
     status: row.status,
+    attemptCount: row.attempt_count,
     responseStatus: row.response_status,
     error: row.error,
     startedAt: row.started_at,
@@ -572,6 +575,12 @@ function migrateSyncRunsTable(database: DatabaseSync) {
 }
 
 function migrateDeliveryLogsTable(database: DatabaseSync) {
+  const deliveryLogsTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'delivery_logs'",
+    )
+    .get() as { sql: string } | undefined;
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS delivery_logs (
       id TEXT PRIMARY KEY,
@@ -579,6 +588,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       endpoint TEXT NOT NULL,
       payload_type TEXT NOT NULL CHECK(payload_type IN ('html')),
       status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+      attempt_count INTEGER,
       response_status INTEGER,
       error TEXT,
       started_at TEXT NOT NULL,
@@ -589,6 +599,10 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
     CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at
       ON delivery_logs(brief_id, started_at DESC);
   `);
+
+  if (deliveryLogsTable && !deliveryLogsTable.sql.includes("attempt_count")) {
+    database.exec("ALTER TABLE delivery_logs ADD COLUMN attempt_count INTEGER;");
+  }
 }
 
 function migrateBriefsTable(database: DatabaseSync) {
@@ -1005,6 +1019,7 @@ export function createStore(
         endpoint TEXT NOT NULL,
         payload_type TEXT NOT NULL CHECK(payload_type IN ('html')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+        attempt_count INTEGER,
         response_status INTEGER,
         error TEXT,
         started_at TEXT NOT NULL,
@@ -1260,27 +1275,31 @@ function mapPrismaSyncRun(run: {
   };
 }
 
-function mapPrismaDeliveryLog(log: {
+type PrismaDeliveryLogRow = {
   id: string;
-  briefId: string;
+  brief_id: string;
   endpoint: string;
-  payloadType: string;
-  status: string;
-  responseStatus: number | null;
+  payload_type: "html";
+  status: DeliveryStatus;
+  attempt_count: number | null;
+  response_status: number | null;
   error: string | null;
-  startedAt: Date;
-  finishedAt: Date | null;
-}): DeliveryLogRecord {
+  started_at: Date;
+  finished_at: Date | null;
+};
+
+function mapPrismaDeliveryLogRow(row: PrismaDeliveryLogRow): DeliveryLogRecord {
   return {
-    id: log.id,
-    briefId: log.briefId,
-    endpoint: log.endpoint,
-    payloadType: log.payloadType as "html",
-    status: log.status as DeliveryStatus,
-    responseStatus: log.responseStatus,
-    error: log.error,
-    startedAt: log.startedAt.toISOString(),
-    finishedAt: log.finishedAt?.toISOString() ?? null,
+    id: row.id,
+    briefId: row.brief_id,
+    endpoint: row.endpoint,
+    payloadType: row.payload_type,
+    status: row.status,
+    attemptCount: row.attempt_count,
+    responseStatus: row.response_status,
+    error: row.error,
+    startedAt: row.started_at.toISOString(),
+    finishedAt: row.finished_at?.toISOString() ?? null,
   };
 }
 
@@ -2385,23 +2404,25 @@ export async function finishDeliveryLog(
   input: {
     logId: string;
     status: "success" | "error";
+    attemptCount?: number | null;
     responseStatus?: number | null;
     error?: string | null;
   },
 ) {
   if (store.prisma) {
-    await store.prisma.deliveryLog.update({
-      where: { id: input.logId },
-      data: {
-        status: input.status,
-        responseStatus: input.responseStatus ?? null,
-        error:
-          input.status === "error"
-            ? (input.error ?? "Unknown delivery error.")
-            : null,
-        finishedAt: new Date(),
-      },
-    });
+    await store.prisma.$executeRaw`
+      UPDATE "DeliveryLog"
+      SET "status" = ${input.status},
+          "attemptCount" = ${input.attemptCount ?? null},
+          "responseStatus" = ${input.responseStatus ?? null},
+          "error" = ${
+            input.status === "error"
+              ? (input.error ?? "Unknown delivery error.")
+              : null
+          },
+          "finishedAt" = ${new Date()}
+      WHERE "id" = ${input.logId}
+    `;
 
     return;
   }
@@ -2410,6 +2431,7 @@ export async function finishDeliveryLog(
     .prepare(
       `UPDATE delivery_logs
        SET status = ?,
+           attempt_count = ?,
            response_status = ?,
            error = ?,
            finished_at = ?
@@ -2417,6 +2439,7 @@ export async function finishDeliveryLog(
     )
     .run(
       input.status,
+      input.attemptCount ?? null,
       input.responseStatus ?? null,
       input.status === "error"
         ? (input.error ?? "Unknown delivery error.")
@@ -2432,13 +2455,25 @@ export async function listRecentDeliveryLogsByBrief(
   limit = 10,
 ): Promise<DeliveryLogRecord[]> {
   if (store.prisma) {
-    const rows = await store.prisma.deliveryLog.findMany({
-      where: { briefId },
-      orderBy: { startedAt: "desc" },
-      take: limit,
-    });
+    const rows = await store.prisma.$queryRaw<PrismaDeliveryLogRow[]>`
+      SELECT
+        "id",
+        "briefId" AS brief_id,
+        "endpoint",
+        "payloadType" AS payload_type,
+        "status",
+        "attemptCount" AS attempt_count,
+        "responseStatus" AS response_status,
+        "error",
+        "startedAt" AS started_at,
+        "finishedAt" AS finished_at
+      FROM "DeliveryLog"
+      WHERE "briefId" = ${briefId}
+      ORDER BY "startedAt" DESC
+      LIMIT ${limit}
+    `;
 
-    return rows.map(mapPrismaDeliveryLog);
+    return rows.map(mapPrismaDeliveryLogRow);
   }
 
   const rows = store.database
@@ -2458,12 +2493,24 @@ export async function listRecentDeliveryLogs(
   limit = 20,
 ): Promise<DeliveryLogRecord[]> {
   if (store.prisma) {
-    const rows = await store.prisma.deliveryLog.findMany({
-      orderBy: { startedAt: "desc" },
-      take: limit,
-    });
+    const rows = await store.prisma.$queryRaw<PrismaDeliveryLogRow[]>`
+      SELECT
+        "id",
+        "briefId" AS brief_id,
+        "endpoint",
+        "payloadType" AS payload_type,
+        "status",
+        "attemptCount" AS attempt_count,
+        "responseStatus" AS response_status,
+        "error",
+        "startedAt" AS started_at,
+        "finishedAt" AS finished_at
+      FROM "DeliveryLog"
+      ORDER BY "startedAt" DESC
+      LIMIT ${limit}
+    `;
 
-    return rows.map(mapPrismaDeliveryLog);
+    return rows.map(mapPrismaDeliveryLogRow);
   }
 
   const rows = store.database

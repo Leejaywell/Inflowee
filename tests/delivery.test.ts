@@ -240,6 +240,7 @@ describe("webhook delivery transport", () => {
           id: logId,
           briefId,
           status: "success",
+          attemptCount: null,
           responseStatus: 202,
         }),
       ]);
@@ -304,6 +305,7 @@ describe("webhook delivery transport", () => {
           expect.objectContaining({
             briefId,
             status: "success",
+            attemptCount: 1,
             responseStatus: 202,
           }),
         ]);
@@ -366,7 +368,8 @@ describe("webhook delivery transport", () => {
           expect.objectContaining({
             briefId,
             status: "error",
-            error: expect.stringContaining("Delivery failed after 3 attempts."),
+            attemptCount: 3,
+            error: "Webhook delivery failed with status 500: nope",
           }),
         ]);
       } finally {

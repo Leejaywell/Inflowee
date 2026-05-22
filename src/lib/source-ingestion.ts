@@ -129,7 +129,9 @@ export async function storeSourceItemsAndCreateBriefs(
 
     if (webhookSettings.endpoint) {
       try {
-        await queueBriefDelivery(briefId);
+        await queueBriefDelivery(briefId, {
+          requestKey: briefId,
+        });
       } catch (error) {
         console.error(`Failed to queue webhook delivery for brief ${briefId}:`, error);
       }

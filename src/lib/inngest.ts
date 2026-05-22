@@ -94,7 +94,9 @@ export function handleBriefDeliveryRequested(data: BriefDeliveryEventData) {
     return existingRun;
   }
 
-  const runPromise = runBriefDeliveryEvent(data);
+  const runPromise = runBriefDeliveryEvent(data).finally(() => {
+    briefDeliveryRequestRuns.delete(requestRunId);
+  });
   briefDeliveryRequestRuns.set(requestRunId, runPromise);
 
   return runPromise;

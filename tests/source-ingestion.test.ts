@@ -3,6 +3,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { afterEach } from "vitest";
 
 import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
 import {
@@ -16,6 +17,12 @@ import {
   listSourcesByTask,
 } from "@/lib/store";
 import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
+
+afterEach(() => {
+  vi.resetModules();
+  vi.clearAllMocks();
+  vi.unmock("@/lib/inngest");
+});
 
 describe("syncSourceById", () => {
   it("ingests a real feed into items and briefs", async () => {
@@ -136,6 +143,71 @@ describe("syncSourceById", () => {
       expect(second).toMatchObject({ ok: true, createdBriefCount: 0 });
 
       expect(await listBriefs(store)).toHaveLength(1);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("queues automatic brief delivery with a stable request key", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+    const queueBriefDeliveryMock = vi.fn().mockResolvedValue({ ids: ["evt_1"] });
+
+    vi.resetModules();
+    vi.doMock("@/lib/inngest", () => ({
+      queueBriefDelivery: queueBriefDeliveryMock,
+    }));
+
+    try {
+      const { syncSourceById: syncSourceByIdWithMock } = await import(
+        "@/lib/source-ingestion"
+      );
+      const spaceId = await createSpaceRecord(store, { name: "Space" });
+      const taskId = await createTaskRecord(store, {
+        spaceId,
+        title: "Task",
+        taskType: "TOPIC",
+        userPrompt: "Prompt",
+      });
+      const sourceId = await createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Feed",
+        url: "https://example.com/feed.xml",
+      });
+
+      store.database
+        .prepare(
+          "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)",
+        )
+        .run(
+          "webhook_endpoint",
+          "https://example.com/webhook",
+          "2026-05-22T00:00:00.000Z",
+        );
+
+      const xml = `
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>Post A</title>
+              <link>https://example.com/a</link>
+              <description>Content A</description>
+            </item>
+          </channel>
+        </rss>
+      `;
+
+      const result = await syncSourceByIdWithMock(store, sourceId, {
+        fetchSourceFeedImpl: vi.fn().mockResolvedValue(xml),
+      });
+
+      expect(result).toMatchObject({ ok: true, createdBriefCount: 1 });
+      const [brief] = await listBriefs(store);
+      expect(queueBriefDeliveryMock).toHaveBeenCalledWith(brief?.id, {
+        requestKey: brief?.id,
+      });
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });

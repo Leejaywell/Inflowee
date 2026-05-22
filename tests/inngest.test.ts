@@ -177,7 +177,7 @@ describe("runScheduledSyncEvent", () => {
     }
   });
 
-  it("deduplicates duplicate delivery events for the same brief", async () => {
+  it("deduplicates in-flight duplicate delivery events for the same brief", async () => {
     const deliverStoredBriefMock = vi.fn().mockResolvedValue({
       status: "success",
       responseStatus: 202,
@@ -200,11 +200,67 @@ describe("runScheduledSyncEvent", () => {
       const listDeliveryLogsByBriefId = async (briefId: string) =>
         deliveryLogs.filter((candidateBriefId) => candidateBriefId === briefId);
 
-      await handleBriefDeliveryRequested({ briefId: "brief-1", requestKey: "same-key" });
-      await handleBriefDeliveryRequested({ briefId: "brief-1", requestKey: "same-key" });
+      await Promise.all([
+        handleBriefDeliveryRequested({ briefId: "brief-1", requestKey: "same-key" }),
+        handleBriefDeliveryRequested({ briefId: "brief-1", requestKey: "same-key" }),
+      ]);
 
       expect(deliverStoredBriefMock).toHaveBeenCalledTimes(1);
       expect(await listDeliveryLogsByBriefId("brief-1")).toHaveLength(1);
+    } finally {
+      vi.resetModules();
+    }
+  });
+
+  it("only collapses duplicate delivery events while the first run is in flight", async () => {
+    const deliverStoredBriefMock = vi.fn();
+    let resolveFirstRun: ((value: { status: "success"; responseStatus: number }) => void) | null =
+      null;
+
+    deliverStoredBriefMock
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ status: "success"; responseStatus: number }>((resolve) => {
+            resolveFirstRun = resolve;
+          }),
+      )
+      .mockResolvedValue({
+        status: "success",
+        responseStatus: 202,
+      });
+
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      getDefaultRuntimeStore: vi.fn(() => ({ database: {} })),
+    }));
+    vi.doMock("@/lib/delivery", () => ({
+      deliverStoredBrief: deliverStoredBriefMock,
+    }));
+
+    try {
+      const { handleBriefDeliveryRequested } = await import("@/lib/inngest");
+
+      const firstRun = handleBriefDeliveryRequested({
+        briefId: "brief-1",
+        requestKey: "same-key",
+      });
+      const secondRun = handleBriefDeliveryRequested({
+        briefId: "brief-1",
+        requestKey: "same-key",
+      });
+
+      expect(firstRun).toBe(secondRun);
+      expect(deliverStoredBriefMock).toHaveBeenCalledTimes(1);
+
+      resolveFirstRun?.({ status: "success", responseStatus: 202 });
+      await firstRun;
+
+      await handleBriefDeliveryRequested({
+        briefId: "brief-1",
+        requestKey: "same-key",
+      });
+
+      expect(deliverStoredBriefMock).toHaveBeenCalledTimes(2);
     } finally {
       vi.resetModules();
     }

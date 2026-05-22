@@ -146,6 +146,7 @@ model DeliveryLog {
   endpoint       String
   payloadType    String
   status         String
+  attemptCount   Int?
   responseStatus Int?
   error          String?
   startedAt      DateTime
