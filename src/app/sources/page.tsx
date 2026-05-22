@@ -5,6 +5,7 @@ import {
   runSyncAll,
   updateSourceSchedule,
 } from "@/app/actions";
+import Link from "next/link";
 import {
   defaultStore,
   listRecentSyncRunsBySource,
@@ -294,6 +295,12 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                                   Delete
                                 </button>
                               </form>
+                              <Link
+                                href={`/sources/${source.id}`}
+                                className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"
+                              >
+                                Diagnostics
+                              </Link>
                             </div>
                           </div>
                           <p className="mt-2 break-all text-sm leading-6 text-stone-600">

@@ -2,8 +2,9 @@
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { render, screen } from "@testing-library/react";
 
-import { extractPageContent } from "@/lib/page-extract";
+import { extractPageContent, extractPageDiagnostics } from "@/lib/page-extract";
 
 const fixtureHtml = readFileSync(
   join(__dirname, "fixtures", "sample-page.html"),
@@ -11,6 +12,12 @@ const fixtureHtml = readFileSync(
 );
 
 describe("extractPageContent", () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.unmock("@/lib/store");
+    vi.unmock("@/lib/source-sync");
+  });
+
   it("extracts title, summary, and canonical URL from fixture HTML", () => {
     const result = extractPageContent(
       fixtureHtml,
@@ -74,5 +81,53 @@ describe("extractPageContent", () => {
 
     expect(result.summary!.length).toBeLessThanOrEqual(500);
     expect(result.summary).toContain("...");
+  });
+
+  it("returns extraction warnings alongside page diagnostics", () => {
+    const html = `
+      <html>
+        <head><title>Simple Page</title></head>
+        <body><p>Only body text is present.</p></body>
+      </html>
+    `;
+
+    const result = extractPageDiagnostics(html, "https://example.com/simple");
+
+    expect(result.warnings).toContain("missing meta description");
+    expect(result.rawPreviewText).toContain("Only body text is present.");
+  });
+
+  it("renders the source diagnostics page", async () => {
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: {},
+      getSourceById: vi.fn().mockResolvedValue({
+        id: "source-1",
+        title: "Example page",
+        url: "https://example.com/page",
+        sourceType: "PAGE",
+        status: "idle",
+        lastSyncedAt: null,
+        nextSyncAt: null,
+        lastError: null,
+      }),
+      listRecentSyncRunsBySource: vi.fn().mockResolvedValue([]),
+    }));
+    vi.doMock("@/lib/source-sync", () => ({
+      fetchSourceFeed: vi
+        .fn()
+        .mockResolvedValue("<html><head><title>Example page</title></head><body><p>Preview text.</p></body></html>"),
+    }));
+
+    const { default: MockedPage } = await import("@/app/sources/[sourceId]/page");
+    const view = await MockedPage({
+      params: Promise.resolve({ sourceId: "source-1" }),
+    });
+
+    render(view);
+
+    expect(
+      screen.getByRole("heading", { name: "Example page" }),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Extraction diagnostics")).toBeInTheDocument();
   });
 });

@@ -7,10 +7,25 @@ export type ExtractedListItem = {
   publishedAt: string | null;
 };
 
+export type StructuredListDiagnostics = {
+  items: ExtractedListItem[];
+  warnings: string[];
+  rawPreviewHtml: string;
+};
+
 export async function extractStructuredList(
   html: string,
   baseUrl: string
 ): Promise<ExtractedListItem[]> {
+  const diagnostics = await extractStructuredListDiagnostics(html, baseUrl);
+
+  return diagnostics.items;
+}
+
+export async function extractStructuredListDiagnostics(
+  html: string,
+  baseUrl: string
+): Promise<StructuredListDiagnostics> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey) {
     try {
@@ -44,12 +59,18 @@ Respond in strict JSON format:
 
       const parsed = JSON.parse(responseText);
       if (parsed && Array.isArray(parsed.items)) {
-        return parsed.items.map((item: { title?: string; canonicalUrl?: string; summary?: string }) => ({
+        const items = parsed.items.map((item: { title?: string; canonicalUrl?: string; summary?: string }) => ({
           title: item.title || "Untitled",
           canonicalUrl: item.canonicalUrl || baseUrl,
           summary: item.summary || null,
           publishedAt: new Date().toISOString(),
         }));
+
+        return {
+          items,
+          warnings: collectStructuredWarnings(items, slicedHtml),
+          rawPreviewHtml: slicedHtml.slice(0, 500),
+        };
       }
     } catch (e) {
       console.warn("Real OpenAI failed in extractStructuredList, using heuristics fallback", e);
@@ -179,7 +200,34 @@ Respond in strict JSON format:
     });
   }
 
-  return items.slice(0, 15);
+  const finalItems = items.slice(0, 15);
+
+  return {
+    items: finalItems,
+    warnings: collectStructuredWarnings(finalItems, html),
+    rawPreviewHtml: html.slice(0, 500),
+  };
+}
+
+function collectStructuredWarnings(items: ExtractedListItem[], html: string) {
+  const warnings: string[] = [];
+
+  if (items.length === 0) {
+    warnings.push("no list items extracted");
+  }
+
+  if (items.some((item) => !item.summary)) {
+    warnings.push("missing summary on one or more items");
+  }
+
+  if (
+    items.some((item) => !item.publishedAt) ||
+    !/(<time\b|datetime=|published|posted)/i.test(html)
+  ) {
+    warnings.push("missing published date");
+  }
+
+  return warnings;
 }
 
 async function callOpenAIChatCompletion(messages: Array<{ role: string; content: string }>, jsonMode = false): Promise<string> {

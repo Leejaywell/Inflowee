@@ -1,6 +1,9 @@
 /// <reference types="vitest/globals" />
 
-import { extractStructuredList } from "@/lib/structured-extract";
+import {
+  extractStructuredList,
+  extractStructuredListDiagnostics,
+} from "@/lib/structured-extract";
 
 describe("Structured List Ingestion Extractor", () => {
   it("extracts items from HTML with lists using heuristics", async () => {
@@ -81,5 +84,28 @@ describe("Structured List Ingestion Extractor", () => {
     expect(items[0].canonicalUrl).toBe("https://news.ycombinator.com/item?id=123");
     expect(items[1].title).toBe("Show HN: Inflowee SQLite Store");
     expect(items[1].canonicalUrl).toBe("https://news.ycombinator.com/item?id=456");
+  });
+
+  it("returns extraction warnings alongside structured fields", async () => {
+    const html = `
+      <html>
+        <body>
+          <ul>
+            <li class="item">
+              <a href="/jobs/1">Founding engineer</a>
+            </li>
+          </ul>
+        </body>
+      </html>
+    `;
+
+    const result = await extractStructuredListDiagnostics(
+      html,
+      "https://example.com/jobs",
+    );
+
+    expect(result.items).toHaveLength(1);
+    expect(result.warnings).toContain("missing summary on one or more items");
+    expect(result.warnings).toContain("missing published date");
   });
 });

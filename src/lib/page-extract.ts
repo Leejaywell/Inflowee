@@ -6,6 +6,11 @@ export type ExtractedPage = {
   canonicalUrl: string;
 };
 
+export type ExtractedPageDiagnostics = ExtractedPage & {
+  warnings: string[];
+  rawPreviewText: string;
+};
+
 /**
  * Extract title, meta description, and body text from an HTML page.
  * Uses a priority chain: <article> → <main> → <body> for content.
@@ -14,6 +19,19 @@ export function extractPageContent(
   html: string,
   url: string,
 ): ExtractedPage {
+  const diagnostics = extractPageDiagnostics(html, url);
+
+  return {
+    title: diagnostics.title,
+    summary: diagnostics.summary,
+    canonicalUrl: diagnostics.canonicalUrl,
+  };
+}
+
+export function extractPageDiagnostics(
+  html: string,
+  url: string,
+): ExtractedPageDiagnostics {
   const $ = cheerio.load(html);
 
   // Title: og:title → <title> → h1 → fallback
@@ -51,7 +69,23 @@ export function extractPageContent(
     $('meta[property="og:url"]').attr("content")?.trim() ||
     url;
 
-  return { title, summary, canonicalUrl };
+  const warnings: string[] = [];
+
+  if (!metaSummary) {
+    warnings.push("missing meta description");
+  }
+
+  if (!bodyText) {
+    warnings.push("missing body text");
+  }
+
+  return {
+    title,
+    summary,
+    canonicalUrl,
+    warnings,
+    rawPreviewText: truncate(bodyText, 320),
+  };
 }
 
 function truncate(text: string, maxLength: number): string {
