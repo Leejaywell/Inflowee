@@ -4,6 +4,11 @@ import { notFound } from "next/navigation";
 import { sendBriefToWebhook } from "@/app/actions";
 import { ChatDrawer } from "@/components/chat-drawer";
 import {
+  assertBriefAccess,
+  getActorScopedChatScopeId,
+  requireSessionActor,
+} from "@/lib/auth";
+import {
   defaultStore,
   getBriefById,
   getWebhookSettings,
@@ -23,6 +28,7 @@ export default async function BriefDetailPage({
   params: Promise<{ briefId: string }>;
   searchParams?: Promise<{ delivered?: string; error?: string }>;
 }) {
+  const actor = await requireSessionActor();
   const [{ briefId }, query] = await Promise.all([params, searchParams]);
   const brief = await getBriefById(defaultStore, briefId);
 
@@ -30,11 +36,23 @@ export default async function BriefDetailPage({
     notFound();
   }
 
+  try {
+    await assertBriefAccess(defaultStore, {
+      actorId: actor.id,
+      briefId,
+      minimumRole: "viewer",
+    });
+  } catch {
+    notFound();
+  }
+
+  const actorScopeId = getActorScopedChatScopeId(actor.id, briefId);
+
   const [itemIds, linkedItems, chatThread, webhookSettings, deliveryLogs] =
     await Promise.all([
       listBriefItemIds(defaultStore, briefId),
       listItemsByBriefId(defaultStore, briefId),
-      getOrCreateChatThread(defaultStore, "brief", briefId),
+      getOrCreateChatThread(defaultStore, "brief", actorScopeId),
       getWebhookSettings(defaultStore),
       listRecentDeliveryLogsByBrief(defaultStore, briefId),
     ]);

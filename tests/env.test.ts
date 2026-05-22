@@ -9,6 +9,7 @@ import { envSchema } from "@/lib/env";
 describe("env schema", () => {
   afterEach(() => {
     vi.resetModules();
+    vi.unmock("next/headers");
   });
 
   it("accepts the cloud persistence contract", () => {
@@ -144,5 +145,76 @@ describe("env schema", () => {
       id: expect.any(String),
       email: expect.stringContaining("@"),
     });
+  });
+
+  it("accepts a signed per-request actor when auth secret is configured", async () => {
+    const previousSecret = process.env.INFLOWEE_SESSION_SECRET;
+    process.env.INFLOWEE_SESSION_SECRET = "test-secret";
+
+    vi.doMock("next/headers", () => ({
+      headers: vi.fn().mockResolvedValue({
+        get(name: string) {
+          if (name === "x-inflowee-actor-id") {
+            return "user-2";
+          }
+          if (name === "x-inflowee-actor-email") {
+            return "user-2@example.com";
+          }
+          if (name === "x-inflowee-actor-signature") {
+            return "c03416043a70a8c8dc77e83f97e8bd32dddda986590234be63eecc62a9f0a1b0";
+          }
+          return null;
+        },
+      }),
+    }));
+
+    try {
+      const { getSessionUser } = await import("@/lib/auth");
+
+      await expect(getSessionUser()).resolves.toEqual({
+        id: "user-2",
+        email: "user-2@example.com",
+      });
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.INFLOWEE_SESSION_SECRET;
+      } else {
+        process.env.INFLOWEE_SESSION_SECRET = previousSecret;
+      }
+    }
+  });
+
+  it("rejects an invalid signed request actor instead of trusting it", async () => {
+    const previousSecret = process.env.INFLOWEE_SESSION_SECRET;
+    process.env.INFLOWEE_SESSION_SECRET = "test-secret";
+
+    vi.doMock("next/headers", () => ({
+      headers: vi.fn().mockResolvedValue({
+        get(name: string) {
+          if (name === "x-inflowee-actor-id") {
+            return "user-2";
+          }
+          if (name === "x-inflowee-actor-email") {
+            return "user-2@example.com";
+          }
+          if (name === "x-inflowee-actor-signature") {
+            return "invalid";
+          }
+          return null;
+        },
+      }),
+    }));
+
+    try {
+      const { requireSessionActor } = await import("@/lib/auth");
+
+      await expect(requireSessionActor()).rejects.toThrow("Unauthorized");
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.INFLOWEE_SESSION_SECRET;
+      } else {
+        process.env.INFLOWEE_SESSION_SECRET = previousSecret;
+      }
+    }
   });
 });

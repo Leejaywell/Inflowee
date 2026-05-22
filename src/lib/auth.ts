@@ -1,3 +1,7 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
+import { headers } from "next/headers";
+
 import {
   defaultStore,
   getSpaceMembership,
@@ -17,6 +21,10 @@ export type SessionActor = SessionUser;
 
 const DEFAULT_USER_ID = "local-user";
 const DEFAULT_USER_EMAIL = "local@inflowee.dev";
+const SESSION_SECRET_ENV = "INFLOWEE_SESSION_SECRET";
+const ACTOR_ID_HEADER = "x-inflowee-actor-id";
+const ACTOR_EMAIL_HEADER = "x-inflowee-actor-email";
+const ACTOR_SIGNATURE_HEADER = "x-inflowee-actor-signature";
 
 type SpaceAccessInput = {
   actorId: string;
@@ -53,6 +61,61 @@ function getFallbackSessionUser(): SessionUser | null {
   return { id, email };
 }
 
+function getOperatorActor(): SessionActor | null {
+  return getFallbackSessionUser();
+}
+
+function signActorIdentity(id: string, email: string, secret: string) {
+  return createHmac("sha256", secret)
+    .update(`${id}:${email}`)
+    .digest("hex");
+}
+
+function signaturesMatch(expected: string, received: string) {
+  const expectedBytes = Buffer.from(expected);
+  const receivedBytes = Buffer.from(received);
+
+  if (expectedBytes.length !== receivedBytes.length) {
+    return false;
+  }
+
+  return timingSafeEqual(expectedBytes, receivedBytes);
+}
+
+async function getValidatedRequestActor():
+  Promise<SessionActor | null | "invalid"> {
+  const secret = process.env[SESSION_SECRET_ENV];
+
+  if (!secret) {
+    return null;
+  }
+
+  try {
+    const headerStore = await headers();
+    const id = headerStore.get(ACTOR_ID_HEADER);
+    const email = headerStore.get(ACTOR_EMAIL_HEADER);
+    const signature = headerStore.get(ACTOR_SIGNATURE_HEADER);
+
+    if (!id && !email && !signature) {
+      return null;
+    }
+
+    if (!id || !email || !signature) {
+      return "invalid";
+    }
+
+    const expectedSignature = signActorIdentity(id, email, secret);
+
+    if (!signaturesMatch(expectedSignature, signature)) {
+      return "invalid";
+    }
+
+    return { id, email };
+  } catch {
+    return null;
+  }
+}
+
 function roleSatisfies(role: SpaceRole, minimumRole: SpaceRole) {
   const rank: Record<SpaceRole, number> = {
     viewer: 0,
@@ -64,7 +127,13 @@ function roleSatisfies(role: SpaceRole, minimumRole: SpaceRole) {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-  return getFallbackSessionUser();
+  const requestActor = await getValidatedRequestActor();
+
+  if (requestActor === "invalid") {
+    throw new Error("Unauthorized");
+  }
+
+  return requestActor ?? getOperatorActor();
 }
 
 export async function requireSessionActor(): Promise<SessionActor> {
@@ -75,6 +144,21 @@ export async function requireSessionActor(): Promise<SessionActor> {
   }
 
   return actor;
+}
+
+export async function requireOperatorSessionActor(): Promise<SessionActor> {
+  const actor = await requireSessionActor();
+  const operator = getOperatorActor();
+
+  if (!operator || actor.id !== operator.id) {
+    throw new Error("Forbidden");
+  }
+
+  return actor;
+}
+
+export function getActorScopedChatScopeId(actorId: string, scopeId: string) {
+  return `${scopeId}:actor:${actorId}`;
 }
 
 export async function assertSpaceAccess(

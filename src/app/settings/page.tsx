@@ -1,5 +1,5 @@
 import { saveWebhookEndpoint } from "@/app/actions";
-import { requireSessionActor } from "@/lib/auth";
+import { requireOperatorSessionActor } from "@/lib/auth";
 import { buildDeliveryPayload } from "@/lib/delivery";
 import {
   defaultStore,
@@ -17,7 +17,7 @@ type SettingsPageProps = {
 export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
-  const actor = await requireSessionActor();
+  const actor = await requireOperatorSessionActor();
   const [settings, recentLogs, params] = await Promise.all([
     getWebhookSettings(defaultStore),
     listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),

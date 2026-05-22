@@ -5,6 +5,7 @@ import { Resvg } from "@resvg/resvg-js";
 import { NextResponse } from "next/server";
 import satori from "satori";
 
+import { assertBriefAccess, requireSessionActor } from "@/lib/auth";
 import { BriefCard } from "@/lib/brief-card";
 import { defaultStore, getBriefById } from "@/lib/store";
 
@@ -41,7 +42,19 @@ export async function GET(
   _request: Request,
   context: { params: Promise<{ briefId: string }> },
 ) {
+  const actor = await requireSessionActor();
   const { briefId } = await context.params;
+
+  try {
+    await assertBriefAccess(defaultStore, {
+      actorId: actor.id,
+      briefId,
+      minimumRole: "viewer",
+    });
+  } catch {
+    return new NextResponse("Not found", { status: 404 });
+  }
+
   const brief = await getBriefById(defaultStore, briefId);
 
   if (!brief) {

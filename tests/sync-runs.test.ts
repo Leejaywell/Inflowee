@@ -281,6 +281,42 @@ describe("scheduled sync actions and surfaces", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/sources");
   });
 
+  it("rejects webhook settings updates from a non-operator actor", async () => {
+    const redirect = vi.fn();
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath: vi.fn(),
+    }));
+    vi.doMock("next/navigation", () => ({
+      redirect,
+    }));
+    vi.doMock("@/lib/store", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/store")>("@/lib/store");
+      return {
+        ...actual,
+        defaultStore: { database: {} },
+        saveWebhookSettings: vi.fn(),
+      };
+    });
+    vi.doMock("@/lib/auth", () => ({
+      requireOperatorSessionActor: vi
+        .fn()
+        .mockRejectedValue(new Error("Forbidden")),
+      requireSessionActor: vi.fn(),
+      assertBriefAccess: vi.fn(),
+      assertSourceAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+    }));
+
+    const { saveWebhookEndpoint } = await import("@/app/actions");
+    const formData = new FormData();
+    formData.set("endpoint", "https://example.com/webhook");
+
+    await expect(saveWebhookEndpoint(formData)).rejects.toThrow("Forbidden");
+    expect(redirect).not.toHaveBeenCalled();
+  });
+
   it("renders cadence controls and recent run badges on the sources page", async () => {
     vi.doMock("@/app/actions", () => ({
       createSource: vi.fn(),

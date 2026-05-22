@@ -14,6 +14,7 @@ const fixtureHtml = readFileSync(
 describe("extractPageContent", () => {
   afterEach(() => {
     vi.resetModules();
+    vi.unmock("@/lib/auth");
     vi.unmock("@/lib/store");
     vi.unmock("@/lib/source-sync");
   });
@@ -116,6 +117,13 @@ describe("extractPageContent", () => {
       fetchSourceFeed: vi
         .fn()
         .mockResolvedValue("<html><head><title>Example page</title></head><body><p>Preview text.</p></body></html>"),
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      assertSourceAccess: vi.fn(),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
     }));
 
     const { default: MockedPage } = await import("@/app/sources/[sourceId]/page");

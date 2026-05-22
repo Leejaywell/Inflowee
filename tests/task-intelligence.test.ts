@@ -441,6 +441,9 @@ describe("task intelligence server actions", () => {
       assertBriefAccess: vi.fn(),
       assertSpaceAccess: vi.fn(),
       assertTaskAccess: vi.fn(),
+      getActorScopedChatScopeId: vi.fn((actorId: string, scopeId: string) =>
+        `${scopeId}:actor:${actorId}`,
+      ),
       requireSessionActor: vi.fn().mockResolvedValue({
         id: "local-user",
         email: "local@inflowee.dev",
@@ -456,6 +459,11 @@ describe("task intelligence server actions", () => {
         provenance: "mixed",
       }),
     );
+    expect(getOrCreateChatThread).toHaveBeenCalledWith(
+      defaultStore,
+      "task",
+      "task-1:actor:local-user",
+    );
     expect(createChatMessage).toHaveBeenNthCalledWith(
       2,
       defaultStore,
@@ -466,6 +474,63 @@ describe("task intelligence server actions", () => {
       }),
     );
     expect(revalidatePath).toHaveBeenCalledWith("/spaces/space-1/tasks/task-1");
+  });
+
+  it("clears only the actor-scoped chat thread", async () => {
+    const revalidatePath = vi.fn();
+    const getOrCreateChatThread = vi.fn().mockReturnValue({
+      id: "thread-1",
+      scopeType: "task",
+      scopeId: "task-1:actor:local-user",
+      createdAt: "2026-05-22T00:00:00.000Z",
+    });
+    const deleteChatMessagesByThreadId = vi.fn();
+    const defaultStore = { database: {} };
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath,
+    }));
+    vi.doMock("@/lib/store", () => ({
+      createChatMessage: vi.fn(),
+      createSourceRecord: vi.fn(),
+      defaultStore,
+      deleteChatMessagesByThreadId,
+      getOrCreateChatThread,
+      getTaskById: vi.fn().mockResolvedValue({
+        id: "task-1",
+        spaceId: "space-1",
+      }),
+      listChatMessages: vi.fn(),
+      updateTaskControls: vi.fn(),
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      getActorScopedChatScopeId: vi.fn((actorId: string, scopeId: string) =>
+        `${scopeId}:actor:${actorId}`,
+      ),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
+
+    const { clearChatThread } = await import("@/app/actions-chat");
+
+    await expect(clearChatThread("task", "task-1")).resolves.toEqual({
+      success: true,
+    });
+
+    expect(getOrCreateChatThread).toHaveBeenCalledWith(
+      defaultStore,
+      "task",
+      "task-1:actor:local-user",
+    );
+    expect(deleteChatMessagesByThreadId).toHaveBeenCalledWith(
+      defaultStore,
+      "thread-1",
+    );
   });
 });
 

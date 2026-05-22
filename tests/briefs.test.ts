@@ -20,6 +20,7 @@ import {
 
 afterEach(() => {
   vi.resetModules();
+  vi.unmock("@/lib/auth");
   vi.unmock("@/lib/store");
 });
 
@@ -45,6 +46,98 @@ describe("buildBriefsFromItems", () => {
     expect(
       screen.getByRole("heading", { name: "Brief inbox" }),
     ).toBeInTheDocument();
+  });
+
+  it("renders the brief detail page with actor-scoped chat history", async () => {
+    const getOrCreateChatThread = vi.fn().mockResolvedValue({
+      id: "thread-1",
+      scopeType: "brief",
+      scopeId: "brief-1:actor:local-user",
+      createdAt: "2026-05-22T00:00:00.000Z",
+    });
+
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      getBriefById: vi.fn().mockResolvedValue({
+        id: "brief-1",
+        taskId: "task-1",
+        title: "Launch roundup",
+        summary: "Latest launches.",
+        whyItMatters: "New signal.",
+        sourceCitations: ["https://example.com/launch"],
+        relevanceScore: 0.5,
+        importanceScore: 0.5,
+        tags: [],
+        isRead: false,
+        createdAt: "2026-05-22T00:00:00.000Z",
+        taskTitle: "Agent launches",
+        spaceName: "AI Watch",
+      }),
+      getOrCreateChatThread,
+      getWebhookSettings: vi.fn().mockResolvedValue({ endpoint: null }),
+      listBriefItemIds: vi.fn().mockResolvedValue(["item-1"]),
+      listChatMessages: vi.fn().mockResolvedValue([]),
+      listItemsByBriefId: vi.fn().mockResolvedValue([
+        {
+          id: "item-1",
+          title: "Launch roundup",
+          canonicalUrl: "https://example.com/launch",
+        },
+      ]),
+      listRecentDeliveryLogsByBrief: vi.fn().mockResolvedValue([]),
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      getActorScopedChatScopeId: vi.fn((actorId: string, scopeId: string) =>
+        `${scopeId}:actor:${actorId}`,
+      ),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
+    vi.doMock("@/app/actions", () => ({
+      sendBriefToWebhook: vi.fn(),
+    }));
+
+    const { default: BriefDetailPage } = await import("@/app/inbox/[briefId]/page");
+    const view = await BriefDetailPage({
+      params: Promise.resolve({ briefId: "brief-1" }),
+      searchParams: Promise.resolve({}),
+    });
+
+    render(view);
+
+    expect(getOrCreateChatThread).toHaveBeenCalledWith(
+      { database: {} },
+      "brief",
+      "brief-1:actor:local-user",
+    );
+    expect(
+      screen.getByRole("heading", { name: "Launch roundup" }),
+    ).toBeInTheDocument();
+  });
+
+  it("returns 404 for html digest when brief access is forbidden", async () => {
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn().mockRejectedValue(new Error("Forbidden")),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "user-2",
+        email: "user-2@example.com",
+      }),
+    }));
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      getBriefById: vi.fn(),
+      listItemsByBriefId: vi.fn(),
+    }));
+
+    const { GET } = await import("@/app/inbox/[briefId]/html/route");
+    const response = await GET(new Request("https://example.com"), {
+      params: Promise.resolve({ briefId: "brief-1" }),
+    });
+
+    expect(response.status).toBe(404);
   });
 
   it("turns new feed items into brief records", () => {

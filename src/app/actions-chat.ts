@@ -5,6 +5,7 @@ import {
   assertBriefAccess,
   assertSpaceAccess,
   assertTaskAccess,
+  getActorScopedChatScopeId,
   requireSessionActor,
 } from "@/lib/auth";
 import {
@@ -56,8 +57,10 @@ export async function submitChatMessage(
     });
   }
 
+  const actorScopeId = getActorScopedChatScopeId(actor.id, scopeId);
+
   // 1. Get or create thread
-  const thread = await getOrCreateChatThread(store, scopeType, scopeId);
+  const thread = await getOrCreateChatThread(store, scopeType, actorScopeId);
 
   // 2. Insert user message
   await createChatMessage(store, {
@@ -161,7 +164,8 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
     });
   }
 
-  const thread = await getOrCreateChatThread(store, scopeType, scopeId);
+  const actorScopeId = getActorScopedChatScopeId(actor.id, scopeId);
+  const thread = await getOrCreateChatThread(store, scopeType, actorScopeId);
 
   await deleteChatMessagesByThreadId(store, thread.id);
 

@@ -8,6 +8,7 @@ import {
   assertSourceAccess,
   assertSpaceAccess,
   assertTaskAccess,
+  requireOperatorSessionActor,
   requireSessionActor,
 } from "@/lib/auth";
 import { deliverStoredBrief } from "@/lib/delivery";
@@ -327,7 +328,7 @@ export async function runSyncAll() {
 }
 
 export async function saveWebhookEndpoint(formData: FormData) {
-  await requireSessionActor();
+  await requireOperatorSessionActor();
   const parsed = webhookEndpointSchema.safeParse(getString(formData, "endpoint"));
 
   if (!parsed.success) {

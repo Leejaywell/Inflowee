@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { assertSourceAccess, requireSessionActor } from "@/lib/auth";
 import { extractPageDiagnostics } from "@/lib/page-extract";
 import { fetchSourceFeed } from "@/lib/source-sync";
 import {
@@ -17,10 +18,21 @@ export default async function SourceDiagnosticsPage({
 }: {
   params: Promise<{ sourceId: string }>;
 }) {
+  const actor = await requireSessionActor();
   const { sourceId } = await params;
   const source = await getSourceById(defaultStore, sourceId);
 
   if (!source) {
+    notFound();
+  }
+
+  try {
+    await assertSourceAccess(defaultStore, {
+      actorId: actor.id,
+      sourceId,
+      minimumRole: "viewer",
+    });
+  } catch {
     notFound();
   }
 
