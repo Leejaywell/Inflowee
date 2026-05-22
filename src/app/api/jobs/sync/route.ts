@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server";
 
-import { defaultStore } from "@/lib/store";
-import { syncDueSources } from "@/lib/sync-runs";
+import { enqueueScheduledSync } from "@/lib/inngest";
 
 export async function POST() {
-  const result = await syncDueSources(defaultStore);
-  return NextResponse.json(result);
+  const now = new Date().toISOString();
+  const { ids } = await enqueueScheduledSync({ now });
+
+  return NextResponse.json({
+    queued: true,
+    eventIds: ids,
+    now,
+  });
 }

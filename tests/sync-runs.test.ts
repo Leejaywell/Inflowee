@@ -100,19 +100,13 @@ describe("syncDueSources", () => {
   });
 
   it("returns scheduler summaries from the route handler", async () => {
-    const syncDueSourcesMock = vi.fn().mockResolvedValue({
-      synced: 2,
-      failed: 1,
-      skipped: 3,
-      results: [],
+    const enqueueScheduledSyncMock = vi.fn().mockResolvedValue({
+      ids: ["evt_123"],
     });
 
     vi.resetModules();
-    vi.doMock("@/lib/sync-runs", () => ({
-      syncDueSources: syncDueSourcesMock,
-    }));
-    vi.doMock("@/lib/store", () => ({
-      defaultStore: { database: {} },
+    vi.doMock("@/lib/inngest", () => ({
+      enqueueScheduledSync: enqueueScheduledSyncMock,
     }));
 
     const { POST } = await import("@/app/api/jobs/sync/route");
@@ -121,11 +115,14 @@ describe("syncDueSources", () => {
 
     expect(payload).toEqual(
       expect.objectContaining({
-        synced: 2,
-        failed: 1,
-        skipped: 3,
+        queued: true,
+        eventIds: ["evt_123"],
+        now: expect.any(String),
       }),
     );
+    expect(enqueueScheduledSyncMock).toHaveBeenCalledWith({
+      now: expect.any(String),
+    });
   });
 });
 
