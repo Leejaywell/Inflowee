@@ -19,6 +19,13 @@ import {
 } from "@/lib/store";
 import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
 
+const samplePayload = {
+  briefId: "brief-1",
+  format: "html" as const,
+  title: "OpenAI ships a notable update",
+  html: "<html><body>digest</body></html>",
+};
+
 describe("brief HTML rendering", () => {
   const brief: BriefRecord = {
     id: "brief-1",
@@ -92,12 +99,7 @@ describe("webhook delivery transport", () => {
 
     const status = await deliverBriefDigest({
       endpoint: "https://example.com/webhook",
-      payload: {
-        briefId: "brief-1",
-        format: "html",
-        title: "OpenAI ships a notable update",
-        html: "<html><body>digest</body></html>",
-      },
+      payload: samplePayload,
       fetchImpl,
     });
 
@@ -109,12 +111,7 @@ describe("webhook delivery transport", () => {
         headers: {
           "content-type": "application/json",
         },
-        body: JSON.stringify({
-          briefId: "brief-1",
-          format: "html",
-          title: "OpenAI ships a notable update",
-          html: "<html><body>digest</body></html>",
-        }),
+        body: JSON.stringify(samplePayload),
       }),
     );
   });
@@ -129,12 +126,7 @@ describe("webhook delivery transport", () => {
     await expect(
       deliverBriefDigest({
         endpoint: "https://example.com/webhook",
-        payload: {
-          briefId: "brief-1",
-          format: "html",
-          title: "OpenAI ships a notable update",
-          html: "<html><body>digest</body></html>",
-        },
+        payload: samplePayload,
         fetchImpl,
       }),
     ).rejects.toThrow("Webhook delivery failed with status 500: boom");
@@ -155,12 +147,7 @@ describe("webhook delivery transport", () => {
 
     const result = await deliverBriefWithRetry({
       endpoint: "https://example.com/webhook",
-      payload: {
-        briefId: "brief-1",
-        format: "html",
-        title: "OpenAI ships a notable update",
-        html: "<html><body>digest</body></html>",
-      },
+      payload: samplePayload,
       fetchImpl,
       maxAttempts: 2,
     });
@@ -169,7 +156,20 @@ describe("webhook delivery transport", () => {
     expect(result).toEqual({
       status: "success",
       responseStatus: 202,
+      attempts: 2,
     });
+  });
+
+  it("records the final failed attempt after max retries", async () => {
+    const result = await deliverBriefWithRetry({
+      endpoint: "https://example.com/hook",
+      payload: samplePayload,
+      fetchImpl: vi.fn().mockResolvedValue(new Response("nope", { status: 500 })),
+      maxAttempts: 3,
+    });
+
+    expect(result.status).toBe("error");
+    expect(result.attempts).toBe(3);
   });
 
   it.runIf(Boolean(process.env.DATABASE_URL))(

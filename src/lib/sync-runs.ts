@@ -13,6 +13,14 @@ export type SyncDueSourcesResult = {
   results: SyncSourceResult[];
 };
 
+function getSyncErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message;
+  }
+
+  return "Unknown sync error.";
+}
+
 export async function syncDueSources(
   store: Store,
   options?: {
@@ -28,7 +36,18 @@ export async function syncDueSources(
   let failed = 0;
 
   for (const source of dueSources) {
-    const result = await syncImpl(store, source.id);
+    let result: SyncSourceResult;
+
+    try {
+      result = await syncImpl(store, source.id);
+    } catch (error) {
+      result = {
+        ok: false,
+        error: getSyncErrorMessage(error),
+        source,
+      };
+    }
+
     results.push(result);
 
     if (result.ok) {

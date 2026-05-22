@@ -13,7 +13,13 @@ type ScheduledSyncEventData = {
 
 type BriefDeliveryEventData = {
   briefId: string;
+  requestKey?: string;
 };
+
+const briefDeliveryRequestRuns = new Map<
+  string,
+  ReturnType<typeof runBriefDeliveryEvent>
+>();
 
 export const inngest = new Inngest({
   id: "inflowee",
@@ -30,10 +36,26 @@ export async function enqueueScheduledSync(
   });
 }
 
-export async function queueBriefDelivery(briefId: string): Promise<{ ids: string[] }> {
+function buildBriefDeliveryEventId(briefId: string, requestKey?: string) {
+  if (!requestKey) {
+    return undefined;
+  }
+
+  return `brief-delivery:${briefId}:${requestKey}`;
+}
+
+export async function queueBriefDelivery(
+  briefId: string,
+  options?: {
+    requestKey?: string;
+  },
+): Promise<{ ids: string[] }> {
+  const requestKey = options?.requestKey;
+
   return inngest.send({
+    id: buildBriefDeliveryEventId(briefId, requestKey),
     name: BRIEF_DELIVERY_EVENT,
-    data: { briefId },
+    data: requestKey ? { briefId, requestKey } : { briefId },
   });
 }
 
@@ -59,6 +81,25 @@ export async function runBriefDeliveryEvent(data: BriefDeliveryEventData) {
   });
 }
 
+export function handleBriefDeliveryRequested(data: BriefDeliveryEventData) {
+  const requestRunId = buildBriefDeliveryEventId(data.briefId, data.requestKey);
+
+  if (!requestRunId) {
+    return runBriefDeliveryEvent(data);
+  }
+
+  const existingRun = briefDeliveryRequestRuns.get(requestRunId);
+
+  if (existingRun) {
+    return existingRun;
+  }
+
+  const runPromise = runBriefDeliveryEvent(data);
+  briefDeliveryRequestRuns.set(requestRunId, runPromise);
+
+  return runPromise;
+}
+
 export const scheduledSyncFunction = inngest.createFunction(
   {
     id: "scheduled-source-sync",
@@ -81,6 +122,6 @@ export const briefDeliveryFunction = inngest.createFunction(
   },
   async ({ event, step }) =>
     step.run("deliver-brief", () =>
-      runBriefDeliveryEvent(event.data as BriefDeliveryEventData),
+      handleBriefDeliveryRequested(event.data as BriefDeliveryEventData),
     ),
 );

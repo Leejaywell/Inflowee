@@ -24,10 +24,12 @@ type FetchLike = typeof fetch;
 
 export type DeliveryAttemptResult =
   | {
+      attempts: number;
       status: "success";
       responseStatus: number;
     }
   | {
+      attempts: number;
       status: "error";
       error: string;
     };
@@ -114,6 +116,7 @@ export async function deliverBriefWithRetry(input: {
       const responseStatus = await deliverBriefDigest(input);
 
       return {
+        attempts: attempt,
         status: "success",
         responseStatus,
       };
@@ -124,6 +127,7 @@ export async function deliverBriefWithRetry(input: {
   }
 
   return {
+    attempts: maxAttempts,
     status: "error",
     error: lastError,
   };

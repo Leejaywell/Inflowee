@@ -100,6 +100,51 @@ describe("syncDueSources", () => {
     }
   });
 
+  it("records a failed result when syncing a due source throws", async () => {
+    const fixture = createFixture();
+
+    try {
+      const spaceId = await createSpaceRecord(fixture.store, { name: "AI" });
+      const taskId = await createTaskRecord(fixture.store, {
+        spaceId,
+        title: "Task",
+        taskType: "TOPIC",
+        userPrompt: "Track signals",
+      });
+      const dueSourceId = await createSourceRecord(fixture.store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Due source",
+        url: "https://example.com/due.xml",
+      });
+
+      fixture.store.database
+        .prepare("UPDATE sources SET next_sync_at = ? WHERE id = ?")
+        .run("2026-05-22T07:58:00.000Z", dueSourceId);
+
+      const dueSource = await getSourceById(fixture.store, dueSourceId);
+      const result = await syncDueSources(fixture.store, {
+        now: "2026-05-22T08:00:00.000Z",
+        syncSourceByIdImpl: vi.fn().mockRejectedValue(new Error("Feed request timed out.")),
+      });
+
+      expect(result.synced).toBe(0);
+      expect(result.failed).toBe(1);
+      expect(result.results).toEqual([
+        {
+          ok: false,
+          error: "Feed request timed out.",
+          source: dueSource,
+        },
+      ]);
+      expect((await getSourceById(fixture.store, dueSourceId))?.nextSyncAt).toBe(
+        "2026-05-22T07:58:00.000Z",
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it("returns scheduler summaries from the route handler", async () => {
     const enqueueScheduledSyncMock = vi.fn().mockResolvedValue({
       ids: ["evt_123"],

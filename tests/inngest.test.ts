@@ -115,10 +115,16 @@ describe("runScheduledSyncEvent", () => {
       vi.spyOn(inngest, "send").mockImplementation(sendMock);
 
       await queueBriefDelivery("brief-1");
+      await queueBriefDelivery("brief-1", { requestKey: "brief-1:same-key" });
 
       expect(sendMock).toHaveBeenCalledWith({
         name: BRIEF_DELIVERY_EVENT,
         data: { briefId: "brief-1" },
+      });
+      expect(sendMock).toHaveBeenCalledWith({
+        id: "brief-delivery:brief-1:brief-1:same-key",
+        name: BRIEF_DELIVERY_EVENT,
+        data: { briefId: "brief-1", requestKey: "brief-1:same-key" },
       });
     } finally {
       if (previousEventKey === undefined) {
@@ -168,6 +174,39 @@ describe("runScheduledSyncEvent", () => {
       } else {
         process.env.DATABASE_URL = previousDatabaseUrl;
       }
+    }
+  });
+
+  it("deduplicates duplicate delivery events for the same brief", async () => {
+    const deliverStoredBriefMock = vi.fn().mockResolvedValue({
+      status: "success",
+      responseStatus: 202,
+    });
+    const deliveryLogs: string[] = [];
+
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      getDefaultRuntimeStore: vi.fn(() => ({ database: {} })),
+    }));
+    vi.doMock("@/lib/delivery", () => ({
+      deliverStoredBrief: vi.fn(async (...args: unknown[]) => {
+        deliveryLogs.push(args[1] as string);
+        return deliverStoredBriefMock(...args);
+      }),
+    }));
+
+    try {
+      const { handleBriefDeliveryRequested } = await import("@/lib/inngest");
+      const listDeliveryLogsByBriefId = async (briefId: string) =>
+        deliveryLogs.filter((candidateBriefId) => candidateBriefId === briefId);
+
+      await handleBriefDeliveryRequested({ briefId: "brief-1", requestKey: "same-key" });
+      await handleBriefDeliveryRequested({ briefId: "brief-1", requestKey: "same-key" });
+
+      expect(deliverStoredBriefMock).toHaveBeenCalledTimes(1);
+      expect(await listDeliveryLogsByBriefId("brief-1")).toHaveLength(1);
+    } finally {
+      vi.resetModules();
     }
   });
 });
