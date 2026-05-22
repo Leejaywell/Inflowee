@@ -88,7 +88,10 @@ export function ChatConsole({
       <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50/50 px-5 py-4">
         <div>
           <h3 className="font-semibold text-stone-950 text-base">{title}</h3>
-          <p className="text-xs text-stone-500 mt-0.5">{subtitle}</p>
+          <p className="text-xs text-stone-500 mt-0.5">
+            {subtitle} Empty task scopes can fall back to sibling space context,
+            then to bounded live fetch.
+          </p>
         </div>
         {messages.length > 0 && (
           <button

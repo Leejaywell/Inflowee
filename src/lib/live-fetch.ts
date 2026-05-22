@@ -8,6 +8,7 @@ export type LiveFetchResult = {
 type LiveFetchOptions = {
   fetchImpl?: typeof fetch;
   searchResults?: string[];
+  maxPages?: number;
 };
 
 const MAX_LIVE_RESULTS = 3;
@@ -18,7 +19,7 @@ export async function fetchLiveContext(
 ): Promise<LiveFetchResult[]> {
   const urls = (options.searchResults ?? getFallbackUrls(prompt))
     .filter(isAllowedLiveFetchUrl)
-    .slice(0, MAX_LIVE_RESULTS);
+    .slice(0, options.maxPages ?? MAX_LIVE_RESULTS);
   const fetchImpl = options.fetchImpl ?? fetch;
 
   const results = await Promise.all(

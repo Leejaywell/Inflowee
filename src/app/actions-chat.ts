@@ -51,7 +51,12 @@ export async function submitChatMessage(
 
   try {
     if (scopeType !== "global") {
-      grounding = await getGroundingForScope(store, scopeType, scopeId);
+      const fallbackSpaceId =
+        scopeType === "task" ? (await getTaskById(store, scopeId))?.spaceId : undefined;
+      grounding = await getGroundingForScope(store, scopeType, scopeId, {
+        fallbackSpaceId,
+        includeSiblingFallback: scopeType === "task",
+      });
     }
   } catch (e) {
     console.error("Error gathering grounding materials for chat:", e);

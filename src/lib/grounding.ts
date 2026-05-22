@@ -18,7 +18,9 @@ export type GroundingResult = {
 };
 
 type GroundingOptions = {
-  includeItems?: false;
+  includeItems?: boolean;
+  fallbackSpaceId?: string;
+  includeSiblingFallback?: boolean;
 };
 
 function compareItemsByFreshness(a: ItemRecord, b: ItemRecord): number {
@@ -85,15 +87,28 @@ export async function getGroundingForScope(
 
   if (scopeType === "task") {
     const briefs = await listBriefsFiltered(store, { taskId: scopeId });
-    if (!includeItems) {
-      return { briefs, items: [] };
-    }
+    const items = includeItems
+      ? dedupeAndSortItems(
+          (
+            await Promise.all(
+              (await listSourcesByTask(store, scopeId)).map((source) =>
+                listItemsBySource(store, source.id),
+              ),
+            )
+          ).flat(),
+        )
+      : [];
 
-    const sources = await listSourcesByTask(store, scopeId);
-    const itemGroups = await Promise.all(
-      sources.map((source) => listItemsBySource(store, source.id)),
-    );
-    const items = dedupeAndSortItems(itemGroups.flat());
+    if (
+      briefs.length === 0 &&
+      items.length === 0 &&
+      options.includeSiblingFallback &&
+      options.fallbackSpaceId
+    ) {
+      return getGroundingForScope(store, "space", options.fallbackSpaceId, {
+        includeItems,
+      });
+    }
 
     return { briefs, items };
   }

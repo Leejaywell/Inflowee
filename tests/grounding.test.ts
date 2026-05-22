@@ -213,6 +213,66 @@ describe("getGroundingForScope", () => {
     },
   );
 
+  it("can retrieve briefs across sibling tasks within a space when task scope is empty", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-grounding-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, {
+        name: "AI Watch",
+      });
+      const emptyTaskId = await createTaskRecord(store, {
+        spaceId,
+        title: "Empty task",
+        taskType: "TOPIC",
+        userPrompt: "Track empty scope",
+      });
+      const siblingTaskId = await createTaskRecord(store, {
+        spaceId,
+        title: "Filled task",
+        taskType: "TOPIC",
+        userPrompt: "Track launches",
+      });
+      const sourceId = await createSourceRecord(store, {
+        taskId: siblingTaskId,
+        sourceType: "RSS",
+        title: "Feed",
+        url: "https://example.com/feed.xml",
+      });
+      const item = await createItemRecordResult(store, {
+        sourceId,
+        title: "Launch roundup",
+        canonicalUrl: "https://example.com/launch",
+        summary: "Latest launches.",
+        publishedAt: "2026-05-21T08:00:00.000Z",
+      });
+
+      if (!item) {
+        throw new Error("Expected fixture item to be inserted.");
+      }
+
+      const briefId = await createBriefRecord(store, {
+        taskId: siblingTaskId,
+        itemIds: [item.id],
+        title: "Launch roundup",
+        summary: "Latest launches.",
+        whyItMatters: "New signal.",
+        sourceCitations: ["https://example.com/launch"],
+      });
+
+      const grounding = await getGroundingForScope(store, "task", emptyTaskId, {
+        fallbackSpaceId: spaceId,
+        includeSiblingFallback: true,
+      });
+
+      expect(grounding.briefs.map((brief) => brief.id)).toEqual([briefId]);
+      expect(grounding.items.map((result) => result.id)).toEqual([item.id]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("deduplicates task-scoped items by canonical url and keeps the freshest item", async () => {
     const fixture = await createFixture();
 

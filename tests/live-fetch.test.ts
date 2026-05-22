@@ -45,4 +45,30 @@ describe("fetchLiveContext", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(results).toHaveLength(0);
   });
+
+  it("caps live fetch fallback to a bounded number of pages", async () => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const href = typeof url === "string" ? url : url instanceof URL ? url.href : url.url;
+      return new Response(
+        `<html><head><title>${href}</title></head><body><main><p>Fresh update for ${href}</p></main></body></html>`,
+        {
+          status: 200,
+          headers: { "content-type": "text/html" },
+        },
+      );
+    });
+
+    const results = await fetchLiveContext("OpenAI pricing", {
+      fetchImpl: fetchImpl as typeof fetch,
+      searchResults: [
+        "https://example.com/1",
+        "https://example.com/2",
+        "https://example.com/3",
+      ],
+      maxPages: 2,
+    });
+
+    expect(results).toHaveLength(2);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
 });
