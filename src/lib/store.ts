@@ -1576,6 +1576,21 @@ export function listRecentDeliveryLogsByBrief(
   return rows.map(mapDeliveryLog);
 }
 
+export function listRecentDeliveryLogs(
+  store: Store,
+  limit = 20,
+): DeliveryLogRecord[] {
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM delivery_logs
+       ORDER BY started_at DESC
+       LIMIT ?`,
+    )
+    .all(limit) as DeliveryLogRow[];
+
+  return rows.map(mapDeliveryLog);
+}
+
 export function listSources(store: Store = defaultStore): SourceRecord[] {
   const rows = store.database
     .prepare("SELECT * FROM sources ORDER BY created_at DESC")

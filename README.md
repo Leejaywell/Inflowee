@@ -53,6 +53,21 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 - POST to `/api/jobs/sync`
 - Confirm due sources update status and recent run rows appear on `/sources`
 
+## Webhook Delivery Verification
+
+- Run `pnpm test`
+- Run `pnpm lint`
+- Run `pnpm build`
+- Run `pnpm typecheck`
+- Start the app with `pnpm dev`
+- Open `/settings`
+- Save one `https://` webhook endpoint
+- Open `/inbox/<briefId>`
+- Click `Send webhook`
+- Confirm the brief detail page shows a success or failure banner
+- Confirm `/settings` shows the recent delivery log row
+- Open `/inbox/<briefId>/html` and confirm the delivered digest format matches the route output
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

@@ -7,6 +7,7 @@ const navigationItems = [
   { href: "/", label: "Home" },
   { href: "/sources", label: "Sources" },
   { href: "/inbox", label: "Inbox" },
+  { href: "/settings", label: "Settings" },
 ] as const;
 
 type AppShellProps = {

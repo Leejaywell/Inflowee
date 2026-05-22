@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { sendBriefToWebhook } from "@/app/actions";
 import { ChatDrawer } from "@/components/chat-drawer";
 import {
   defaultStore,
   getBriefById,
+  getWebhookSettings,
   listBriefItemIds,
+  listRecentDeliveryLogsByBrief,
   listItemsByBriefId,
   getOrCreateChatThread,
   listChatMessages,
@@ -15,23 +18,48 @@ export const dynamic = "force-dynamic";
 
 export default async function BriefDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ briefId: string }>;
+  searchParams?: Promise<{ delivered?: string; error?: string }>;
 }) {
-  const { briefId } = await params;
+  const [{ briefId }, query] = await Promise.all([params, searchParams]);
   const brief = getBriefById(defaultStore, briefId);
 
   if (!brief) {
     notFound();
   }
 
-  const itemIds = listBriefItemIds(defaultStore, briefId);
-  const linkedItems = listItemsByBriefId(defaultStore, briefId);
-  const chatThread = getOrCreateChatThread(defaultStore, "brief", briefId);
+  const [itemIds, linkedItems, chatThread, webhookSettings, deliveryLogs] =
+    await Promise.all([
+      Promise.resolve(listBriefItemIds(defaultStore, briefId)),
+      Promise.resolve(listItemsByBriefId(defaultStore, briefId)),
+      Promise.resolve(getOrCreateChatThread(defaultStore, "brief", briefId)),
+      Promise.resolve(getWebhookSettings(defaultStore)),
+      Promise.resolve(listRecentDeliveryLogsByBrief(defaultStore, briefId)),
+    ]);
   const chatMessages = listChatMessages(defaultStore, chatThread.id);
+  const delivered = query?.delivered;
+  const error = query?.error;
 
   return (
     <div className="grid gap-6">
+      {(delivered || error) && (
+        <section
+          className={`rounded-2xl border px-5 py-4 text-sm ${
+            error
+              ? "border-rose-200 bg-rose-50 text-rose-700"
+              : "border-emerald-200 bg-emerald-50 text-emerald-700"
+          }`}
+        >
+          {error
+            ? decodeURIComponent(error)
+            : delivered === "webhook"
+              ? "Brief delivered to webhook."
+              : "Update applied."}
+        </section>
+      )}
+
       <section className="rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur">
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-sm text-stone-500">
@@ -135,11 +163,67 @@ export default async function BriefDetailPage({
               >
                 Image card
               </Link>
+              <form action={sendBriefToWebhook}>
+                <input type="hidden" name="briefId" value={briefId} />
+                <button
+                  className="inline-flex h-10 items-center rounded-full border border-[#0057ff]/20 bg-[#0057ff]/10 px-4 text-sm font-medium text-[#0057ff] transition hover:bg-[#0057ff]/15"
+                  disabled={!webhookSettings.endpoint}
+                  title={
+                    webhookSettings.endpoint
+                      ? "Send this brief to the configured webhook."
+                      : "Configure a webhook endpoint in Settings first."
+                  }
+                >
+                  Send webhook
+                </button>
+              </form>
               <ChatDrawer
                 briefId={briefId}
                 briefTitle={brief.title}
                 initialMessages={chatMessages}
               />
+            </div>
+            {!webhookSettings.endpoint ? (
+              <p className="mt-3 text-sm text-stone-500">
+                No webhook configured yet. Add one in{" "}
+                <Link href="/settings" className="text-[#0057ff] underline">
+                  Settings
+                </Link>
+                .
+              </p>
+            ) : null}
+          </div>
+
+          <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+            <h2 className="text-lg font-semibold">Delivery logs</h2>
+            <div className="mt-4 grid gap-3">
+              {deliveryLogs.length === 0 ? (
+                <p className="text-sm text-stone-500">
+                  No webhook sends recorded for this brief yet.
+                </p>
+              ) : (
+                deliveryLogs.map((log) => (
+                  <div
+                    key={log.id}
+                    className="rounded-2xl bg-stone-50 px-4 py-3 text-sm"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span className="font-medium text-stone-900">
+                        {log.status}
+                      </span>
+                      <span className="text-xs text-stone-500">
+                        {new Date(log.startedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-xs text-stone-500">
+                      {log.responseStatus
+                        ? `HTTP ${log.responseStatus}`
+                        : "Pending response"}
+                      {log.error ? ` · ${log.error}` : ""}
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
 

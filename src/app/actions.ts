@@ -3,7 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
+import { renderBriefHtmlDigest } from "@/lib/brief-render";
+import { deliverBriefDigest } from "@/lib/delivery";
 import {
+  createDeliveryLog,
   createSourceRecord,
   createSpaceRecord,
   createTaskRecord,
@@ -12,10 +15,15 @@ import {
   deleteSource as deleteSourceRecord,
   deleteSpace as deleteSpaceRecord,
   deleteTask as deleteTaskRecord,
+  finishDeliveryLog,
+  getBriefById,
+  getWebhookSettings,
   getTaskById,
   hasTaskRecord,
+  listItemsByBriefId,
   markBriefRead,
   markBriefUnread,
+  saveWebhookSettings,
   setSourceSchedule,
 } from "@/lib/store";
 import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
@@ -25,6 +33,7 @@ import {
   createSpaceSchema,
   createTaskSchema,
   updateSourceScheduleSchema,
+  webhookEndpointSchema,
 } from "@/lib/validation";
 
 function getString(formData: FormData, key: string) {
@@ -215,4 +224,76 @@ export async function runSyncAll() {
   }
 
   redirect(`/sources?synced=all`);
+}
+
+export async function saveWebhookEndpoint(formData: FormData) {
+  const parsed = webhookEndpointSchema.safeParse(getString(formData, "endpoint"));
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid webhook endpoint.")}`,
+    );
+  }
+
+  saveWebhookSettings(defaultStore, parsed.data);
+  revalidatePath("/settings");
+  redirect("/settings?updated=webhook");
+}
+
+export async function sendBriefToWebhook(formData: FormData) {
+  const briefId = getString(formData, "briefId");
+  const brief = getBriefById(defaultStore, briefId);
+
+  if (!brief) {
+    redirect("/inbox?error=Brief%20not%20found.");
+  }
+
+  const settings = getWebhookSettings(defaultStore);
+
+  if (!settings.endpoint) {
+    redirect(`/inbox/${briefId}?error=Configure%20a%20webhook%20endpoint%20first.`);
+  }
+
+  const linkedItems = listItemsByBriefId(defaultStore, briefId);
+  const html = renderBriefHtmlDigest({ brief, linkedItems });
+  const logId = createDeliveryLog(defaultStore, {
+    briefId,
+    endpoint: settings.endpoint,
+    payloadType: "html",
+  });
+
+  try {
+    const responseStatus = await deliverBriefDigest({
+      endpoint: settings.endpoint,
+      payload: {
+        briefId,
+        format: "html",
+        title: brief.title,
+        html,
+      },
+    });
+
+    finishDeliveryLog(defaultStore, {
+      logId,
+      status: "success",
+      responseStatus,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown delivery failure.";
+
+    finishDeliveryLog(defaultStore, {
+      logId,
+      status: "error",
+      error: message,
+    });
+
+    revalidatePath(`/inbox/${briefId}`);
+    revalidatePath("/settings");
+    redirect(`/inbox/${briefId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(`/inbox/${briefId}`);
+  revalidatePath("/settings");
+  redirect(`/inbox/${briefId}?delivered=webhook`);
 }
