@@ -13,7 +13,8 @@ export const envSchema = z.object({
   INNGEST_BASE_URL: z
     .string()
     .trim()
-    .url("INNGEST_BASE_URL must be a valid URL."),
+    .url("INNGEST_BASE_URL must be a valid URL.")
+    .optional(),
 });
 
 export type AppEnv = z.infer<typeof envSchema>;

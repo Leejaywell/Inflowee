@@ -17,6 +17,16 @@ describe("env schema", () => {
       DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/inflowee",
       INNGEST_EVENT_KEY: "evt_test_123",
       INNGEST_SIGNING_KEY: "sign_test_123",
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it("accepts an optional inngest base URL override", () => {
+    const parsed = envSchema.safeParse({
+      DATABASE_URL: "postgresql://postgres:postgres@127.0.0.1:5432/inflowee",
+      INNGEST_EVENT_KEY: "evt_test_123",
+      INNGEST_SIGNING_KEY: "sign_test_123",
       INNGEST_BASE_URL: "http://127.0.0.1:8288",
     });
 
@@ -28,7 +38,6 @@ describe("env schema", () => {
       DATABASE_URL: "",
       INNGEST_EVENT_KEY: "evt_test_123",
       INNGEST_SIGNING_KEY: "sign_test_123",
-      INNGEST_BASE_URL: "http://127.0.0.1:8288",
     });
 
     expect(parsed.success).toBe(false);

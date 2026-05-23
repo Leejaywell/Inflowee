@@ -140,6 +140,33 @@ describe("runScheduledSyncEvent", () => {
     }
   });
 
+  it("ignores the local inngest base URL override in production mode", async () => {
+    const environment = process.env as Record<string, string | undefined>;
+    const previousNodeEnv = process.env.NODE_ENV;
+    const previousBaseUrl = process.env.INNGEST_BASE_URL;
+    environment.NODE_ENV = "production";
+    environment.INNGEST_BASE_URL = "http://127.0.0.1:8288";
+
+    try {
+      const { inngest } = await import("@/lib/inngest");
+
+      expect(inngest.apiBaseUrl).toSatisfy(
+        (value) => value === undefined || !value.includes("127.0.0.1:8288"),
+      );
+    } finally {
+      if (previousNodeEnv === undefined) {
+        delete environment.NODE_ENV;
+      } else {
+        environment.NODE_ENV = previousNodeEnv;
+      }
+      if (previousBaseUrl === undefined) {
+        delete environment.INNGEST_BASE_URL;
+      } else {
+        environment.INNGEST_BASE_URL = previousBaseUrl;
+      }
+    }
+  });
+
   it("delivers a brief through the inngest delivery worker", async () => {
     const deliverStoredBriefMock = vi.fn().mockResolvedValue({
       status: "success",

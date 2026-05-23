@@ -26,11 +26,24 @@ const briefDeliveryRequestRuns = new Map<
   ReturnType<typeof runBriefDeliveryEvent>
 >();
 
+const shouldUseLocalInngestBaseUrl = process.env.NODE_ENV !== "production";
+
 export const inngest = new Inngest({
   id: "inflowee",
   eventKey: process.env.INNGEST_EVENT_KEY,
-  baseUrl: process.env.INNGEST_BASE_URL,
+  baseUrl: shouldUseLocalInngestBaseUrl
+    ? process.env.INNGEST_BASE_URL
+    : undefined,
 });
+
+if (!shouldUseLocalInngestBaseUrl) {
+  inngest.setEnvVars({
+    ...process.env,
+    INNGEST_BASE_URL: undefined,
+    INNGEST_API_BASE_URL: undefined,
+    INNGEST_EVENT_API_BASE_URL: undefined,
+  });
+}
 
 export async function enqueueScheduledSync(
   data: ScheduledSyncEventData = {},

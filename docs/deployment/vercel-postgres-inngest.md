@@ -7,11 +7,13 @@ Set these environment variables in the deployment target:
 - `DATABASE_URL`
 - `INNGEST_EVENT_KEY`
 - `INNGEST_SIGNING_KEY`
-- `INNGEST_BASE_URL`
 - `CRON_SECRET`
 - `INFLOWEE_SESSION_SECRET`
 - `INFLOWEE_OPERATOR_EMAIL`
 - `INFLOWEE_OPERATOR_LOGIN_CODE`
+
+`INNGEST_BASE_URL` is optional and is only needed when pointing a local app at a
+local Inngest dev server.
 
 ## Deploy Order
 
@@ -30,7 +32,7 @@ The checked-in `vercel.json` uses a **daily** cron schedule (`0 0 * * *`) so the
 
 ## Prisma on Vercel
 
-This project pins `pnpm@10` and runs `prisma generate` through the app's `prebuild` hook. That avoids relying on dependency lifecycle scripts that Vercel's pnpm sandbox may ignore during install.
+This project pins `pnpm@10` and runs Prisma through the app's `prebuild` hook. In Vercel builds, the hook executes `prisma migrate deploy` and `prisma generate`; outside Vercel it only runs `prisma generate`. That avoids relying on dependency lifecycle scripts that Vercel's pnpm sandbox may ignore during install, while still keeping local builds free from production-only migration side effects.
 
 ## Final Production Smoke-Test Commands
 

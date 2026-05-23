@@ -15,7 +15,7 @@ export async function GET() {
       databaseUrl: hasDatabaseUrl,
       inngestEventKey: Boolean(process.env.INNGEST_EVENT_KEY),
       inngestSigningKey: Boolean(process.env.INNGEST_SIGNING_KEY),
-      inngestBaseUrl: Boolean(process.env.INNGEST_BASE_URL),
+      inngestBaseUrlOverride: Boolean(process.env.INNGEST_BASE_URL),
       cronSecret: Boolean(getCronSecret()),
       sessionAuth: hasConfiguredSessionAuth(),
       operatorLogin: hasConfiguredOperatorLogin(),
