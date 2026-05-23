@@ -5,7 +5,7 @@ import { submitChatMessage, clearChatThread } from "@/app/actions-chat";
 import { ChatMessageRecord } from "@/lib/store";
 
 type ChatConsoleProps = {
-  scopeType: "space" | "task" | "brief";
+  scopeType: "global" | "space" | "task" | "brief";
   scopeId: string;
   initialMessages: ChatMessageRecord[];
   title?: string;

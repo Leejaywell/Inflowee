@@ -14,7 +14,9 @@ import {
 import { deliverStoredBrief, deliverStoredBriefToChannel } from "@/lib/delivery";
 import {
   addSpaceMember,
+  acceptSpaceInvite,
   createSourceRecord,
+  createSpaceInvite,
   createSpaceRecord,
   createTaskRecord,
   defaultStore,
@@ -30,9 +32,11 @@ import {
   getTaskById,
   hasTaskRecord,
   listSources,
+  listSpaceInvites,
   markBriefRead,
   markBriefUnread,
   removeSpaceMember,
+  revokeSpaceInvite,
   saveFeishuSettings,
   saveTelegramSettings,
   saveWebhookSettings,
@@ -449,6 +453,70 @@ export async function removeSpaceMemberAction(formData: FormData) {
   await removeSpaceMember(defaultStore, { spaceId, userId });
   revalidatePath(`/spaces/${spaceId}`);
   redirect(`/spaces/${spaceId}?updated=member`);
+}
+
+export async function createSpaceInviteAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const spaceId = getString(formData, "spaceId");
+  const role = getString(formData, "role");
+
+  if (role !== "viewer" && role !== "editor") {
+    redirect(`/spaces/${spaceId}?error=Invalid%20invite%20role.`);
+  }
+
+  await assertSpaceAccess(defaultStore, {
+    actorId: actor.id,
+    spaceId,
+    minimumRole: "owner",
+  });
+
+  await createSpaceInvite(defaultStore, {
+    spaceId,
+    role,
+    createdBy: actor.id,
+  });
+
+  revalidatePath(`/spaces/${spaceId}`);
+  redirect(`/spaces/${spaceId}?updated=invite`);
+}
+
+export async function revokeSpaceInviteAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const inviteId = getString(formData, "inviteId");
+  const spaceId = getString(formData, "spaceId");
+
+  await assertSpaceAccess(defaultStore, {
+    actorId: actor.id,
+    spaceId,
+    minimumRole: "owner",
+  });
+
+  const invites = await listSpaceInvites(defaultStore, spaceId);
+  const invite = invites.find((candidate) => candidate.id === inviteId);
+
+  if (!invite) {
+    redirect(`/spaces/${spaceId}?error=Invite%20not%20found.`);
+  }
+
+  await revokeSpaceInvite(defaultStore, inviteId);
+  revalidatePath(`/spaces/${spaceId}`);
+  redirect(`/spaces/${spaceId}?updated=invite`);
+}
+
+export async function acceptSpaceInviteAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const token = getString(formData, "token");
+  const invite = await acceptSpaceInvite(defaultStore, {
+    token,
+    actorId: actor.id,
+  });
+
+  if (!invite) {
+    redirect(`/invite/${token}?error=Invite%20is%20invalid%20or%20already%20used.`);
+  }
+
+  revalidatePath(`/spaces/${invite.spaceId}`);
+  redirect(`/spaces/${invite.spaceId}?updated=invite`);
 }
 
 export async function sendBriefToWebhook(formData: FormData) {

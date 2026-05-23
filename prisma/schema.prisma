@@ -16,6 +16,7 @@ model Space {
   updatedAt   DateTime @updatedAt
   tasks       Task[]
   members     SpaceMember[]
+  invites     SpaceInvite[]
 
   @@index([ownerId, createdAt])
 }
@@ -29,6 +30,22 @@ model SpaceMember {
 
   @@id([spaceId, userId])
   @@index([userId, createdAt])
+}
+
+model SpaceInvite {
+  id         String    @id @default(uuid())
+  token      String    @unique
+  spaceId    String
+  role       String
+  createdBy  String
+  acceptedBy String?
+  acceptedAt DateTime?
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+  space      Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
+
+  @@index([spaceId, createdAt])
+  @@index([token])
 }
 
 model Task {

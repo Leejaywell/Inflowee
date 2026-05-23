@@ -8,8 +8,10 @@ import { DatabaseSync } from "node:sqlite";
 import {
   briefExistsForItem,
   addSpaceMember,
+  acceptSpaceInvite,
   countUnreadBriefs,
   createBriefRecord,
+  createSpaceInvite,
   createItemRecord,
   createItemRecordResult,
   createSourceRecord,
@@ -43,10 +45,12 @@ import {
   listSources,
   listSpacesWithTasks,
   listSpaceMembers,
+  listSpaceInvites,
   listSourcesByTask,
   markBriefRead,
   markBriefUnread,
   removeSpaceMember,
+  revokeSpaceInvite,
   markSourceSyncResult,
   getSourceById,
   getTaskById,
@@ -269,6 +273,66 @@ describe("store promise contract", () => {
       });
 
       expect(await listSpaceMembers(store, spaceId)).toEqual([]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("creates, accepts, and revokes invite records for a space", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, {
+        ownerId: "user-1",
+        name: "Signals",
+      });
+
+      const invite = await createSpaceInvite(store, {
+        spaceId,
+        role: "viewer",
+        createdBy: "user-1",
+      });
+
+      expect((await listSpaceInvites(store, spaceId))[0]).toEqual(
+        expect.objectContaining({
+          id: invite.id,
+          token: invite.token,
+          role: "viewer",
+        }),
+      );
+
+      const acceptedInvite = await acceptSpaceInvite(store, {
+        token: invite.token,
+        actorId: "user-2",
+      });
+
+      expect(acceptedInvite).toEqual(
+        expect.objectContaining({
+          acceptedBy: "user-2",
+        }),
+      );
+      expect(await listSpaceMembers(store, spaceId)).toEqual([
+        expect.objectContaining({
+          userId: "user-2",
+          role: "viewer",
+        }),
+      ]);
+
+      const secondInvite = await createSpaceInvite(store, {
+        spaceId,
+        role: "editor",
+        createdBy: "user-1",
+      });
+      await revokeSpaceInvite(store, secondInvite.id);
+
+      expect((await listSpaceInvites(store, spaceId))[0]).toEqual(
+        expect.objectContaining({
+          id: secondInvite.id,
+          revokedAt: expect.any(String),
+        }),
+      );
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });

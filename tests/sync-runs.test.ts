@@ -458,6 +458,7 @@ describe("scheduled sync actions and surfaces", () => {
         createdAt: "2026-05-22T00:00:00.000Z",
       }),
       listChatMessages: vi.fn().mockResolvedValue([]),
+      listSpaceInvites: vi.fn().mockResolvedValue([]),
       listSpaceMembers: vi.fn().mockResolvedValue([]),
       listTasksBySpace: vi.fn().mockResolvedValue([]),
     }));
@@ -471,7 +472,9 @@ describe("scheduled sync actions and surfaces", () => {
       MemberList: () => null,
     }));
     vi.doMock("@/app/actions", () => ({
+      createSpaceInviteAction: vi.fn(),
       removeSpaceMemberAction: vi.fn(),
+      revokeSpaceInviteAction: vi.fn(),
       upsertSpaceMemberAction: vi.fn(),
     }));
 

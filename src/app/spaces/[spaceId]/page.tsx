@@ -2,7 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  createSpaceInviteAction,
   removeSpaceMemberAction,
+  revokeSpaceInviteAction,
   upsertSpaceMemberAction,
 } from "@/app/actions";
 import { ChatConsole } from "@/components/chat-console";
@@ -18,6 +20,7 @@ import {
   getSpaceById,
   getOrCreateChatThread,
   listChatMessages,
+  listSpaceInvites,
   listSpaceMembers,
   listTasksBySpace,
 } from "@/lib/store";
@@ -54,6 +57,7 @@ export default async function SpaceDetailPage({ params, searchParams }: SpacePag
   // 2. Fetch tasks within the space
   const tasks = await listTasksBySpace(store, spaceId);
   const members = await listSpaceMembers(store, spaceId);
+  const invites = await listSpaceInvites(store, spaceId);
   const query = await searchParams;
   const ownerMember = {
     spaceId,
@@ -150,6 +154,57 @@ export default async function SpaceDetailPage({ params, searchParams }: SpacePag
                           </button>
                         </form>
                       ))}
+                  </div>
+                ) : null}
+                <form action={createSpaceInviteAction} className="grid gap-3 border-t border-stone-100 pt-5 md:grid-cols-[180px_auto]">
+                  <input type="hidden" name="spaceId" value={spaceId} />
+                  <select
+                    name="role"
+                    defaultValue="viewer"
+                    className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
+                  >
+                    <option value="viewer">viewer invite</option>
+                    <option value="editor">editor invite</option>
+                  </select>
+                  <button className="inline-flex h-11 items-center justify-center rounded-xl border border-stone-200 bg-stone-50 px-4 text-sm font-medium text-stone-700 transition hover:bg-stone-100">
+                    Create invite link
+                  </button>
+                </form>
+                {invites.length > 0 ? (
+                  <div className="grid gap-2">
+                    {invites.map((invite) => (
+                      <div
+                        key={invite.id}
+                        className="grid gap-3 rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-stone-600">
+                              {invite.role}
+                            </span>
+                            <span className="text-stone-500">
+                              {invite.acceptedAt
+                                ? `Accepted by ${invite.acceptedBy}`
+                                : invite.revokedAt
+                                  ? "Revoked"
+                                  : "Pending"}
+                            </span>
+                          </div>
+                          {!invite.acceptedAt && !invite.revokedAt ? (
+                            <form action={revokeSpaceInviteAction}>
+                              <input type="hidden" name="spaceId" value={spaceId} />
+                              <input type="hidden" name="inviteId" value={invite.id} />
+                              <button className="inline-flex h-8 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-medium text-rose-700 transition hover:bg-rose-100">
+                                Revoke
+                              </button>
+                            </form>
+                          ) : null}
+                        </div>
+                        <div className="rounded-lg bg-white px-3 py-2 font-mono text-xs text-stone-600">
+                          /invite/{invite.token}
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 ) : null}
               </div>

@@ -118,6 +118,18 @@ type SpaceMemberRow = {
   created_at: string;
 };
 
+type SpaceInviteRow = {
+  id: string;
+  token: string;
+  space_id: string;
+  role: "viewer" | "editor";
+  created_by: string;
+  accepted_by: string | null;
+  accepted_at: string | null;
+  revoked_at: string | null;
+  created_at: string;
+};
+
 type ItemRow = {
   id: string;
   source_id: string;
@@ -305,6 +317,18 @@ export type SpaceMemberRecord = {
   createdAt: string;
 };
 
+export type SpaceInviteRecord = {
+  id: string;
+  token: string;
+  spaceId: string;
+  role: Exclude<SpaceRole, "owner">;
+  createdBy: string;
+  acceptedBy: string | null;
+  acceptedAt: string | null;
+  revokedAt: string | null;
+  createdAt: string;
+};
+
 export type ItemRecord = {
   id: string;
   sourceId: string;
@@ -436,6 +460,20 @@ function mapSpaceMember(row: SpaceMemberRow): SpaceMemberRecord {
     spaceId: row.space_id,
     userId: row.user_id,
     role: row.role as SpaceRole,
+    createdAt: row.created_at,
+  };
+}
+
+function mapSpaceInvite(row: SpaceInviteRow): SpaceInviteRecord {
+  return {
+    id: row.id,
+    token: row.token,
+    spaceId: row.space_id,
+    role: row.role,
+    createdBy: row.created_by,
+    acceptedBy: row.accepted_by,
+    acceptedAt: row.accepted_at,
+    revokedAt: row.revoked_at,
     createdAt: row.created_at,
   };
 }
@@ -943,6 +981,28 @@ function migrateSpaceMembersTable(database: DatabaseSync) {
   `);
 }
 
+function migrateSpaceInvitesTable(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS space_invites (
+      id TEXT PRIMARY KEY,
+      token TEXT NOT NULL UNIQUE,
+      space_id TEXT NOT NULL,
+      role TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      accepted_by TEXT,
+      accepted_at TEXT,
+      revoked_at TEXT,
+      created_at TEXT NOT NULL,
+      FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_space_invites_space_created_at
+      ON space_invites(space_id, created_at DESC);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_space_invites_token
+      ON space_invites(token);
+  `);
+}
+
 function createPrismaStore(databaseUrl?: string): PrismaStore {
   if (!databaseUrl) {
     return {
@@ -1028,6 +1088,19 @@ export function createStore(
         role TEXT NOT NULL,
         created_at TEXT NOT NULL,
         PRIMARY KEY (space_id, user_id),
+        FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS space_invites (
+        id TEXT PRIMARY KEY,
+        token TEXT NOT NULL UNIQUE,
+        space_id TEXT NOT NULL,
+        role TEXT NOT NULL,
+        created_by TEXT NOT NULL,
+        accepted_by TEXT,
+        accepted_at TEXT,
+        revoked_at TEXT,
+        created_at TEXT NOT NULL,
         FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
       );
 
@@ -1143,6 +1216,8 @@ export function createStore(
 
       CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
+      CREATE INDEX IF NOT EXISTS idx_space_invites_space_created_at ON space_invites(space_id, created_at DESC);
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_space_invites_token ON space_invites(token);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
@@ -1156,6 +1231,7 @@ export function createStore(
     migrateSourcesTable(nextDatabase);
     migrateSpacesTable(nextDatabase);
     migrateSpaceMembersTable(nextDatabase);
+    migrateSpaceInvitesTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
     migrateBriefReadsTable(nextDatabase);
     migrateTasksTable(nextDatabase);
@@ -1166,6 +1242,8 @@ export function createStore(
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_next_sync_at ON sources(next_sync_at);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_space_members_user_created_at ON space_members(user_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_space_invites_space_created_at ON space_invites(space_id, created_at DESC);");
+    nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_space_invites_token ON space_invites(token);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
@@ -1435,6 +1513,30 @@ function mapPrismaSpaceMember(member: {
   };
 }
 
+function mapPrismaSpaceInvite(invite: {
+  id: string;
+  token: string;
+  spaceId: string;
+  role: string;
+  createdBy: string;
+  acceptedBy: string | null;
+  acceptedAt: Date | null;
+  revokedAt: Date | null;
+  createdAt: Date;
+}): SpaceInviteRecord {
+  return {
+    id: invite.id,
+    token: invite.token,
+    spaceId: invite.spaceId,
+    role: invite.role as Exclude<SpaceRole, "owner">,
+    createdBy: invite.createdBy,
+    acceptedBy: invite.acceptedBy,
+    acceptedAt: invite.acceptedAt?.toISOString() ?? null,
+    revokedAt: invite.revokedAt?.toISOString() ?? null,
+    createdAt: invite.createdAt.toISOString(),
+  };
+}
+
 export async function listSpacesWithTasks(
   store: Store = defaultStore,
   filters: { ownerId?: string; actorId?: string } = {},
@@ -1634,6 +1736,170 @@ export async function removeSpaceMember(
          AND user_id = ?`,
     )
     .run(input.spaceId, input.userId);
+}
+
+export async function createSpaceInvite(
+  store: Store,
+  input: {
+    spaceId: string;
+    role: Exclude<SpaceRole, "owner">;
+    createdBy: string;
+  },
+): Promise<SpaceInviteRecord> {
+  const token = randomUUID();
+
+  if (store.prisma) {
+    const invite = await store.prisma.spaceInvite.create({
+      data: {
+        token,
+        spaceId: input.spaceId,
+        role: input.role,
+        createdBy: input.createdBy,
+      },
+    });
+
+    return mapPrismaSpaceInvite(invite);
+  }
+
+  const id = randomUUID();
+  const createdAt = new Date().toISOString();
+  store.database
+    .prepare(
+      `INSERT INTO space_invites (
+        id, token, space_id, role, created_by, accepted_by, accepted_at, revoked_at, created_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
+    )
+    .run(id, token, input.spaceId, input.role, input.createdBy, createdAt);
+
+  return {
+    id,
+    token,
+    spaceId: input.spaceId,
+    role: input.role,
+    createdBy: input.createdBy,
+    acceptedBy: null,
+    acceptedAt: null,
+    revokedAt: null,
+    createdAt,
+  };
+}
+
+export async function listSpaceInvites(
+  store: Store,
+  spaceId: string,
+): Promise<SpaceInviteRecord[]> {
+  if (store.prisma) {
+    const invites = await store.prisma.spaceInvite.findMany({
+      where: { spaceId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return invites.map(mapPrismaSpaceInvite);
+  }
+
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM space_invites
+       WHERE space_id = ?
+       ORDER BY created_at DESC`,
+    )
+    .all(spaceId) as SpaceInviteRow[];
+
+  return rows.map(mapSpaceInvite);
+}
+
+export async function getSpaceInviteByToken(
+  store: Store,
+  token: string,
+): Promise<SpaceInviteRecord | null> {
+  if (store.prisma) {
+    const invite = await store.prisma.spaceInvite.findUnique({
+      where: { token },
+    });
+
+    return invite ? mapPrismaSpaceInvite(invite) : null;
+  }
+
+  const row = store.database
+    .prepare(
+      `SELECT * FROM space_invites
+       WHERE token = ?
+       LIMIT 1`,
+    )
+    .get(token) as SpaceInviteRow | undefined;
+
+  return row ? mapSpaceInvite(row) : null;
+}
+
+export async function revokeSpaceInvite(
+  store: Store,
+  inviteId: string,
+): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.spaceInvite.update({
+      where: { id: inviteId },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+    return;
+  }
+
+  store.database
+    .prepare(
+      `UPDATE space_invites
+       SET revoked_at = ?
+       WHERE id = ?`,
+    )
+    .run(new Date().toISOString(), inviteId);
+}
+
+export async function acceptSpaceInvite(
+  store: Store,
+  input: {
+    token: string;
+    actorId: string;
+  },
+): Promise<SpaceInviteRecord | null> {
+  const invite = await getSpaceInviteByToken(store, input.token);
+
+  if (!invite || invite.revokedAt || invite.acceptedAt) {
+    return null;
+  }
+
+  await addSpaceMember(store, {
+    spaceId: invite.spaceId,
+    userId: input.actorId,
+    role: invite.role,
+  });
+
+  if (store.prisma) {
+    const updated = await store.prisma.spaceInvite.update({
+      where: { id: invite.id },
+      data: {
+        acceptedBy: input.actorId,
+        acceptedAt: new Date(),
+      },
+    });
+
+    return mapPrismaSpaceInvite(updated);
+  }
+
+  const acceptedAt = new Date().toISOString();
+  store.database
+    .prepare(
+      `UPDATE space_invites
+       SET accepted_by = ?,
+           accepted_at = ?
+       WHERE id = ?`,
+    )
+    .run(input.actorId, acceptedAt, invite.id);
+
+  return {
+    ...invite,
+    acceptedBy: input.actorId,
+    acceptedAt,
+  };
 }
 
 export async function getSpaceMembership(

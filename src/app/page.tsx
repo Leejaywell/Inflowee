@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { createSpace, createTask, deleteSpace, deleteTask } from "@/app/actions";
-import { requireSessionActor } from "@/lib/auth";
-import { defaultStore, listSpacesWithTasks, type TaskType } from "@/lib/store";
+import { ChatConsole } from "@/components/chat-console";
+import { getActorScopedChatScopeId, requireSessionActor } from "@/lib/auth";
+import {
+  defaultStore,
+  getOrCreateChatThread,
+  listChatMessages,
+  listSpacesWithTasks,
+  type TaskType,
+} from "@/lib/store";
 
 type HomeProps = {
   searchParams?: Promise<{
@@ -17,10 +24,13 @@ const taskTypeLabels: Record<TaskType, string> = {
 
 export default async function Home({ searchParams }: HomeProps) {
   const actor = await requireSessionActor();
-  const [spaces, params] = await Promise.all([
+  const actorScopeId = getActorScopedChatScopeId(actor.id, "home");
+  const [spaces, params, globalThread] = await Promise.all([
     listSpacesWithTasks(defaultStore, { actorId: actor.id }),
     searchParams,
+    getOrCreateChatThread(defaultStore, "global", actorScopeId),
   ]);
+  const globalMessages = await listChatMessages(defaultStore, globalThread.id);
 
   const created = params?.created;
   const error = params?.error;
@@ -185,6 +195,14 @@ export default async function Home({ searchParams }: HomeProps) {
                 Save task
               </button>
             </form>
+
+            <ChatConsole
+              scopeType="global"
+              scopeId="home"
+              initialMessages={globalMessages}
+              title="Global research assistant"
+              subtitle="Grounded across every accessible space before bounded live-fetch fallback."
+            />
           </div>
 
           <section className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
