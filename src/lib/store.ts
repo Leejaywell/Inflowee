@@ -24,7 +24,8 @@ export type SourceType =
   | "PAGE"
   | "STRUCTURED"
   | "UPDATE"
-  | "NEWSLETTER";
+  | "NEWSLETTER"
+  | "TELEGRAM_PUBLIC";
 export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
 export type DeliveryStatus = "running" | "success" | "error";
@@ -408,7 +409,7 @@ const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC')),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
@@ -570,6 +571,7 @@ function migrateSourcesTable(database: DatabaseSync) {
   const needsStructuredMigration = !sourcesTable.sql.includes("'STRUCTURED'");
   const needsUpdateMigration = !sourcesTable.sql.includes("'UPDATE'");
   const needsNewsletterMigration = !sourcesTable.sql.includes("'NEWSLETTER'");
+  const needsTelegramPublicMigration = !sourcesTable.sql.includes("'TELEGRAM_PUBLIC'");
   const needsScheduleMigration = !sourcesTable.sql.includes("sync_interval_minutes");
 
   if (
@@ -577,6 +579,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     !needsStructuredMigration &&
     !needsUpdateMigration &&
     !needsNewsletterMigration &&
+    !needsTelegramPublicMigration &&
     !needsScheduleMigration
   ) {
     return;
@@ -589,7 +592,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
-      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER')),
+      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC')),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
@@ -620,7 +623,7 @@ function migrateSourcesTable(database: DatabaseSync) {
       id,
       task_id,
       CASE
-        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER') THEN source_type
+        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC') THEN source_type
         ELSE 'PAGE'
       END,
       title,

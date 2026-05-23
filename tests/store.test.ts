@@ -564,7 +564,7 @@ describe("store source persistence", () => {
     }
   });
 
-  it("stores UPDATE and NEWSLETTER sources under a task", async () => {
+  it("stores UPDATE, NEWSLETTER, and TELEGRAM_PUBLIC sources under a task", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
@@ -591,6 +591,12 @@ describe("store source persistence", () => {
         title: "Agent Archive",
         url: "https://example.com/archive",
       });
+      await createSourceRecord(store, {
+        taskId,
+        sourceType: "TELEGRAM_PUBLIC",
+        title: "Telegram feed",
+        url: "https://t.me/s/example",
+      });
 
       expect(await listSourcesByTask(store, taskId)).toEqual(
         expect.arrayContaining([
@@ -606,6 +612,13 @@ describe("store source persistence", () => {
             sourceType: "NEWSLETTER",
             title: "Agent Archive",
             url: "https://example.com/archive",
+            status: "idle",
+          }),
+          expect.objectContaining({
+            taskId,
+            sourceType: "TELEGRAM_PUBLIC",
+            title: "Telegram feed",
+            url: "https://t.me/s/example",
             status: "idle",
           }),
         ]),
@@ -780,6 +793,27 @@ describe("store source persistence", () => {
     expect(parsed.error?.issues[0]?.message).toBe("Enter a valid https URL.");
   });
 
+  it("accepts public telegram sources and rejects non-telegram URLs", async () => {
+    const valid = createSourceSchema.safeParse({
+      taskId: "task-123",
+      sourceType: "TELEGRAM_PUBLIC",
+      title: "Telegram feed",
+      url: "https://t.me/examplejobs",
+    });
+    const invalid = createSourceSchema.safeParse({
+      taskId: "task-123",
+      sourceType: "TELEGRAM_PUBLIC",
+      title: "Telegram feed",
+      url: "https://example.com/examplejobs",
+    });
+
+    expect(valid.success).toBe(true);
+    expect(invalid.success).toBe(false);
+    expect(invalid.error?.issues[0]?.message).toBe(
+      "Enter a valid public Telegram channel or group URL.",
+    );
+  });
+
   it("migrates an existing sources table to enforce valid status values", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const filename = join(tempDirectory, "store.sqlite");
@@ -849,6 +883,7 @@ describe("store source persistence", () => {
       );
       expect(sourcesTable.sql).toContain("'UPDATE'");
       expect(sourcesTable.sql).toContain("'NEWSLETTER'");
+      expect(sourcesTable.sql).toContain("'TELEGRAM_PUBLIC'");
 
       expect(() =>
         store.database

@@ -23,7 +23,14 @@ export const createTaskSchema = z.object({
 
 export const createSourceSchema = z.object({
   taskId: z.string().trim().min(1, "Select a task."),
-  sourceType: z.enum(["RSS", "PAGE", "STRUCTURED", "UPDATE", "NEWSLETTER"]),
+  sourceType: z.enum([
+    "RSS",
+    "PAGE",
+    "STRUCTURED",
+    "UPDATE",
+    "NEWSLETTER",
+    "TELEGRAM_PUBLIC",
+  ]),
   title: z
     .string()
     .trim()
@@ -41,19 +48,37 @@ export const createSourceSchema = z.object({
       }
     }, "Enter a valid http or https URL."),
 }).superRefine((value, context) => {
-  if (value.sourceType !== "NEWSLETTER") {
-    return;
-  }
-
   try {
     const url = new URL(value.url);
 
-    if (url.protocol !== "https:") {
+    if (value.sourceType === "NEWSLETTER" && url.protocol !== "https:") {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["url"],
         message: "Enter a valid https URL.",
       });
+    }
+
+    if (value.sourceType === "TELEGRAM_PUBLIC") {
+      const hostname = url.hostname.toLowerCase();
+      const validHostnames = new Set([
+        "t.me",
+        "www.t.me",
+        "telegram.me",
+        "www.telegram.me",
+      ]);
+      const slug = url.pathname
+        .split("/")
+        .filter(Boolean)
+        .filter((segment) => segment !== "s")[0];
+
+      if (url.protocol !== "https:" || !validHostnames.has(hostname) || !slug) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["url"],
+          message: "Enter a valid public Telegram channel or group URL.",
+        });
+      }
     }
   } catch {
     // Base schema already reports invalid URLs.

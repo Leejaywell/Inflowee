@@ -1,4 +1,5 @@
 import {
+  createPresetSource,
   createSource,
   deleteSource,
   runSourceSync,
@@ -18,6 +19,7 @@ import {
   type SourceRecord,
   type SourceStatus,
 } from "@/lib/store";
+import { sourcePresets } from "@/lib/source-presets";
 
 type SourcesPageProps = {
   searchParams?: Promise<{
@@ -87,12 +89,12 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           </span>
           <div className="space-y-3">
             <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-              Attach RSS sources to the tasks already defined.
+              Attach feeds, job boards, and Telegram sources to the tasks already defined.
             </h1>
             <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-              This slice only handles source creation and visibility. Pick a
-              task, attach a feed, and confirm it persists in the local
-              database.
+              Pick a task, add a custom source, or start with built-in job-site
+              presets. Telegram public channels and groups can be tracked with a
+              dedicated source type.
             </p>
           </div>
         </div>
@@ -252,14 +254,82 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
 
       <section className="grid gap-6 lg:grid-cols-[0.84fr_1.16fr]">
         <form
+          action={createPresetSource}
+          className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+        >
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold">Built-in job sources</h2>
+            <p className="text-sm leading-6 text-stone-500">
+              One-click presets for common hiring boards and structured job
+              feeds.
+            </p>
+          </div>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Task</span>
+            <select
+              name="taskId"
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              defaultValue=""
+            >
+              <option value="" disabled>
+                Select a task
+              </option>
+              {tasks.map((task) => (
+                <option key={task.id} value={task.id}>
+                  {task.spaceName} / {task.title}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <div className="grid gap-3">
+            {sourcePresets.map((preset) => (
+              <article
+                key={preset.id}
+                className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-stone-900">
+                        {preset.title}
+                      </h3>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-stone-500">
+                        {preset.sourceType}
+                      </span>
+                    </div>
+                    <p className="text-sm leading-6 text-stone-600">
+                      {preset.description}
+                    </p>
+                    <p className="break-all text-xs text-stone-400">
+                      {preset.url}
+                    </p>
+                  </div>
+                  <button
+                    type="submit"
+                    name="presetId"
+                    value={preset.id}
+                    className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-stone-900 px-3 text-xs font-semibold tracking-wider uppercase text-white transition hover:bg-stone-800"
+                    disabled={tasks.length === 0}
+                  >
+                    Add
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </form>
+
+        <form
           action={createSource}
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
             <h2 className="text-xl font-semibold">Add a source</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Attach an RSS feed, structured list, update page, or newsletter
-              archive to a task.
+              Attach an RSS feed, structured list, update page, newsletter
+              archive, or Telegram public feed to a task.
             </p>
           </div>
 
@@ -293,6 +363,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               <option value="STRUCTURED">Structured List</option>
               <option value="UPDATE">Update Feed</option>
               <option value="NEWSLETTER">Newsletter Archive</option>
+              <option value="TELEGRAM_PUBLIC">Telegram Public Feed</option>
             </select>
           </label>
 
@@ -313,6 +384,11 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
             />
           </label>
+          <p className="text-xs leading-5 text-stone-400">
+            Telegram public sources accept <span className="font-mono">https://t.me/&lt;slug&gt;</span> or{" "}
+            <span className="font-mono">https://t.me/s/&lt;slug&gt;</span>. The
+            saved URL is normalized to the public history view.
+          </p>
 
           <button
             className="inline-flex h-12 items-center justify-center rounded-2xl bg-[#0057ff] px-4 text-sm font-medium text-white transition hover:bg-[#0049d6]"
@@ -322,7 +398,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           </button>
         </form>
 
-        <section className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+        <section className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)] lg:col-span-2">
           <div className="flex items-end justify-between gap-3">
             <div>
               <h2 className="text-xl font-semibold">Task sources</h2>

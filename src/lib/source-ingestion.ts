@@ -4,6 +4,7 @@ import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
 import { generateBriefsFromItems } from "@/lib/ai";
 import { queueBriefDelivery } from "@/lib/inngest";
 import { extractStructuredList } from "@/lib/structured-extract";
+import { extractTelegramPublicFeed } from "@/lib/telegram-extract";
 import { extractUpdateEntries } from "@/lib/update-extract";
 import { extractNewsletterArchiveEntries } from "@/lib/newsletter-archive-extract";
 import { enrichItemCandidate } from "@/lib/item-enrichment";
@@ -222,6 +223,16 @@ async function syncNewsletterSource(
   return await extractNewsletterArchiveEntries(html, source.url);
 }
 
+async function syncTelegramPublicSource(
+  source: SourceRecord,
+  fetchImpl: typeof fetchSourceFeed,
+) {
+  const html = await fetchImpl(source.url, {
+    signal: AbortSignal.timeout(SOURCE_SYNC_TIMEOUT_MS),
+  });
+  return extractTelegramPublicFeed(html, source.url);
+}
+
 export async function syncSourceById(
   store: Store,
   sourceId: string,
@@ -274,6 +285,8 @@ export async function syncSourceById(
         ? await syncUpdateSource(source, fetchImpl)
         : source.sourceType === "NEWSLETTER"
         ? await syncNewsletterSource(source, fetchImpl)
+        : source.sourceType === "TELEGRAM_PUBLIC"
+        ? await syncTelegramPublicSource(source, fetchImpl)
         : await syncRssSource(source, fetchImpl);
 
     const summary = await storeSourceItemsAndCreateBriefs(store, source, items);

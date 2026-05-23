@@ -369,6 +369,57 @@ describe("syncSourceById", () => {
       rmSync(tempDirectory, { recursive: true, force: true });
     }
   });
+
+  it("ingests telegram public sources into items and briefs", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, { name: "Signals" });
+      const taskId = await createTaskRecord(store, {
+        spaceId,
+        title: "Monitor telegram",
+        taskType: "TOPIC",
+        userPrompt: "Track public telegram hiring groups",
+      });
+      const sourceId = await createSourceRecord(store, {
+        taskId,
+        sourceType: "TELEGRAM_PUBLIC",
+        title: "Telegram hiring feed",
+        url: "https://t.me/s/examplejobs",
+      });
+
+      const html = `
+        <section class="tgme_channel_history">
+          <div class="tgme_widget_message_wrap">
+            <div class="tgme_widget_message_text">
+              Hiring now: AI infra engineer for a remote-first startup.
+            </div>
+            <a class="tgme_widget_message_date" href="https://t.me/s/examplejobs/10">
+              <time datetime="2026-05-22T10:00:00+00:00"></time>
+            </a>
+          </div>
+        </section>
+      `;
+      const result = await syncSourceById(store, sourceId, {
+        fetchSourceFeedImpl: vi.fn().mockResolvedValue(html),
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        insertedItemCount: 1,
+        createdBriefCount: 1,
+      });
+      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
+      expect((await listBriefs(store))[0]).toMatchObject({
+        taskId,
+        title: expect.stringContaining("Hiring now"),
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("syncAllSources", () => {

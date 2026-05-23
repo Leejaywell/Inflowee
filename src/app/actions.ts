@@ -50,6 +50,7 @@ import {
   setSourceSchedule,
 } from "@/lib/store";
 import { syncSourceById } from "@/lib/source-ingestion";
+import { getSourcePresetById } from "@/lib/source-presets";
 import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import {
   createSourceSchema,
@@ -73,6 +74,30 @@ function getRedirectPath(value: string, fallback: string) {
   }
 
   return value;
+}
+
+function normalizeSourceUrl(sourceType: string, url: string) {
+  if (sourceType !== "TELEGRAM_PUBLIC") {
+    return url;
+  }
+
+  try {
+    const parsed = new URL(url);
+    const segments = parsed.pathname.split("/").filter(Boolean);
+    const slug = segments.find((segment) => segment !== "s");
+
+    if (!slug) {
+      return url;
+    }
+
+    parsed.pathname = `/s/${slug}`;
+    parsed.search = "";
+    parsed.hash = "";
+
+    return parsed.toString();
+  } catch {
+    return url;
+  }
 }
 
 export async function signInAction(formData: FormData) {
@@ -174,11 +199,12 @@ export async function refreshStoredTaskIntelligence(taskId: string) {
 
 export async function createSource(formData: FormData) {
   const actor = await requireSessionActor();
+  const sourceType = getString(formData, "sourceType");
   const parsed = createSourceSchema.safeParse({
     taskId: getString(formData, "taskId"),
-    sourceType: getString(formData, "sourceType"),
+    sourceType,
     title: getString(formData, "title"),
-    url: getString(formData, "url"),
+    url: normalizeSourceUrl(sourceType, getString(formData, "url")),
   });
 
   if (!parsed.success) {
@@ -203,6 +229,45 @@ export async function createSource(formData: FormData) {
     await createSourceRecord(defaultStore, parsed.data);
   } catch {
     destination = "/sources?error=Unable%20to%20create%20source.";
+  }
+
+  revalidatePath("/sources");
+  redirect(destination);
+}
+
+export async function createPresetSource(formData: FormData) {
+  const actor = await requireSessionActor();
+  const taskId = getString(formData, "taskId");
+  const presetId = getString(formData, "presetId");
+  const preset = getSourcePresetById(presetId);
+
+  if (!preset) {
+    redirect("/sources?error=Unknown%20built-in%20source.");
+  }
+
+  const taskExists = await hasTaskRecord(defaultStore, taskId);
+
+  if (!taskExists) {
+    redirect("/sources?error=Select%20a%20valid%20task.");
+  }
+
+  await assertTaskAccess(defaultStore, {
+    actorId: actor.id,
+    taskId,
+    minimumRole: "editor",
+  });
+
+  let destination = "/sources?created=source";
+
+  try {
+    await createSourceRecord(defaultStore, {
+      taskId,
+      sourceType: preset.sourceType,
+      title: preset.title,
+      url: preset.url,
+    });
+  } catch {
+    destination = "/sources?error=Unable%20to%20add%20built-in%20source.";
   }
 
   revalidatePath("/sources");

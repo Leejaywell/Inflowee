@@ -357,6 +357,7 @@ describe("scheduled sync actions and surfaces", () => {
 
   it("renders cadence controls and recent run badges on the sources page", async () => {
     vi.doMock("@/app/actions", () => ({
+      createPresetSource: vi.fn(),
       createSource: vi.fn(),
       deleteSource: vi.fn(),
       runSourceSync: vi.fn(),

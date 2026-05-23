@@ -10,6 +10,7 @@ import {
   listRecentSyncRunsBySource,
 } from "@/lib/store";
 import { extractStructuredListDiagnostics } from "@/lib/structured-extract";
+import { extractTelegramPublicDiagnostics } from "@/lib/telegram-extract";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,11 @@ export default async function SourceDiagnosticsPage({
     | null = null;
   let diagnosticsError: string | null = null;
 
-  if (source.sourceType === "PAGE" || source.sourceType === "STRUCTURED") {
+  if (
+    source.sourceType === "PAGE" ||
+    source.sourceType === "STRUCTURED" ||
+    source.sourceType === "TELEGRAM_PUBLIC"
+  ) {
     try {
       const html = await fetchSourceFeed(source.url, {
         signal: AbortSignal.timeout(10_000),
@@ -63,9 +68,15 @@ export default async function SourceDiagnosticsPage({
           preview: result.rawPreviewText,
         };
       } else {
-        const result = await extractStructuredListDiagnostics(html, source.url);
+        const result =
+          source.sourceType === "STRUCTURED"
+            ? await extractStructuredListDiagnostics(html, source.url)
+            : extractTelegramPublicDiagnostics(html, source.url);
         diagnostics = {
-          title: `${result.items.length} extracted list items`,
+          title:
+            source.sourceType === "STRUCTURED"
+              ? `${result.items.length} extracted list items`
+              : `${result.items.length} extracted telegram messages`,
           summary: result.items[0]?.summary ?? null,
           warnings: result.warnings,
           preview: result.rawPreviewHtml,
@@ -115,9 +126,11 @@ export default async function SourceDiagnosticsPage({
 
         <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
           <h2 className="text-lg font-semibold">Extraction diagnostics</h2>
-          {source.sourceType !== "PAGE" && source.sourceType !== "STRUCTURED" ? (
+          {source.sourceType !== "PAGE" &&
+          source.sourceType !== "STRUCTURED" &&
+          source.sourceType !== "TELEGRAM_PUBLIC" ? (
             <p className="mt-4 text-sm text-stone-500">
-              Diagnostics preview is currently available for PAGE and STRUCTURED sources.
+              Diagnostics preview is currently available for PAGE, STRUCTURED, and TELEGRAM_PUBLIC sources.
             </p>
           ) : diagnosticsError ? (
             <p className="mt-4 text-sm text-rose-600">{diagnosticsError}</p>

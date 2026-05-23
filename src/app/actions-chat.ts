@@ -187,7 +187,13 @@ export async function subscribeRecommendedSources(
   sources: Array<{
     title: string;
     url: string;
-    sourceType: "RSS" | "PAGE" | "STRUCTURED" | "UPDATE" | "NEWSLETTER";
+    sourceType:
+      | "RSS"
+      | "PAGE"
+      | "STRUCTURED"
+      | "UPDATE"
+      | "NEWSLETTER"
+      | "TELEGRAM_PUBLIC";
   }>,
 ) {
   const store = defaultStore;
