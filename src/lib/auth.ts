@@ -55,8 +55,19 @@ type BriefAccessInput = {
 };
 
 function getFallbackSessionUser(): SessionUser | null {
-  const id = process.env.INFLOWEE_DEFAULT_USER_ID ?? DEFAULT_USER_ID;
-  const email = process.env.INFLOWEE_DEFAULT_USER_EMAIL ?? DEFAULT_USER_EMAIL;
+  const explicitId = process.env.INFLOWEE_DEFAULT_USER_ID ?? null;
+  const explicitEmail = process.env.INFLOWEE_DEFAULT_USER_EMAIL ?? null;
+
+  if (explicitId && explicitEmail) {
+    return { id: explicitId, email: explicitEmail };
+  }
+
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  const id = explicitId ?? DEFAULT_USER_ID;
+  const email = explicitEmail ?? DEFAULT_USER_EMAIL;
 
   if (!id || !email) {
     return null;

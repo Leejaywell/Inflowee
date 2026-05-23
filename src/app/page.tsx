@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createSpace, createTask, deleteSpace, deleteTask } from "@/app/actions";
 import { ChatConsole } from "@/components/chat-console";
-import { getActorScopedChatScopeId, requireSessionActor } from "@/lib/auth";
+import { getActorScopedChatScopeId, getSessionUser } from "@/lib/auth";
 import {
   defaultStore,
   getOrCreateChatThread,
@@ -23,7 +24,12 @@ const taskTypeLabels: Record<TaskType, string> = {
 };
 
 export default async function Home({ searchParams }: HomeProps) {
-  const actor = await requireSessionActor();
+  const actor = await getSessionUser();
+
+  if (!actor) {
+    redirect("/login");
+  }
+
   const actorScopeId = getActorScopedChatScopeId(actor.id, "home");
   const [spaces, params, globalThread] = await Promise.all([
     listSpacesWithTasks(defaultStore, { actorId: actor.id }),

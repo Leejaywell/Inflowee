@@ -24,6 +24,14 @@ Set these environment variables in the deployment target:
 7. Trigger `POST /api/jobs/sync`.
 8. Confirm `GET /api/health` returns `200` and `ok: true`.
 
+## Cron note
+
+The checked-in `vercel.json` uses a **daily** cron schedule (`0 0 * * *`) so the project can deploy on a Vercel Hobby account. If the project moves to Pro, the schedule can be tightened without changing the route contract.
+
+## Prisma on Vercel
+
+This project pins `pnpm@10` and runs `prisma generate` through the app's `prebuild` hook. That avoids relying on dependency lifecycle scripts that Vercel's pnpm sandbox may ignore during install.
+
 ## Final Production Smoke-Test Commands
 
 Run the release verification suite from the repo before the final deploy:
