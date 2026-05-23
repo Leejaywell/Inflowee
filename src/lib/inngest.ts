@@ -1,7 +1,12 @@
 import { Inngest } from "inngest";
 
 import { deliverStoredBriefToConfiguredChannels } from "@/lib/delivery";
-import { defaultStore, getDefaultRuntimeStore } from "@/lib/store";
+import {
+  defaultStore,
+  getDefaultRuntimeStore,
+  hasProcessedDeliveryRequest,
+  markDeliveryRequestProcessed,
+} from "@/lib/store";
 import { syncDueSources } from "@/lib/sync-runs";
 
 export const SCHEDULED_SYNC_EVENT = "app/sources.sync.requested";
@@ -81,11 +86,22 @@ export async function runBriefDeliveryEvent(data: BriefDeliveryEventData) {
   });
 }
 
-export function handleBriefDeliveryRequested(data: BriefDeliveryEventData) {
+export async function handleBriefDeliveryRequested(data: BriefDeliveryEventData) {
   const requestRunId = buildBriefDeliveryEventId(data.briefId, data.requestKey);
+  const runtimeStore = process.env.DATABASE_URL
+    ? getDefaultRuntimeStore()
+    : defaultStore;
 
   if (!requestRunId) {
     return runBriefDeliveryEvent(data);
+  }
+
+  if (await hasProcessedDeliveryRequest(runtimeStore, requestRunId)) {
+    return {
+      status: "success",
+      deduplicated: true,
+      deliveries: [],
+    } as const;
   }
 
   const existingRun = briefDeliveryRequestRuns.get(requestRunId);
@@ -94,9 +110,17 @@ export function handleBriefDeliveryRequested(data: BriefDeliveryEventData) {
     return existingRun;
   }
 
-  const runPromise = runBriefDeliveryEvent(data).finally(() => {
-    briefDeliveryRequestRuns.delete(requestRunId);
-  });
+  const runPromise = runBriefDeliveryEvent(data)
+    .then(async (result) => {
+      if (result.status === "success") {
+        await markDeliveryRequestProcessed(runtimeStore, requestRunId);
+      }
+
+      return result;
+    })
+    .finally(() => {
+      briefDeliveryRequestRuns.delete(requestRunId);
+    });
   briefDeliveryRequestRuns.set(requestRunId, runPromise);
 
   return runPromise;

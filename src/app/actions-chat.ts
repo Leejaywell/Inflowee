@@ -80,14 +80,13 @@ export async function submitChatMessage(
   let grounding: GroundingResult = { briefs: [], items: [] };
 
   try {
-    if (scopeType !== "global") {
-      const fallbackSpaceId =
-        scopeType === "task" ? (await getTaskById(store, scopeId))?.spaceId : undefined;
-      grounding = await getGroundingForScope(store, scopeType, scopeId, {
-        fallbackSpaceId,
-        includeSiblingFallback: scopeType === "task",
-      });
-    }
+    const fallbackSpaceId =
+      scopeType === "task" ? (await getTaskById(store, scopeId))?.spaceId : undefined;
+    grounding = await getGroundingForScope(store, scopeType, scopeId, {
+      actorId: actor.id,
+      fallbackSpaceId,
+      includeSiblingFallback: scopeType === "task",
+    });
   } catch (e) {
     console.error("Error gathering grounding materials for chat:", e);
   }

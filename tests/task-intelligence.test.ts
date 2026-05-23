@@ -476,6 +476,85 @@ describe("task intelligence server actions", () => {
     expect(revalidatePath).toHaveBeenCalledWith("/spaces/space-1/tasks/task-1");
   });
 
+  it("uses actor-scoped global grounding for global chat", async () => {
+    const getOrCreateChatThread = vi.fn().mockReturnValue({
+      id: "thread-global",
+      scopeType: "global",
+      scopeId: "home:actor:local-user",
+      createdAt: "2026-05-22T00:00:00.000Z",
+    });
+    const createChatMessage = vi.fn();
+    const listChatMessages = vi.fn().mockReturnValue([
+      { role: "user", content: "What matters across my spaces?" },
+    ]);
+    const answerGroundedQuestion = vi.fn().mockResolvedValue({
+      content: "Top cross-space signals.",
+      citations: ["https://example.com/launch"],
+      provenance: "stored",
+    });
+    const getGroundingForScope = vi.fn().mockResolvedValue({
+      briefs: [{ id: "brief-1", title: "Launch roundup" }],
+      items: [],
+    });
+
+    vi.doMock("next/cache", () => ({
+      revalidatePath: vi.fn(),
+    }));
+    vi.doMock("@/lib/store", () => ({
+      createChatMessage,
+      createSourceRecord: vi.fn(),
+      defaultStore: { database: {} },
+      deleteChatMessagesByThreadId: vi.fn(),
+      getOrCreateChatThread,
+      getTaskById: vi.fn(),
+      listChatMessages,
+      updateTaskControls: vi.fn(),
+    }));
+    vi.doMock("@/lib/ai", () => ({
+      answerGroundedQuestion,
+    }));
+    vi.doMock("@/lib/grounding", () => ({
+      getGroundingForScope,
+    }));
+    vi.doMock("@/lib/live-fetch", () => ({
+      fetchLiveContext: vi.fn(),
+    }));
+    vi.doMock("@/lib/auth", () => ({
+      assertBriefAccess: vi.fn(),
+      assertSpaceAccess: vi.fn(),
+      assertTaskAccess: vi.fn(),
+      getActorScopedChatScopeId: vi.fn((actorId: string, scopeId: string) =>
+        `${scopeId}:actor:${actorId}`,
+      ),
+      requireSessionActor: vi.fn().mockResolvedValue({
+        id: "local-user",
+        email: "local@inflowee.dev",
+      }),
+    }));
+
+    const { submitChatMessage } = await import("@/app/actions-chat");
+    const result = await submitChatMessage(
+      "global",
+      "home",
+      "What matters across my spaces?",
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        success: true,
+        provenance: "stored",
+      }),
+    );
+    expect(getGroundingForScope).toHaveBeenCalledWith(
+      { database: {} },
+      "global",
+      "home",
+      expect.objectContaining({
+        actorId: "local-user",
+      }),
+    );
+  });
+
   it("clears only the actor-scoped chat thread", async () => {
     const revalidatePath = vi.fn();
     const getOrCreateChatThread = vi.fn().mockReturnValue({

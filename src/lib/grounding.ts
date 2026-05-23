@@ -21,6 +21,7 @@ type GroundingOptions = {
   includeItems?: boolean;
   fallbackSpaceId?: string;
   includeSiblingFallback?: boolean;
+  actorId?: string;
 };
 
 function compareItemsByFreshness(a: ItemRecord, b: ItemRecord): number {
@@ -58,7 +59,7 @@ function dedupeAndSortItems(items: ItemRecord[]): ItemRecord[] {
 
 export async function getGroundingForScope(
   store: Store,
-  scopeType: GroundingScopeType,
+  scopeType: GroundingScopeType | "global",
   scopeId: string,
   options: GroundingOptions = {},
 ): Promise<GroundingResult> {
@@ -86,7 +87,10 @@ export async function getGroundingForScope(
   }
 
   if (scopeType === "task") {
-    const briefs = await listBriefsFiltered(store, { taskId: scopeId });
+    const briefs = await listBriefsFiltered(store, {
+      taskId: scopeId,
+      actorId: options.actorId,
+    });
     const items = includeItems
       ? dedupeAndSortItems(
           (
@@ -113,6 +117,28 @@ export async function getGroundingForScope(
     return { briefs, items };
   }
 
+  if (scopeType === "global") {
+    const briefs = await listBriefsFiltered(store, {
+      actorId: options.actorId,
+    });
+
+    if (!includeItems) {
+      return { briefs, items: [] };
+    }
+
+    const taskIds = [...new Set(briefs.map((brief) => brief.taskId))];
+    const sourceGroups = await Promise.all(
+      taskIds.map((taskId) => listSourcesByTask(store, taskId)),
+    );
+    const items = (
+      await Promise.all(
+        sourceGroups.flat().map((source) => listItemsBySource(store, source.id)),
+      )
+    ).flat();
+
+    return { briefs, items: dedupeAndSortItems(items) };
+  }
+
   const taskIds = (await listTasksBySpace(store, scopeId)).map((task) => task.id);
 
   if (taskIds.length === 0) {
@@ -120,7 +146,7 @@ export async function getGroundingForScope(
   }
 
   const taskIdSet = new Set(taskIds);
-  const briefs = (await listBriefsFiltered(store)).filter((brief) =>
+  const briefs = (await listBriefsFiltered(store, { actorId: options.actorId })).filter((brief) =>
     taskIdSet.has(brief.taskId),
   );
   if (!includeItems) {

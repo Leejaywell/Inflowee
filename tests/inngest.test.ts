@@ -153,6 +153,8 @@ describe("runScheduledSyncEvent", () => {
     vi.doMock("@/lib/store", () => ({
       defaultStore: { database: {} },
       getDefaultRuntimeStore: getDefaultRuntimeStoreMock,
+      hasProcessedDeliveryRequest: vi.fn().mockResolvedValue(false),
+      markDeliveryRequestProcessed: vi.fn(),
     }));
     vi.doMock("@/lib/delivery", () => ({
       deliverStoredBriefToConfiguredChannels: deliverStoredBriefMock,
@@ -187,6 +189,8 @@ describe("runScheduledSyncEvent", () => {
     vi.doMock("@/lib/store", () => ({
       defaultStore: { database: {} },
       getDefaultRuntimeStore: vi.fn(() => ({ database: {} })),
+      hasProcessedDeliveryRequest: vi.fn().mockResolvedValue(false),
+      markDeliveryRequestProcessed: vi.fn(),
     }));
     vi.doMock("@/lib/delivery", () => ({
       deliverStoredBriefToConfiguredChannels: vi.fn(async (...args: unknown[]) => {
@@ -218,6 +222,11 @@ describe("runScheduledSyncEvent", () => {
       responseStatus: number;
     };
     const deliverStoredBriefMock = vi.fn();
+    const hasProcessedDeliveryRequest = vi
+      .fn()
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(false)
+      .mockResolvedValueOnce(true);
     let resolveFirstRun!: (value: DeliveryResult) => void;
 
     deliverStoredBriefMock
@@ -235,6 +244,8 @@ describe("runScheduledSyncEvent", () => {
     vi.doMock("@/lib/store", () => ({
       defaultStore: { database: {} },
       getDefaultRuntimeStore: vi.fn(() => ({ database: {} })),
+      hasProcessedDeliveryRequest,
+      markDeliveryRequestProcessed: vi.fn(),
     }));
     vi.doMock("@/lib/delivery", () => ({
       deliverStoredBriefToConfiguredChannels: deliverStoredBriefMock,
@@ -252,20 +263,48 @@ describe("runScheduledSyncEvent", () => {
         requestKey: "same-key",
       });
 
-      expect(firstRun).toBe(secondRun);
+      await Promise.resolve();
       expect(deliverStoredBriefMock).toHaveBeenCalledTimes(1);
 
       resolveFirstRun({ status: "success", responseStatus: 202 });
-      await firstRun;
+      await Promise.all([firstRun, secondRun]);
 
       await handleBriefDeliveryRequested({
         briefId: "brief-1",
         requestKey: "same-key",
       });
 
-      expect(deliverStoredBriefMock).toHaveBeenCalledTimes(2);
+      expect(deliverStoredBriefMock).toHaveBeenCalledTimes(1);
     } finally {
       vi.resetModules();
     }
+  });
+
+  it("skips a delivery request that was already processed previously", async () => {
+    const deliverStoredBriefMock = vi.fn();
+
+    vi.doMock("@/lib/store", () => ({
+      defaultStore: { database: {} },
+      getDefaultRuntimeStore: vi.fn(() => ({ database: {} })),
+      hasProcessedDeliveryRequest: vi.fn().mockResolvedValue(true),
+      markDeliveryRequestProcessed: vi.fn(),
+    }));
+    vi.doMock("@/lib/delivery", () => ({
+      deliverStoredBriefToConfiguredChannels: deliverStoredBriefMock,
+    }));
+
+    const { handleBriefDeliveryRequested } = await import("@/lib/inngest");
+    const result = await handleBriefDeliveryRequested({
+      briefId: "brief-1",
+      requestKey: "same-key",
+    });
+
+    expect(deliverStoredBriefMock).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.objectContaining({
+        status: "success",
+        deduplicated: true,
+      }),
+    );
   });
 });

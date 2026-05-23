@@ -2694,6 +2694,25 @@ export async function getFeishuSettings(
   };
 }
 
+export async function hasProcessedDeliveryRequest(
+  store: Store,
+  requestKey: string,
+): Promise<boolean> {
+  const row = await getAppSetting(store, `delivery_request:${requestKey}`);
+  return Boolean(row.value);
+}
+
+export async function markDeliveryRequestProcessed(
+  store: Store,
+  requestKey: string,
+) {
+  await saveAppSetting(
+    store,
+    `delivery_request:${requestKey}`,
+    new Date().toISOString(),
+  );
+}
+
 export async function createDeliveryLog(
   store: Store,
   input: {

@@ -103,6 +103,79 @@ describe("getGroundingForScope", () => {
     }
   });
 
+  it("returns actor-scoped global grounding across accessible spaces", async () => {
+    const fixture = await createFixture();
+
+    try {
+      const secondSpaceId = await createSpaceRecord(fixture.store, {
+        ownerId: "other-owner",
+        name: "Other space",
+      });
+      const secondTaskId = await createTaskRecord(fixture.store, {
+        spaceId: secondSpaceId,
+        title: "Other launches",
+        taskType: "TOPIC",
+        userPrompt: "Track unrelated launches",
+      });
+      const secondSourceId = await createSourceRecord(fixture.store, {
+        taskId: secondTaskId,
+        sourceType: "RSS",
+        title: "Other feed",
+        url: "https://example.com/other.xml",
+      });
+      const secondItem = await createItemRecordResult(fixture.store, {
+        sourceId: secondSourceId,
+        title: "Private roundup",
+        canonicalUrl: "https://example.com/private",
+        summary: "Private update.",
+      });
+
+      if (!secondItem) {
+        throw new Error("Expected secondary fixture item to be inserted.");
+      }
+
+      await createBriefRecord(fixture.store, {
+        taskId: secondTaskId,
+        itemIds: [secondItem.id],
+        title: "Private roundup",
+        summary: "Private update.",
+        whyItMatters: "Hidden from viewer.",
+        sourceCitations: ["https://example.com/private"],
+        relevanceScore: 0.4,
+        importanceScore: 0.4,
+        tags: [],
+      });
+
+      await addSpaceMember(fixture.store, {
+        spaceId: fixture.spaceId,
+        userId: "viewer-1",
+        role: "viewer",
+      });
+
+      const grounding = await getGroundingForScope(
+        fixture.store,
+        "global",
+        "all",
+        { actorId: "viewer-1" },
+      );
+
+      expect(grounding.briefs).toEqual([
+        expect.objectContaining({
+          id: fixture.briefId,
+          title: "Launch roundup",
+        }),
+      ]);
+      expect(grounding.briefs).toHaveLength(1);
+      expect(grounding.items).toEqual([
+        expect.objectContaining({
+          canonicalUrl: "https://example.com/launch",
+        }),
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it("allows task access for a viewer member", async () => {
     const fixture = await createFixture();
 
