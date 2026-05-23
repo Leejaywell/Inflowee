@@ -52,7 +52,8 @@ export default async function SourceDiagnosticsPage({
   if (
     source.sourceType === "PAGE" ||
     source.sourceType === "STRUCTURED" ||
-    source.sourceType === "TELEGRAM_PUBLIC"
+    source.sourceType === "TELEGRAM_PUBLIC" ||
+    source.sourceType === "TELEGRAM_BOT"
   ) {
     try {
       const html = await fetchSourceFeed(source.url, {
@@ -128,9 +129,10 @@ export default async function SourceDiagnosticsPage({
           <h2 className="text-lg font-semibold">Extraction diagnostics</h2>
           {source.sourceType !== "PAGE" &&
           source.sourceType !== "STRUCTURED" &&
-          source.sourceType !== "TELEGRAM_PUBLIC" ? (
+          source.sourceType !== "TELEGRAM_PUBLIC" &&
+          source.sourceType !== "TELEGRAM_BOT" ? (
             <p className="mt-4 text-sm text-stone-500">
-              Diagnostics preview is currently available for PAGE, STRUCTURED, and TELEGRAM_PUBLIC sources.
+              Diagnostics preview is currently available for PAGE, STRUCTURED, TELEGRAM_PUBLIC, and TELEGRAM_BOT sources.
             </p>
           ) : diagnosticsError ? (
             <p className="mt-4 text-sm text-rose-600">{diagnosticsError}</p>

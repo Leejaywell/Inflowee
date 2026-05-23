@@ -25,7 +25,8 @@ export type SourceType =
   | "STRUCTURED"
   | "UPDATE"
   | "NEWSLETTER"
-  | "TELEGRAM_PUBLIC";
+  | "TELEGRAM_PUBLIC"
+  | "TELEGRAM_BOT";
 export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
 export type DeliveryStatus = "running" | "success" | "error";
@@ -409,7 +410,7 @@ const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC')),
+    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT')),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
@@ -572,6 +573,7 @@ function migrateSourcesTable(database: DatabaseSync) {
   const needsUpdateMigration = !sourcesTable.sql.includes("'UPDATE'");
   const needsNewsletterMigration = !sourcesTable.sql.includes("'NEWSLETTER'");
   const needsTelegramPublicMigration = !sourcesTable.sql.includes("'TELEGRAM_PUBLIC'");
+  const needsTelegramBotMigration = !sourcesTable.sql.includes("'TELEGRAM_BOT'");
   const needsScheduleMigration = !sourcesTable.sql.includes("sync_interval_minutes");
 
   if (
@@ -580,6 +582,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     !needsUpdateMigration &&
     !needsNewsletterMigration &&
     !needsTelegramPublicMigration &&
+    !needsTelegramBotMigration &&
     !needsScheduleMigration
   ) {
     return;
@@ -592,7 +595,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
-      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC')),
+      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT')),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
@@ -623,7 +626,7 @@ function migrateSourcesTable(database: DatabaseSync) {
       id,
       task_id,
       CASE
-        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC') THEN source_type
+        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT') THEN source_type
         ELSE 'PAGE'
       END,
       title,
@@ -2958,6 +2961,31 @@ export async function getTelegramSettings(
     botToken: tokenRow.value,
     chatId: chatRow.value,
     updatedAt: chatRow.updatedAt ?? tokenRow.updatedAt,
+  };
+}
+
+export type TelegramSourceSettingsRecord = {
+  botToken: string | null;
+  updatedAt: string | null;
+};
+
+export async function saveTelegramSourceSettings(
+  store: Store,
+  input: {
+    botToken: string;
+  },
+) {
+  await saveAppSetting(store, "telegram_source_bot_token", input.botToken);
+}
+
+export async function getTelegramSourceSettings(
+  store: Store,
+): Promise<TelegramSourceSettingsRecord> {
+  const tokenRow = await getAppSetting(store, "telegram_source_bot_token");
+
+  return {
+    botToken: tokenRow.value,
+    updatedAt: tokenRow.updatedAt,
   };
 }
 

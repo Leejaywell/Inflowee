@@ -29,6 +29,7 @@ import {
   getDeliveryHealthSummary,
   getFeishuSettings,
   getSlackSettings,
+  getTelegramSourceSettings,
   getTelegramSettings,
   getSourceHealthSummary,
   findChatThread,
@@ -56,6 +57,7 @@ import {
   getTaskById,
   getTaskProfile,
   saveFeishuSettings,
+  saveTelegramSourceSettings,
   saveTelegramSettings,
   saveWebhookSettings,
   saveSlackSettings,
@@ -564,7 +566,7 @@ describe("store source persistence", () => {
     }
   });
 
-  it("stores UPDATE, NEWSLETTER, and TELEGRAM_PUBLIC sources under a task", async () => {
+  it("stores UPDATE, NEWSLETTER, TELEGRAM_PUBLIC, and TELEGRAM_BOT sources under a task", async () => {
     const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
@@ -597,6 +599,12 @@ describe("store source persistence", () => {
         title: "Telegram feed",
         url: "https://t.me/s/example",
       });
+      await createSourceRecord(store, {
+        taskId,
+        sourceType: "TELEGRAM_BOT",
+        title: "Telegram bot feed",
+        url: "https://t.me/example-bot-feed",
+      });
 
       expect(await listSourcesByTask(store, taskId)).toEqual(
         expect.arrayContaining([
@@ -619,6 +627,13 @@ describe("store source persistence", () => {
             sourceType: "TELEGRAM_PUBLIC",
             title: "Telegram feed",
             url: "https://t.me/s/example",
+            status: "idle",
+          }),
+          expect.objectContaining({
+            taskId,
+            sourceType: "TELEGRAM_BOT",
+            title: "Telegram bot feed",
+            url: "https://t.me/example-bot-feed",
             status: "idle",
           }),
         ]),
@@ -793,11 +808,17 @@ describe("store source persistence", () => {
     expect(parsed.error?.issues[0]?.message).toBe("Enter a valid https URL.");
   });
 
-  it("accepts public telegram sources and rejects non-telegram URLs", async () => {
+  it("accepts telegram feed sources and rejects non-telegram URLs", async () => {
     const valid = createSourceSchema.safeParse({
       taskId: "task-123",
       sourceType: "TELEGRAM_PUBLIC",
       title: "Telegram feed",
+      url: "https://t.me/examplejobs",
+    });
+    const validBot = createSourceSchema.safeParse({
+      taskId: "task-123",
+      sourceType: "TELEGRAM_BOT",
+      title: "Telegram bot feed",
       url: "https://t.me/examplejobs",
     });
     const invalid = createSourceSchema.safeParse({
@@ -808,6 +829,7 @@ describe("store source persistence", () => {
     });
 
     expect(valid.success).toBe(true);
+    expect(validBot.success).toBe(true);
     expect(invalid.success).toBe(false);
     expect(invalid.error?.issues[0]?.message).toBe(
       "Enter a valid public Telegram channel or group URL.",
@@ -884,6 +906,7 @@ describe("store source persistence", () => {
       expect(sourcesTable.sql).toContain("'UPDATE'");
       expect(sourcesTable.sql).toContain("'NEWSLETTER'");
       expect(sourcesTable.sql).toContain("'TELEGRAM_PUBLIC'");
+      expect(sourcesTable.sql).toContain("'TELEGRAM_BOT'");
 
       expect(() =>
         store.database
@@ -959,6 +982,25 @@ describe("store delivery persistence", () => {
 
       expect(await getWebhookSettings(store)).toEqual({
         endpoint: "https://example.com/webhook",
+        updatedAt: expect.any(String),
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("stores telegram source bot settings in app settings", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-delivery-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      await saveTelegramSourceSettings(store, {
+        botToken: "123456:ABCDEF_bot",
+      });
+
+      expect(await getTelegramSourceSettings(store)).toEqual({
+        botToken: "123456:ABCDEF_bot",
         updatedAt: expect.any(String),
       });
     } finally {

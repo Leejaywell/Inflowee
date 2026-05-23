@@ -364,6 +364,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               <option value="UPDATE">Update Feed</option>
               <option value="NEWSLETTER">Newsletter Archive</option>
               <option value="TELEGRAM_PUBLIC">Telegram Public Feed</option>
+              <option value="TELEGRAM_BOT">Telegram Bot Feed</option>
             </select>
           </label>
 
@@ -387,7 +388,10 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           <p className="text-xs leading-5 text-stone-400">
             Telegram public sources accept <span className="font-mono">https://t.me/&lt;slug&gt;</span> or{" "}
             <span className="font-mono">https://t.me/s/&lt;slug&gt;</span>. The
-            saved URL is normalized to the public history view.
+            saved URL is normalized to the public history view. Telegram bot
+            feeds use the same URL format, but require a Telegram source bot
+            token in Settings and only ingest messages observed after the bot
+            joins the chat.
           </p>
 
           <button

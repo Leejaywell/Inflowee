@@ -193,7 +193,8 @@ export async function subscribeRecommendedSources(
       | "STRUCTURED"
       | "UPDATE"
       | "NEWSLETTER"
-      | "TELEGRAM_PUBLIC";
+      | "TELEGRAM_PUBLIC"
+      | "TELEGRAM_BOT";
   }>,
 ) {
   const store = defaultStore;

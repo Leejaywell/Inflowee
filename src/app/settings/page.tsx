@@ -1,6 +1,7 @@
 import {
   saveFeishuEndpoint,
   saveSlackEndpoint,
+  saveTelegramSourceBot,
   saveTelegramDelivery,
   saveWebhookEndpoint,
 } from "@/app/actions";
@@ -11,6 +12,7 @@ import {
   getDeliveryHealthSummary,
   getFeishuSettings,
   getSlackSettings,
+  getTelegramSourceSettings,
   getTelegramSettings,
   getWebhookSettings,
   listRecentDeliveryLogs,
@@ -27,10 +29,11 @@ export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
   const actor = await requireOperatorSessionActor();
-  const [webhookSettings, slackSettings, telegramSettings, feishuSettings, recentLogs, deliveryHealth, params] = await Promise.all([
+  const [webhookSettings, slackSettings, telegramSettings, telegramSourceSettings, feishuSettings, recentLogs, deliveryHealth, params] = await Promise.all([
     getWebhookSettings(defaultStore),
     getSlackSettings(defaultStore),
     getTelegramSettings(defaultStore),
+    getTelegramSourceSettings(defaultStore),
     getFeishuSettings(defaultStore),
     listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),
     getDeliveryHealthSummary(defaultStore, { actorId: actor.id }),
@@ -173,6 +176,36 @@ export default async function SettingsPage({
 
       <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
         <form
+          action={saveTelegramSourceBot}
+          className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+        >
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold">Telegram source bot</h2>
+            <p className="text-sm leading-6 text-stone-500">
+              Use a separate bot token for Telegram source ingestion. The bot
+              must already be a member of the target public group or channel,
+              and new messages must arrive after it is added.
+            </p>
+          </div>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Bot token</span>
+            <input
+              name="botToken"
+              defaultValue={telegramSourceSettings.botToken ?? ""}
+              placeholder="123456:ABCDEF..."
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
+            Save Telegram source bot
+          </button>
+        </form>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <form
           action={saveFeishuEndpoint}
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
@@ -259,6 +292,8 @@ export default async function SettingsPage({
                 ? "Slack settings saved."
                 : updated === "telegram"
                   ? "Telegram settings saved."
+                  : updated === "telegram-source-bot"
+                    ? "Telegram source bot saved."
                   : updated === "feishu"
                     ? "Feishu settings saved."
                 : "Update applied."}

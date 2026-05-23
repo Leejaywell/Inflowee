@@ -4,6 +4,7 @@ import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
 import { generateBriefsFromItems } from "@/lib/ai";
 import { queueBriefDelivery } from "@/lib/inngest";
 import { extractStructuredList } from "@/lib/structured-extract";
+import { fetchTelegramBotFeed } from "@/lib/telegram-bot-ingest";
 import { extractTelegramPublicFeed } from "@/lib/telegram-extract";
 import { extractUpdateEntries } from "@/lib/update-extract";
 import { extractNewsletterArchiveEntries } from "@/lib/newsletter-archive-extract";
@@ -17,6 +18,7 @@ import {
   getFeishuSettings,
   getSlackSettings,
   getSourceById,
+  getTelegramSourceSettings,
   getTelegramSettings,
   getTaskById,
   getWebhookSettings,
@@ -233,11 +235,32 @@ async function syncTelegramPublicSource(
   return extractTelegramPublicFeed(html, source.url);
 }
 
+async function syncTelegramBotSource(
+  store: Store,
+  source: SourceRecord,
+  fetchImpl?: typeof fetch,
+) {
+  const settings = await getTelegramSourceSettings(store);
+
+  if (!settings.botToken) {
+    throw new Error(
+      "Telegram source bot token is not configured. Save it in Settings before syncing bot-backed Telegram sources.",
+    );
+  }
+
+  return fetchTelegramBotFeed({
+    botToken: settings.botToken,
+    sourceUrl: source.url,
+    fetchImpl,
+  });
+}
+
 export async function syncSourceById(
   store: Store,
   sourceId: string,
   options?: {
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
+    telegramApiFetchImpl?: typeof fetch;
   },
 ): Promise<SyncSourceResult> {
   const source = await getSourceById(store, sourceId);
@@ -287,6 +310,8 @@ export async function syncSourceById(
         ? await syncNewsletterSource(source, fetchImpl)
         : source.sourceType === "TELEGRAM_PUBLIC"
         ? await syncTelegramPublicSource(source, fetchImpl)
+        : source.sourceType === "TELEGRAM_BOT"
+        ? await syncTelegramBotSource(store, source, options?.telegramApiFetchImpl)
         : await syncRssSource(source, fetchImpl);
 
     const summary = await storeSourceItemsAndCreateBriefs(store, source, items);
@@ -340,6 +365,7 @@ export async function syncAllSources(
   store: Store,
   options?: {
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
+    telegramApiFetchImpl?: typeof fetch;
   },
 ): Promise<SyncAllResult> {
   const sources = await listSources(store);

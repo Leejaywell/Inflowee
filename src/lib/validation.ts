@@ -30,6 +30,7 @@ export const createSourceSchema = z.object({
     "UPDATE",
     "NEWSLETTER",
     "TELEGRAM_PUBLIC",
+    "TELEGRAM_BOT",
   ]),
   title: z
     .string()
@@ -59,7 +60,10 @@ export const createSourceSchema = z.object({
       });
     }
 
-    if (value.sourceType === "TELEGRAM_PUBLIC") {
+    if (
+      value.sourceType === "TELEGRAM_PUBLIC" ||
+      value.sourceType === "TELEGRAM_BOT"
+    ) {
       const hostname = url.hostname.toLowerCase();
       const validHostnames = new Set([
         "t.me",
@@ -128,6 +132,14 @@ export const telegramSettingsSchema = z.object({
     .trim()
     .min(1, "Enter a Telegram chat ID.")
     .regex(/^-?\d+$/, "Enter a valid Telegram chat ID."),
+});
+
+export const telegramSourceSettingsSchema = z.object({
+  botToken: z
+    .string()
+    .trim()
+    .min(10, "Enter a valid Telegram source bot token.")
+    .regex(/^\d+:[A-Za-z0-9_-]+$/, "Enter a valid Telegram source bot token."),
 });
 
 export const feishuWebhookEndpointSchema = z

@@ -44,6 +44,7 @@ import {
   removeSpaceMember,
   revokeSpaceInvite,
   saveFeishuSettings,
+  saveTelegramSourceSettings,
   saveTelegramSettings,
   saveWebhookSettings,
   saveSlackSettings,
@@ -59,6 +60,7 @@ import {
   createTaskSchema,
   slackWebhookEndpointSchema,
   spaceMemberSchema,
+  telegramSourceSettingsSchema,
   telegramSettingsSchema,
   updateSourceScheduleSchema,
   webhookEndpointSchema,
@@ -77,7 +79,7 @@ function getRedirectPath(value: string, fallback: string) {
 }
 
 function normalizeSourceUrl(sourceType: string, url: string) {
-  if (sourceType !== "TELEGRAM_PUBLIC") {
+  if (sourceType !== "TELEGRAM_PUBLIC" && sourceType !== "TELEGRAM_BOT") {
     return url;
   }
 
@@ -493,6 +495,23 @@ export async function saveTelegramDelivery(formData: FormData) {
   await saveTelegramSettings(defaultStore, parsed.data);
   revalidatePath("/settings");
   redirect("/settings?updated=telegram");
+}
+
+export async function saveTelegramSourceBot(formData: FormData) {
+  await requireOperatorSessionActor();
+  const parsed = telegramSourceSettingsSchema.safeParse({
+    botToken: getString(formData, "botToken"),
+  });
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid Telegram source bot settings.")}`,
+    );
+  }
+
+  await saveTelegramSourceSettings(defaultStore, parsed.data);
+  revalidatePath("/settings");
+  redirect("/settings?updated=telegram-source-bot");
 }
 
 export async function saveFeishuEndpoint(formData: FormData) {

@@ -11,6 +11,7 @@ import {
   createSpaceRecord,
   createStore,
   createTaskRecord,
+  saveTelegramSourceSettings,
   listRecentSyncRunsBySource,
   listBriefs,
   listItemsBySource,
@@ -403,6 +404,70 @@ describe("syncSourceById", () => {
       `;
       const result = await syncSourceById(store, sourceId, {
         fetchSourceFeedImpl: vi.fn().mockResolvedValue(html),
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        insertedItemCount: 1,
+        createdBriefCount: 1,
+      });
+      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
+      expect((await listBriefs(store))[0]).toMatchObject({
+        taskId,
+        title: expect.stringContaining("Hiring now"),
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("ingests telegram bot sources into items and briefs", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, { name: "Signals" });
+      const taskId = await createTaskRecord(store, {
+        spaceId,
+        title: "Monitor telegram bot feed",
+        taskType: "TOPIC",
+        userPrompt: "Track Telegram bot-observed hiring groups",
+      });
+      const sourceId = await createSourceRecord(store, {
+        taskId,
+        sourceType: "TELEGRAM_BOT",
+        title: "Telegram bot hiring feed",
+        url: "https://t.me/examplejobs",
+      });
+
+      await saveTelegramSourceSettings(store, {
+        botToken: "123456:ABCDEF_bot",
+      });
+
+      const telegramApiFetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          ok: true,
+          result: [
+            {
+              update_id: 1,
+              message: {
+                text: "Hiring now: AI infra engineer for a remote team.",
+                date: 1779532800,
+                chat: {
+                  id: -1001,
+                  title: "Example Jobs",
+                  username: "examplejobs",
+                },
+              },
+            },
+          ],
+        }),
+      });
+
+      const result = await syncSourceById(store, sourceId, {
+        telegramApiFetchImpl: telegramApiFetchImpl as typeof fetch,
       });
 
       expect(result).toMatchObject({
