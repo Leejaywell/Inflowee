@@ -233,10 +233,12 @@ describe("buildBriefsFromItems", () => {
         whyItMatters: "New signal captured from subscribed RSS sources.",
         sourceCitations: ["https://example.com/posts/launch-roundup"],
         relevanceScore: 0.6,
-        importanceScore: 0.6,
-        tags: ["launch"],
       }),
     ]);
+    expect(briefs[0]?.importanceScore).toBeCloseTo(0.675);
+    expect(briefs[0]?.tags).toContain("product-update");
+    expect(briefs[0]?.tags.length).toBeGreaterThanOrEqual(5);
+    expect(briefs[0]?.tags.length).toBeLessThanOrEqual(15);
   });
 
   it("clusters same-event feed items into one higher-ranked brief", () => {
@@ -261,7 +263,6 @@ describe("buildBriefsFromItems", () => {
     expect(briefs[0]).toEqual(
       expect.objectContaining({
         itemIds: ["item-1", "item-2"],
-        importanceScore: 0.75,
         relevanceScore: 0.7,
         sourceCitations: [
           "https://example.com/posts/o4-mini-1",
@@ -269,6 +270,9 @@ describe("buildBriefsFromItems", () => {
         ],
       }),
     );
+    expect(briefs[0]?.importanceScore).toBeCloseTo(0.885);
+    expect(briefs[0]?.tags).toContain("openai");
+    expect(briefs[0]?.tags.length).toBeGreaterThanOrEqual(5);
   });
 
   it("stores generated briefs with task and space context", async () => {
@@ -316,12 +320,13 @@ describe("buildBriefsFromItems", () => {
           whyItMatters: "New signal captured from subscribed RSS sources.",
           sourceCitations: ["https://example.com/posts/launch-roundup"],
           relevanceScore: 0.6,
-          importanceScore: 0.6,
-          tags: ["launch"],
+          tags: expect.arrayContaining(["product-update"]),
           taskTitle: "Monitor feed",
           spaceName: "OpenAI",
         }),
       ]);
+      expect((await listBriefs(store))[0]?.importanceScore).toBeCloseTo(0.675);
+      expect((await listBriefs(store))[0]?.tags.length).toBeGreaterThanOrEqual(5);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });

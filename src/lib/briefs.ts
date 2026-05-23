@@ -1,5 +1,6 @@
 import type { ItemRecord } from "@/lib/store";
 import { clusterItemsForBriefs } from "@/lib/brief-clustering";
+import { deriveTopicTags } from "@/lib/topic-tags";
 
 export type BriefCandidate = {
   taskId: string;
@@ -22,17 +23,14 @@ export function buildBriefsFromItems(
 ): BriefCandidate[] {
   return clusterItemsForBriefs(items as ItemRecord[])
     .map((cluster) => {
-      const lead = cluster.items[0];
       const summary =
         cluster.items.find((item) => item.summary)?.summary ??
         "No summary available.";
-      const tags = Array.from(
-        new Set(
-          `${lead?.title ?? ""} ${summary}`.toLowerCase().match(/\b[a-z0-9-]{3,}\b/g) ?? [],
-        ),
-      ).filter((tag) =>
-        ["openai", "agent", "api", "model", "funding", "launch"].includes(tag),
-      );
+      const tags = deriveTopicTags({
+        items: cluster.items,
+        title: cluster.representativeTitle,
+        summary,
+      });
       const sourceCount = cluster.items.length;
 
       return {
@@ -46,7 +44,10 @@ export function buildBriefsFromItems(
             : "New signal captured from subscribed RSS sources.",
         sourceCitations: cluster.citations,
         relevanceScore: Math.min(1, 0.5 + sourceCount * 0.1),
-        importanceScore: Math.min(1, 0.45 + sourceCount * 0.15),
+        importanceScore: Math.min(
+          1,
+          0.45 + sourceCount * 0.15 + Math.min(tags.length, 10) * 0.015,
+        ),
         tags,
       };
     })

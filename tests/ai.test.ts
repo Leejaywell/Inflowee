@@ -127,10 +127,15 @@ describe("Core AI Orchestration layer", () => {
     expect(devinBrief?.importanceScore).toBeGreaterThan(0);
     expect(devinBrief?.relevanceScore).toBeGreaterThan(0);
     expect(devinBrief?.tags).toContain("agent");
+    expect(devinBrief?.tags).toContain("coding-agent");
+    expect(devinBrief?.tags.length ?? 0).toBeGreaterThanOrEqual(5);
+    expect(devinBrief?.tags.length ?? 0).toBeLessThanOrEqual(15);
 
     const fundingBrief = briefs.find((b) => b.title.includes("Series A"));
     expect(fundingBrief).toBeDefined();
     expect(fundingBrief?.itemIds).toEqual(["item-3"]);
+    expect(fundingBrief?.tags).toContain("funding");
+    expect(fundingBrief?.tags.length ?? 0).toBeGreaterThanOrEqual(5);
   });
 
   it("produces grounded contextual chat responses citing relevant articles", async () => {

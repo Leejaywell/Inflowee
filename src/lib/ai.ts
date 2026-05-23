@@ -2,6 +2,7 @@ import type { GroundingResult } from "./grounding";
 import { fetchLiveContext, type LiveFetchResult } from "./live-fetch";
 import { TaskRecord, ItemRecord, BriefRecord, type SourceType } from "./store";
 import { clusterItemsForBriefs } from "./brief-clustering";
+import { deriveTopicTags } from "./topic-tags";
 
 export type TaskProfile = {
   keywords: string[];
@@ -334,20 +335,7 @@ export async function generateBriefsFromItems(
     const citations = cluster.citations;
     const itemIds = cluster.itemIds;
     const clusterItems = cluster.items;
-    const clusterText = clusterItems
-      .map((item) => `${item.title} ${item.summary ?? ""}`.toLowerCase())
-      .join(" ");
-    const tags = [
-      clusterText.includes("api") ? "api" : null,
-      clusterText.includes("agent") || clusterText.includes("devin") ? "agent" : null,
-      clusterText.includes("funding") || clusterText.includes("series a") ? "funding" : null,
-      clusterText.includes("openai") ? "openai" : null,
-    ].filter((tag): tag is string => Boolean(tag));
     const relevanceScore = Math.min(1, 0.55 + clusterItems.length * 0.1);
-    const importanceScore = Math.min(
-      1,
-      0.45 + clusterItems.length * 0.15 + (tags.length > 0 ? 0.1 : 0),
-    );
 
     if (apiKey) {
       try {
@@ -359,12 +347,14 @@ Given the titles and summaries in this cluster, generate:
 1. A concise, engaging synthesized Title (max 10 words).
 2. A single comprehensive Summary paragraph digesting the unified update (max 120 words).
 3. A brief "Why it Matters" paragraph explaining its context relative to the task (max 60 words).
+4. A topical tag list with 5 to 15 concise tags. Prefer subject tags like remote, part-time, java, rust, ai, funding, changelog, api.
 
 Respond in strict JSON format:
 {
   "title": "Synthesized Title",
   "summary": "Full summary paragraph details...",
-  "whyItMatters": "Why this update is highly relevant to tracking task..."
+  "whyItMatters": "Why this update is highly relevant to tracking task...",
+  "tags": ["tag-1", "tag-2", "tag-3", "tag-4", "tag-5"]
 }`;
         const clusterDetails = clusterItems.map((c) => `- TITLE: "${c.title}"\n  SUMMARY: "${c.summary || "No summary available"}"`).join("\n");
         const responseText = await callOpenAIChatCompletion([
@@ -373,6 +363,18 @@ Respond in strict JSON format:
         ], true);
 
         const data = JSON.parse(responseText);
+        const tags = deriveTopicTags({
+          task,
+          items: clusterItems,
+          title: data.title || clusterItems[0].title,
+          summary:
+            data.summary || `Synthesized update regarding ${clusterItems[0].title}.`,
+          aiTags: data.tags,
+        });
+        const importanceScore = Math.min(
+          1,
+          0.45 + clusterItems.length * 0.15 + Math.min(tags.length, 10) * 0.015,
+        );
         candidates.push({
           title: data.title || clusterItems[0].title,
           summary: data.summary || `Synthesized update regarding ${clusterItems[0].title}.`,
@@ -415,6 +417,17 @@ Respond in strict JSON format:
     } else if (textLower.includes("openai") || textLower.includes("gpt") || textLower.includes("claude")) {
       whyItMatters = `Foundation model updates reset the capabilities ceiling for all downstream software. Understanding these updates allows strategic software development planning.`;
     }
+
+    const tags = deriveTopicTags({
+      task,
+      items: clusterItems,
+      title: synthesizedTitle,
+      summary: summaryText,
+    });
+    const importanceScore = Math.min(
+      1,
+      0.45 + clusterItems.length * 0.15 + Math.min(tags.length, 10) * 0.015,
+    );
 
     candidates.push({
       title: synthesizedTitle,
