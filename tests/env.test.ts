@@ -304,4 +304,32 @@ describe("env schema", () => {
       }
     }
   });
+
+  it("reports degraded health when DATABASE_URL is missing", async () => {
+    const previous = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      const { GET } = await import("@/app/api/health/route");
+      const response = await GET();
+
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toEqual(
+        expect.objectContaining({
+          ok: false,
+          runtime: "prisma",
+          database: expect.objectContaining({
+            ok: false,
+            error: "DATABASE_URL is not configured.",
+          }),
+        }),
+      );
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous;
+      }
+    }
+  });
 });

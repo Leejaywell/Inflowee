@@ -149,26 +149,64 @@ describe("syncDueSources", () => {
     const enqueueScheduledSyncMock = vi.fn().mockResolvedValue({
       ids: ["evt_123"],
     });
+    const previousCronSecret = process.env.CRON_SECRET;
+    delete process.env.CRON_SECRET;
 
     vi.resetModules();
     vi.doMock("@/lib/inngest", () => ({
       enqueueScheduledSync: enqueueScheduledSyncMock,
     }));
 
-    const { POST } = await import("@/app/api/jobs/sync/route");
-    const response = await POST();
-    const payload = await response.json();
+    try {
+      const { POST } = await import("@/app/api/jobs/sync/route");
+      const response = await POST(new Request("https://example.com/api/jobs/sync", {
+        method: "POST",
+      }));
+      const payload = await response.json();
 
-    expect(payload).toEqual(
-      expect.objectContaining({
-        queued: true,
-        eventIds: ["evt_123"],
+      expect(payload).toEqual(
+        expect.objectContaining({
+          queued: true,
+          eventIds: ["evt_123"],
+          now: expect.any(String),
+        }),
+      );
+      expect(enqueueScheduledSyncMock).toHaveBeenCalledWith({
         now: expect.any(String),
-      }),
-    );
-    expect(enqueueScheduledSyncMock).toHaveBeenCalledWith({
-      now: expect.any(String),
-    });
+      });
+    } finally {
+      if (previousCronSecret === undefined) {
+        delete process.env.CRON_SECRET;
+      } else {
+        process.env.CRON_SECRET = previousCronSecret;
+      }
+    }
+  });
+
+  it("rejects sync route requests that do not include the configured cron secret", async () => {
+    const previousCronSecret = process.env.CRON_SECRET;
+    process.env.CRON_SECRET = "cron-secret";
+
+    vi.resetModules();
+    vi.doMock("@/lib/inngest", () => ({
+      enqueueScheduledSync: vi.fn(),
+    }));
+
+    try {
+      const { POST } = await import("@/app/api/jobs/sync/route");
+      const response = await POST(new Request("https://example.com/api/jobs/sync", {
+        method: "POST",
+      }));
+
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
+    } finally {
+      if (previousCronSecret === undefined) {
+        delete process.env.CRON_SECRET;
+      } else {
+        process.env.CRON_SECRET = previousCronSecret;
+      }
+    }
   });
 
   it.runIf(Boolean(process.env.DATABASE_URL))(

@@ -8,6 +8,7 @@ Set these environment variables in the deployment target:
 - `INNGEST_EVENT_KEY`
 - `INNGEST_SIGNING_KEY`
 - `INNGEST_BASE_URL`
+- `CRON_SECRET`
 - `INFLOWEE_SESSION_SECRET`
 - `INFLOWEE_OPERATOR_EMAIL`
 - `INFLOWEE_OPERATOR_LOGIN_CODE`
@@ -21,6 +22,7 @@ Set these environment variables in the deployment target:
 5. Deploy the Next.js app.
 6. Register `/api/inngest` with Inngest.
 7. Trigger `POST /api/jobs/sync`.
+8. Confirm `GET /api/health` returns `200` and `ok: true`.
 
 ## Final Production Smoke-Test Commands
 
@@ -33,7 +35,14 @@ pnpm test && pnpm lint && pnpm typecheck && pnpm build
 Trigger one scheduled sync against the deployed app:
 
 ```bash
-curl -X POST https://<deployment-url>/api/jobs/sync
+curl -X POST https://<deployment-url>/api/jobs/sync \
+  -H "Authorization: Bearer $CRON_SECRET"
+```
+
+Verify release health:
+
+```bash
+curl https://<deployment-url>/api/health
 ```
 
 ## Smoke Tests
