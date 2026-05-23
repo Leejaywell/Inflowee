@@ -48,10 +48,8 @@ export default async function Home({ searchParams }: HomeProps) {
                 Build the first intelligence spaces before the feed exists.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-                This first vertical slice only proves the core planning surface:
-                create spaces, add topic or question tasks, and persist them in
-                a local development database owned by the current single-user
-                session.
+                Build intelligence spaces, source pipelines, and research tasks
+                inside the current signed workspace session.
               </p>
             </div>
           </div>
@@ -214,7 +212,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 </p>
               </div>
               <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
-                Local DB
+                Workspace
               </span>
             </div>
 

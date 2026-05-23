@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { acceptSpaceInviteAction } from "@/app/actions";
-import { requireSessionActor } from "@/lib/auth";
+import { getSessionUser } from "@/lib/auth";
 import { defaultStore, getSpaceById, getSpaceInviteByToken } from "@/lib/store";
 
 type InvitePageProps = {
@@ -13,7 +13,7 @@ export default async function InvitePage({
   params,
   searchParams,
 }: InvitePageProps) {
-  const actor = await requireSessionActor();
+  const actor = await getSessionUser().catch(() => null);
   const [{ token }, query] = await Promise.all([params, searchParams]);
   const invite = await getSpaceInviteByToken(defaultStore, token);
 
@@ -42,7 +42,9 @@ export default async function InvitePage({
           </h1>
           <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
             This invite grants <span className="font-medium text-stone-900">{invite.role}</span> access
-            for the current actor: {actor.email}.
+            {actor
+              ? ` for the current actor: ${actor.email}.`
+              : " after you confirm the email address that should receive this session."}
           </p>
         </div>
 
@@ -55,6 +57,18 @@ export default async function InvitePage({
         {canAccept ? (
           <form action={acceptSpaceInviteAction} className="grid gap-3 rounded-[24px] border border-stone-200 bg-stone-50 p-6">
             <input type="hidden" name="token" value={token} />
+            {!actor ? (
+              <label className="grid gap-2 text-sm">
+                <span className="font-medium text-stone-700">Email</span>
+                <input
+                  name="email"
+                  type="email"
+                  required
+                  placeholder="teammate@example.com"
+                  className="h-12 rounded-2xl border border-stone-200 bg-white px-4 outline-none transition focus:border-stone-400"
+                />
+              </label>
+            ) : null}
             <div className="text-sm text-stone-600">
               Created by <span className="font-medium text-stone-900">{invite.createdBy}</span>
             </div>

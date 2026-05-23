@@ -8,6 +8,9 @@ Set these environment variables in the deployment target:
 - `INNGEST_EVENT_KEY`
 - `INNGEST_SIGNING_KEY`
 - `INNGEST_BASE_URL`
+- `INFLOWEE_SESSION_SECRET`
+- `INFLOWEE_OPERATOR_EMAIL`
+- `INFLOWEE_OPERATOR_LOGIN_CODE`
 
 ## Deploy Order
 

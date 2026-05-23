@@ -166,6 +166,11 @@ describe("env schema", () => {
           return null;
         },
       }),
+      cookies: vi.fn().mockResolvedValue({
+        get() {
+          return undefined;
+        },
+      }),
     }));
 
     try {
@@ -203,6 +208,11 @@ describe("env schema", () => {
           return null;
         },
       }),
+      cookies: vi.fn().mockResolvedValue({
+        get() {
+          return undefined;
+        },
+      }),
     }));
 
     try {
@@ -228,12 +238,64 @@ describe("env schema", () => {
           return null;
         },
       }),
+      cookies: vi.fn().mockResolvedValue({
+        get() {
+          return undefined;
+        },
+      }),
     }));
 
     try {
       const { requireSessionActor } = await import("@/lib/auth");
 
       await expect(requireSessionActor()).rejects.toThrow("Unauthorized");
+    } finally {
+      if (previousSecret === undefined) {
+        delete process.env.INFLOWEE_SESSION_SECRET;
+      } else {
+        process.env.INFLOWEE_SESSION_SECRET = previousSecret;
+      }
+    }
+  });
+
+  it("accepts a signed session cookie when browser auth is configured", async () => {
+    const previousSecret = process.env.INFLOWEE_SESSION_SECRET;
+    process.env.INFLOWEE_SESSION_SECRET = "test-secret";
+
+    const sessionCookie = Buffer.from(
+      JSON.stringify({
+        id: "member-1",
+        email: "member-1@example.com",
+        signature:
+          "7a3668dd5bc5fe3d96787f4190f1d6c9422890a8177cc83db963150d35724720",
+      }),
+      "utf8",
+    ).toString("base64url");
+
+    vi.doMock("next/headers", () => ({
+      headers: vi.fn().mockResolvedValue({
+        get() {
+          return null;
+        },
+      }),
+      cookies: vi.fn().mockResolvedValue({
+        get(name: string) {
+          if (name === "inflowee_session") {
+            return { value: sessionCookie };
+          }
+
+          return undefined;
+        },
+      }),
+    }));
+
+    try {
+      const { getSessionUser } = await import("@/lib/auth");
+
+      await expect(getSessionUser()).resolves.toEqual({
+        id: "member-1",
+        email: "member-1@example.com",
+      });
     } finally {
       if (previousSecret === undefined) {
         delete process.env.INFLOWEE_SESSION_SECRET;

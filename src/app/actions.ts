@@ -8,8 +8,14 @@ import {
   assertSourceAccess,
   assertSpaceAccess,
   assertTaskAccess,
+  clearSessionActorCookie,
+  createInvitedSessionActor,
+  createOperatorSessionActor,
+  getSessionUser,
+  hasConfiguredOperatorLogin,
   requireOperatorSessionActor,
   requireSessionActor,
+  setSessionActorCookie,
 } from "@/lib/auth";
 import { deliverStoredBrief, deliverStoredBriefToChannel } from "@/lib/delivery";
 import {
@@ -59,6 +65,39 @@ import {
 
 function getString(formData: FormData, key: string) {
   return String(formData.get(key) ?? "");
+}
+
+function getRedirectPath(value: string, fallback: string) {
+  if (!value || !value.startsWith("/")) {
+    return fallback;
+  }
+
+  return value;
+}
+
+export async function signInAction(formData: FormData) {
+  const email = getString(formData, "email");
+  const loginCode = getString(formData, "loginCode");
+  const redirectTo = getRedirectPath(getString(formData, "redirectTo"), "/");
+
+  if (!hasConfiguredOperatorLogin()) {
+    redirect(`/login?error=Operator%20login%20is%20not%20configured.`);
+  }
+
+  try {
+    const actor = await createOperatorSessionActor({ email, loginCode });
+    await setSessionActorCookie(actor);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to sign in.";
+    redirect(`/login?error=${encodeURIComponent(message)}`);
+  }
+
+  redirect(redirectTo);
+}
+
+export async function signOutAction() {
+  await clearSessionActorCookie();
+  redirect("/login?signedOut=1");
 }
 
 export async function createSpace(formData: FormData) {
@@ -504,8 +543,20 @@ export async function revokeSpaceInviteAction(formData: FormData) {
 }
 
 export async function acceptSpaceInviteAction(formData: FormData) {
-  const actor = await requireSessionActor();
   const token = getString(formData, "token");
+  const inviteEmail = getString(formData, "email");
+  let actor = await getSessionUser().catch(() => null);
+
+  if (!actor) {
+    try {
+      actor = await createInvitedSessionActor(inviteEmail);
+      await setSessionActorCookie(actor);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invite identity is invalid.";
+      redirect(`/invite/${token}?error=${encodeURIComponent(message)}`);
+    }
+  }
+
   const invite = await acceptSpaceInvite(defaultStore, {
     token,
     actorId: actor.id,

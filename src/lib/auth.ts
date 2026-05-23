@@ -1,6 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 import {
   defaultStore,
@@ -11,6 +11,17 @@ import {
   type SpaceRole,
   type Store,
 } from "./store";
+import {
+  ACTOR_EMAIL_HEADER,
+  ACTOR_ID_HEADER,
+  ACTOR_SIGNATURE_HEADER,
+  DEFAULT_USER_EMAIL,
+  DEFAULT_USER_ID,
+  OPERATOR_EMAIL_ENV,
+  OPERATOR_LOGIN_CODE_ENV,
+  SESSION_COOKIE_NAME,
+  SESSION_SECRET_ENV,
+} from "./auth-config";
 
 export type SessionUser = {
   id: string;
@@ -18,13 +29,6 @@ export type SessionUser = {
 };
 
 export type SessionActor = SessionUser;
-
-const DEFAULT_USER_ID = "local-user";
-const DEFAULT_USER_EMAIL = "local@inflowee.dev";
-const SESSION_SECRET_ENV = "INFLOWEE_SESSION_SECRET";
-const ACTOR_ID_HEADER = "x-inflowee-actor-id";
-const ACTOR_EMAIL_HEADER = "x-inflowee-actor-email";
-const ACTOR_SIGNATURE_HEADER = "x-inflowee-actor-signature";
 
 type SpaceAccessInput = {
   actorId: string;
@@ -65,6 +69,18 @@ function getOperatorActor(): SessionActor | null {
   return getFallbackSessionUser();
 }
 
+function getOperatorEmail() {
+  return process.env[OPERATOR_EMAIL_ENV] ?? getFallbackSessionUser()?.email ?? null;
+}
+
+export function hasConfiguredSessionAuth() {
+  return Boolean(process.env[SESSION_SECRET_ENV]);
+}
+
+export function hasConfiguredOperatorLogin() {
+  return Boolean(getOperatorEmail() && process.env[OPERATOR_LOGIN_CODE_ENV]);
+}
+
 function signActorIdentity(id: string, email: string, secret: string) {
   return createHmac("sha256", secret)
     .update(`${id}:${email}`)
@@ -82,6 +98,63 @@ function signaturesMatch(expected: string, received: string) {
   return timingSafeEqual(expectedBytes, receivedBytes);
 }
 
+function encodeActorSessionCookieValue(actor: SessionActor, secret: string) {
+  return Buffer.from(
+    JSON.stringify({
+      id: actor.id,
+      email: actor.email,
+      signature: signActorIdentity(actor.id, actor.email, secret),
+    }),
+    "utf8",
+  ).toString("base64url");
+}
+
+function decodeActorSessionCookieValue(value: string, secret: string):
+  SessionActor | "invalid" {
+  try {
+    const decoded = Buffer.from(value, "base64url").toString("utf8");
+    const parsed = JSON.parse(decoded) as {
+      id?: unknown;
+      email?: unknown;
+      signature?: unknown;
+    };
+
+    if (
+      typeof parsed.id !== "string" ||
+      typeof parsed.email !== "string" ||
+      typeof parsed.signature !== "string"
+    ) {
+      return "invalid";
+    }
+
+    const expectedSignature = signActorIdentity(parsed.id, parsed.email, secret);
+
+    if (!signaturesMatch(expectedSignature, parsed.signature)) {
+      return "invalid";
+    }
+
+    return {
+      id: parsed.id,
+      email: parsed.email,
+    };
+  } catch {
+    return "invalid";
+  }
+}
+
+async function getCookieSessionActor(
+  secret: string,
+): Promise<SessionActor | null | "invalid"> {
+  const cookieStore = await cookies();
+  const value = cookieStore.get(SESSION_COOKIE_NAME)?.value;
+
+  if (!value) {
+    return null;
+  }
+
+  return decodeActorSessionCookieValue(value, secret);
+}
+
 async function getValidatedRequestActor():
   Promise<SessionActor | null | "invalid"> {
   const secret = process.env[SESSION_SECRET_ENV];
@@ -97,7 +170,7 @@ async function getValidatedRequestActor():
     const signature = headerStore.get(ACTOR_SIGNATURE_HEADER);
 
     if (!id && !email && !signature) {
-      return "invalid";
+      return null;
     }
 
     if (!id || !email || !signature) {
@@ -127,13 +200,22 @@ function roleSatisfies(role: SpaceRole, minimumRole: SpaceRole) {
 }
 
 export async function getSessionUser(): Promise<SessionUser | null> {
-  const requestActor = await getValidatedRequestActor();
+  const secret = process.env[SESSION_SECRET_ENV];
 
-  if (requestActor === "invalid") {
+  if (!secret) {
+    return getOperatorActor();
+  }
+
+  const [requestActor, cookieActor] = await Promise.all([
+    getValidatedRequestActor(),
+    getCookieSessionActor(secret),
+  ]);
+
+  if (requestActor === "invalid" || cookieActor === "invalid") {
     throw new Error("Unauthorized");
   }
 
-  return requestActor ?? getOperatorActor();
+  return requestActor ?? cookieActor ?? null;
 }
 
 export async function requireSessionActor(): Promise<SessionActor> {
@@ -155,6 +237,66 @@ export async function requireOperatorSessionActor(): Promise<SessionActor> {
   }
 
   return actor;
+}
+
+export async function setSessionActorCookie(actor: SessionActor) {
+  const secret = process.env[SESSION_SECRET_ENV];
+
+  if (!secret) {
+    return;
+  }
+
+  const cookieStore = await cookies();
+  cookieStore.set(SESSION_COOKIE_NAME, encodeActorSessionCookieValue(actor, secret), {
+    httpOnly: true,
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  });
+}
+
+export async function clearSessionActorCookie() {
+  const cookieStore = await cookies();
+  cookieStore.delete(SESSION_COOKIE_NAME);
+}
+
+export async function createInvitedSessionActor(email: string): Promise<SessionActor> {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!normalizedEmail || !normalizedEmail.includes("@")) {
+    throw new Error("Invite email is required.");
+  }
+
+  return {
+    id: normalizedEmail,
+    email: normalizedEmail,
+  };
+}
+
+export async function createOperatorSessionActor(input: {
+  email: string;
+  loginCode: string;
+}): Promise<SessionActor> {
+  const configuredEmail = getOperatorEmail();
+  const configuredCode = process.env[OPERATOR_LOGIN_CODE_ENV];
+  const normalizedEmail = input.email.trim().toLowerCase();
+
+  if (!configuredEmail || !configuredCode) {
+    throw new Error("Operator login is not configured.");
+  }
+
+  if (
+    normalizedEmail !== configuredEmail.trim().toLowerCase() ||
+    input.loginCode !== configuredCode
+  ) {
+    throw new Error("Invalid login credentials.");
+  }
+
+  return {
+    id: process.env.INFLOWEE_DEFAULT_USER_ID ?? DEFAULT_USER_ID,
+    email: configuredEmail,
+  };
 }
 
 export function getActorScopedChatScopeId(actorId: string, scopeId: string) {

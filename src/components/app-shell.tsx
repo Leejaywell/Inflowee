@@ -14,12 +14,14 @@ type AppShellProps = {
   children: React.ReactNode;
   unreadCount?: number;
   userEmail?: string | null;
+  signOutAction?: ((formData: FormData) => void | Promise<void>) | undefined;
 };
 
 export function AppShell({
   children,
   unreadCount = 0,
   userEmail = null,
+  signOutAction,
 }: AppShellProps) {
   const pathname = usePathname();
 
@@ -33,11 +35,12 @@ export function AppShell({
             </p>
             <p className="text-sm text-stone-500">
               {userEmail
-                ? `Single-user workspace for ${userEmail}.`
-                : "Planning surface for tasks and sources."}
+                ? `Signed in as ${userEmail}.`
+                : "Sign in to access spaces, sources, inbox, and delivery settings."}
             </p>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
           <nav className="flex flex-wrap gap-2">
             {navigationItems.map((item) => {
               const isActive = item.href === pathname;
@@ -62,6 +65,21 @@ export function AppShell({
               );
             })}
           </nav>
+            {userEmail ? (
+              <form action={signOutAction}>
+                <button className="inline-flex h-10 items-center rounded-full border border-stone-200 bg-stone-50 px-4 text-sm font-medium text-stone-700 transition hover:bg-stone-100">
+                  Sign out
+                </button>
+              </form>
+            ) : (
+              <Link
+                href="/login"
+                className="inline-flex h-10 items-center rounded-full border border-stone-200 bg-stone-50 px-4 text-sm font-medium text-stone-700 transition hover:bg-stone-100"
+              >
+                Sign in
+              </Link>
+            )}
+          </div>
         </header>
 
         <main className="flex-1">{children}</main>
