@@ -10,8 +10,7 @@ export function MemberList({
   if (members.length === 0) {
     return (
       <p className="text-sm text-stone-500">
-        No collaborators recorded yet. This slice only establishes member
-        metadata and roles.
+        No collaborators recorded yet.
       </p>
     );
   }

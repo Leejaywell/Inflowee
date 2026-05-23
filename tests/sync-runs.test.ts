@@ -470,6 +470,10 @@ describe("scheduled sync actions and surfaces", () => {
     vi.doMock("@/components/member-list", () => ({
       MemberList: () => null,
     }));
+    vi.doMock("@/app/actions", () => ({
+      removeSpaceMemberAction: vi.fn(),
+      upsertSpaceMemberAction: vi.fn(),
+    }));
 
     const { default: SpaceDetailPage } = await import("@/app/spaces/[spaceId]/page");
     await SpaceDetailPage({

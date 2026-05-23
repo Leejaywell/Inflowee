@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import {
+  removeSpaceMemberAction,
+  upsertSpaceMemberAction,
+} from "@/app/actions";
 import { ChatConsole } from "@/components/chat-console";
 import { MemberList } from "@/components/member-list";
 import {
@@ -22,9 +26,10 @@ export const dynamic = "force-dynamic";
 
 type SpacePageProps = {
   params: Promise<{ spaceId: string }>;
+  searchParams?: Promise<{ updated?: string; error?: string }>;
 };
 
-export default async function SpaceDetailPage({ params }: SpacePageProps) {
+export default async function SpaceDetailPage({ params, searchParams }: SpacePageProps) {
   const { spaceId } = await params;
   const store = defaultStore;
   const actor = await requireSessionActor();
@@ -49,6 +54,7 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
   // 2. Fetch tasks within the space
   const tasks = await listTasksBySpace(store, spaceId);
   const members = await listSpaceMembers(store, spaceId);
+  const query = await searchParams;
   const ownerMember = {
     spaceId,
     userId: space.ownerId,
@@ -59,6 +65,7 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
     ownerMember,
     ...members.filter((member) => member.userId !== space.ownerId),
   ];
+  const canManageMembers = actor.id === space.ownerId;
 
   // 3. Fetch aggregated briefs in this space
   const { briefs } = await getGroundingForScope(store, "space", spaceId, {
@@ -99,7 +106,68 @@ export default async function SpaceDetailPage({ params }: SpacePageProps) {
               Space members
             </h2>
             <MemberList actorId={actor.id} members={effectiveMembers} />
+            {canManageMembers ? (
+              <div className="mt-5 grid gap-4 border-t border-stone-100 pt-5">
+                <form action={upsertSpaceMemberAction} className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
+                  <input type="hidden" name="spaceId" value={spaceId} />
+                  <input
+                    name="userId"
+                    placeholder="user-2 or teammate@example.com"
+                    className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
+                  />
+                  <select
+                    name="role"
+                    defaultValue="viewer"
+                    className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
+                  >
+                    <option value="viewer">viewer</option>
+                    <option value="editor">editor</option>
+                  </select>
+                  <button className="inline-flex h-11 items-center justify-center rounded-xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
+                    Add or update member
+                  </button>
+                </form>
+                {effectiveMembers.filter((member) => member.role !== "owner").length > 0 ? (
+                  <div className="grid gap-2">
+                    {effectiveMembers
+                      .filter((member) => member.role !== "owner")
+                      .map((member) => (
+                        <form
+                          key={`remove:${member.spaceId}:${member.userId}`}
+                          action={removeSpaceMemberAction}
+                          className="flex items-center justify-between rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm"
+                        >
+                          <input type="hidden" name="spaceId" value={spaceId} />
+                          <input type="hidden" name="userId" value={member.userId} />
+                          <div className="flex items-center gap-3">
+                            <span className="font-medium text-stone-900">{member.userId}</span>
+                            <span className="rounded-full bg-stone-200 px-2.5 py-1 text-xs text-stone-700">
+                              {member.role}
+                            </span>
+                          </div>
+                          <button className="inline-flex h-9 items-center rounded-lg border border-rose-200 bg-rose-50 px-3 text-xs font-medium text-rose-700 transition hover:bg-rose-100">
+                            Remove
+                          </button>
+                        </form>
+                      ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
+          {query?.error || query?.updated ? (
+            <div
+              className={`rounded-2xl border px-5 py-4 text-sm ${
+                query.error
+                  ? "border-rose-200 bg-rose-50 text-rose-700"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-700"
+              }`}
+            >
+              {query.error
+                ? decodeURIComponent(query.error)
+                : "Space membership updated."}
+            </div>
+          ) : null}
         </div>
       </section>
 

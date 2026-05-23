@@ -1,7 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { sendBriefToSlack, sendBriefToWebhook } from "@/app/actions";
+import {
+  sendBriefToFeishu,
+  sendBriefToSlack,
+  sendBriefToTelegram,
+  sendBriefToWebhook,
+} from "@/app/actions";
 import { ChatDrawer } from "@/components/chat-drawer";
 import {
   assertBriefAccess,
@@ -11,7 +16,9 @@ import {
 import {
   defaultStore,
   getBriefById,
+  getFeishuSettings,
   getSlackSettings,
+  getTelegramSettings,
   getWebhookSettings,
   listBriefItemIds,
   listRecentDeliveryLogsByBrief,
@@ -49,13 +56,15 @@ export default async function BriefDetailPage({
 
   const actorScopeId = getActorScopedChatScopeId(actor.id, briefId);
 
-  const [itemIds, linkedItems, chatThread, webhookSettings, slackSettings, deliveryLogs] =
+  const [itemIds, linkedItems, chatThread, webhookSettings, slackSettings, telegramSettings, feishuSettings, deliveryLogs] =
     await Promise.all([
       listBriefItemIds(defaultStore, briefId),
       listItemsByBriefId(defaultStore, briefId),
       getOrCreateChatThread(defaultStore, "brief", actorScopeId),
       getWebhookSettings(defaultStore),
       getSlackSettings(defaultStore),
+      getTelegramSettings(defaultStore),
+      getFeishuSettings(defaultStore),
       listRecentDeliveryLogsByBrief(defaultStore, briefId),
     ]);
   const chatMessages = await listChatMessages(defaultStore, chatThread.id);
@@ -78,6 +87,10 @@ export default async function BriefDetailPage({
               ? "Brief delivered to webhook."
               : delivered === "slack"
                 ? "Brief delivered to Slack."
+                : delivered === "telegram"
+                  ? "Brief delivered to Telegram."
+                  : delivered === "feishu"
+                    ? "Brief delivered to Feishu."
               : "Update applied."}
         </section>
       )}
@@ -213,13 +226,45 @@ export default async function BriefDetailPage({
                   Send Slack
                 </button>
               </form>
+              <form action={sendBriefToTelegram}>
+                <input type="hidden" name="briefId" value={briefId} />
+                <button
+                  className="inline-flex h-10 items-center rounded-full border border-sky-200 bg-sky-50 px-4 text-sm font-medium text-sky-700 transition hover:bg-sky-100"
+                  disabled={!telegramSettings.botToken || !telegramSettings.chatId}
+                  title={
+                    telegramSettings.botToken && telegramSettings.chatId
+                      ? "Send this brief to the configured Telegram chat."
+                      : "Configure Telegram delivery in Settings first."
+                  }
+                >
+                  Send Telegram
+                </button>
+              </form>
+              <form action={sendBriefToFeishu}>
+                <input type="hidden" name="briefId" value={briefId} />
+                <button
+                  className="inline-flex h-10 items-center rounded-full border border-orange-200 bg-orange-50 px-4 text-sm font-medium text-orange-700 transition hover:bg-orange-100"
+                  disabled={!feishuSettings.endpoint}
+                  title={
+                    feishuSettings.endpoint
+                      ? "Send this brief to the configured Feishu channel."
+                      : "Configure a Feishu webhook endpoint in Settings first."
+                  }
+                >
+                  Send Feishu
+                </button>
+              </form>
               <ChatDrawer
                 briefId={briefId}
                 briefTitle={brief.title}
                 initialMessages={chatMessages}
               />
             </div>
-            {!webhookSettings.endpoint && !slackSettings.endpoint ? (
+            {!webhookSettings.endpoint &&
+            !slackSettings.endpoint &&
+            !telegramSettings.botToken &&
+            !telegramSettings.chatId &&
+            !feishuSettings.endpoint ? (
               <p className="mt-3 text-sm text-stone-500">
                 No delivery channel configured yet. Add one in{" "}
                 <Link href="/settings" className="text-[#0057ff] underline">
@@ -240,7 +285,7 @@ export default async function BriefDetailPage({
             <div className="mt-4 grid gap-3">
               {deliveryLogs.length === 0 ? (
                 <p className="text-sm text-stone-500">
-                  No webhook sends recorded for this brief yet.
+                  No delivery attempts recorded for this brief yet.
                 </p>
               ) : (
                 deliveryLogs.map((log) => (

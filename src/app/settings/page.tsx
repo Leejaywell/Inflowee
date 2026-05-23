@@ -1,10 +1,17 @@
-import { saveSlackEndpoint, saveWebhookEndpoint } from "@/app/actions";
+import {
+  saveFeishuEndpoint,
+  saveSlackEndpoint,
+  saveTelegramDelivery,
+  saveWebhookEndpoint,
+} from "@/app/actions";
 import { requireOperatorSessionActor } from "@/lib/auth";
 import { buildDeliveryPayload } from "@/lib/delivery";
 import {
   defaultStore,
   getDeliveryHealthSummary,
+  getFeishuSettings,
   getSlackSettings,
+  getTelegramSettings,
   getWebhookSettings,
   listRecentDeliveryLogs,
 } from "@/lib/store";
@@ -20,9 +27,11 @@ export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
   const actor = await requireOperatorSessionActor();
-  const [webhookSettings, slackSettings, recentLogs, deliveryHealth, params] = await Promise.all([
+  const [webhookSettings, slackSettings, telegramSettings, feishuSettings, recentLogs, deliveryHealth, params] = await Promise.all([
     getWebhookSettings(defaultStore),
     getSlackSettings(defaultStore),
+    getTelegramSettings(defaultStore),
+    getFeishuSettings(defaultStore),
     listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),
     getDeliveryHealthSummary(defaultStore, { actorId: actor.id }),
     searchParams,
@@ -50,11 +59,11 @@ export default async function SettingsPage({
           </p>
           <div className="space-y-3">
             <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-              Configure a single HTTPS webhook for brief delivery.
+              Configure delivery channels for brief routing.
             </h1>
             <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-              Configure one endpoint for both automatic background delivery on
-              new briefs and explicit resend from the inbox detail view.
+              Automatic background delivery and manual resend both use the same
+              channel pipeline.
             </p>
           </div>
         </div>
@@ -125,6 +134,70 @@ export default async function SettingsPage({
           </div>
         </form>
 
+        <form
+          action={saveTelegramDelivery}
+          className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+        >
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold">Telegram delivery</h2>
+            <p className="text-sm leading-6 text-stone-500">
+              Use a Telegram bot token and chat ID to send short brief summaries.
+            </p>
+          </div>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Bot token</span>
+            <input
+              name="botToken"
+              defaultValue={telegramSettings.botToken ?? ""}
+              placeholder="123456:ABCDEF..."
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Chat ID</span>
+            <input
+              name="chatId"
+              defaultValue={telegramSettings.chatId ?? ""}
+              placeholder="-1001234567890"
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
+            Save Telegram delivery
+          </button>
+        </form>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <form
+          action={saveFeishuEndpoint}
+          className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+        >
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold">Feishu webhook</h2>
+            <p className="text-sm leading-6 text-stone-500">
+              Use a Feishu or Lark custom bot webhook to mirror the brief stream.
+            </p>
+          </div>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Feishu webhook URL</span>
+            <input
+              name="endpoint"
+              defaultValue={feishuSettings.endpoint ?? ""}
+              placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
+            Save Feishu webhook
+          </button>
+        </form>
+
         <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
           <h2 className="text-xl font-semibold">Delivery health</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -146,7 +219,22 @@ export default async function SettingsPage({
                 {deliveryHealth.webhookConfigured ? "Webhook" : null}
                 {deliveryHealth.webhookConfigured && deliveryHealth.slackConfigured ? " + " : null}
                 {deliveryHealth.slackConfigured ? "Slack" : null}
-                {!deliveryHealth.webhookConfigured && !deliveryHealth.slackConfigured
+                {(deliveryHealth.webhookConfigured || deliveryHealth.slackConfigured) &&
+                deliveryHealth.telegramConfigured
+                  ? " + "
+                  : null}
+                {deliveryHealth.telegramConfigured ? "Telegram" : null}
+                {(deliveryHealth.webhookConfigured ||
+                  deliveryHealth.slackConfigured ||
+                  deliveryHealth.telegramConfigured) &&
+                deliveryHealth.feishuConfigured
+                  ? " + "
+                  : null}
+                {deliveryHealth.feishuConfigured ? "Feishu" : null}
+                {!deliveryHealth.webhookConfigured &&
+                !deliveryHealth.slackConfigured &&
+                !deliveryHealth.telegramConfigured &&
+                !deliveryHealth.feishuConfigured
                   ? "None configured"
                   : null}
               </div>
@@ -169,7 +257,11 @@ export default async function SettingsPage({
               ? "Webhook settings saved."
               : updated === "slack"
                 ? "Slack settings saved."
-              : "Update applied."}
+                : updated === "telegram"
+                  ? "Telegram settings saved."
+                  : updated === "feishu"
+                    ? "Feishu settings saved."
+                : "Update applied."}
         </section>
       )}
 

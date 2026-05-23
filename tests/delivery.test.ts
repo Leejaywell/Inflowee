@@ -16,7 +16,9 @@ import {
   createTaskRecord,
   finishDeliveryLog,
   listRecentDeliveryLogsByBrief,
+  saveFeishuSettings,
   saveSlackSettings,
+  saveTelegramSettings,
   saveWebhookSettings,
   type BriefRecord,
   type ItemRecord,
@@ -94,6 +96,39 @@ describe("webhook delivery transport", () => {
         blocks: expect.any(Array),
       }),
     );
+  });
+
+  it("renders channel-specific payloads for telegram and feishu delivery", async () => {
+    const telegramPayload = await buildDeliveryPayload({
+      channel: "telegram",
+      chatId: "-1001234567890",
+      brief: {
+        id: "brief-1",
+        title: "Launch",
+        summary: "Summary",
+      },
+    });
+    const feishuPayload = await buildDeliveryPayload({
+      channel: "feishu",
+      brief: {
+        id: "brief-1",
+        title: "Launch",
+        summary: "Summary",
+      },
+    });
+
+    expect(telegramPayload).toEqual(
+      expect.objectContaining({
+        chat_id: "-1001234567890",
+        parse_mode: "HTML",
+      }),
+    );
+    expect(feishuPayload).toEqual({
+      msg_type: "text",
+      content: {
+        text: "Launch\nSummary",
+      },
+    });
   });
 
   it("posts the rendered brief payload to a webhook endpoint", async () => {
@@ -454,6 +489,14 @@ describe("webhook delivery transport", () => {
           fixture.store,
           "https://hooks.slack.com/services/T/B/X",
         );
+        await saveTelegramSettings(fixture.store, {
+          botToken: "123456:ABCDEF_token",
+          chatId: "-1001234567890",
+        });
+        await saveFeishuSettings(
+          fixture.store,
+          "https://open.feishu.cn/open-apis/bot/v2/hook/abcdef",
+        );
 
         const fetchImpl = vi.fn().mockResolvedValue({
           ok: true,
@@ -470,12 +513,12 @@ describe("webhook delivery transport", () => {
         );
 
         expect(result.status).toBe("success");
-        expect(fetchImpl).toHaveBeenCalledTimes(2);
+        expect(fetchImpl).toHaveBeenCalledTimes(4);
         expect(
           (await listRecentDeliveryLogsByBrief(fixture.store, briefId)).map(
             (log) => log.payloadType,
           ),
-        ).toEqual(["slack", "html"]);
+        ).toEqual(["feishu", "telegram", "slack", "html"]);
       } finally {
         await fixture.cleanup();
       }

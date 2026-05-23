@@ -74,6 +74,11 @@ describe("buildBriefsFromItems", () => {
         spaceName: "AI Watch",
       }),
       getOrCreateChatThread,
+      getFeishuSettings: vi.fn().mockResolvedValue({ endpoint: null }),
+      getTelegramSettings: vi.fn().mockResolvedValue({
+        botToken: null,
+        chatId: null,
+      }),
       getWebhookSettings: vi.fn().mockResolvedValue({ endpoint: null }),
       getSlackSettings: vi.fn().mockResolvedValue({ endpoint: null }),
       listBriefItemIds: vi.fn().mockResolvedValue(["item-1"]),
@@ -98,7 +103,9 @@ describe("buildBriefsFromItems", () => {
       }),
     }));
     vi.doMock("@/app/actions", () => ({
+      sendBriefToFeishu: vi.fn(),
       sendBriefToSlack: vi.fn(),
+      sendBriefToTelegram: vi.fn(),
       sendBriefToWebhook: vi.fn(),
     }));
 

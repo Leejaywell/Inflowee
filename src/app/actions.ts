@@ -13,6 +13,7 @@ import {
 } from "@/lib/auth";
 import { deliverStoredBrief, deliverStoredBriefToChannel } from "@/lib/delivery";
 import {
+  addSpaceMember,
   createSourceRecord,
   createSpaceRecord,
   createTaskRecord,
@@ -22,13 +23,18 @@ import {
   deleteSpace as deleteSpaceRecord,
   deleteTask as deleteTaskRecord,
   getBriefById,
+  getFeishuSettings,
   getSlackSettings,
+  getTelegramSettings,
   getWebhookSettings,
   getTaskById,
   hasTaskRecord,
   listSources,
   markBriefRead,
   markBriefUnread,
+  removeSpaceMember,
+  saveFeishuSettings,
+  saveTelegramSettings,
   saveWebhookSettings,
   saveSlackSettings,
   setSourceSchedule,
@@ -38,8 +44,11 @@ import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import {
   createSourceSchema,
   createSpaceSchema,
+  feishuWebhookEndpointSchema,
   createTaskSchema,
   slackWebhookEndpointSchema,
+  spaceMemberSchema,
+  telegramSettingsSchema,
   updateSourceScheduleSchema,
   webhookEndpointSchema,
 } from "@/lib/validation";
@@ -360,6 +369,88 @@ export async function saveSlackEndpoint(formData: FormData) {
   redirect("/settings?updated=slack");
 }
 
+export async function saveTelegramDelivery(formData: FormData) {
+  await requireOperatorSessionActor();
+  const parsed = telegramSettingsSchema.safeParse({
+    botToken: getString(formData, "botToken"),
+    chatId: getString(formData, "chatId"),
+  });
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid Telegram delivery settings.")}`,
+    );
+  }
+
+  await saveTelegramSettings(defaultStore, parsed.data);
+  revalidatePath("/settings");
+  redirect("/settings?updated=telegram");
+}
+
+export async function saveFeishuEndpoint(formData: FormData) {
+  await requireOperatorSessionActor();
+  const parsed = feishuWebhookEndpointSchema.safeParse(getString(formData, "endpoint"));
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid Feishu webhook endpoint.")}`,
+    );
+  }
+
+  await saveFeishuSettings(defaultStore, parsed.data);
+  revalidatePath("/settings");
+  redirect("/settings?updated=feishu");
+}
+
+export async function upsertSpaceMemberAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const parsed = spaceMemberSchema.safeParse({
+    spaceId: getString(formData, "spaceId"),
+    userId: getString(formData, "userId"),
+    role: getString(formData, "role"),
+  });
+
+  if (!parsed.success) {
+    redirect(
+      `/spaces/${encodeURIComponent(getString(formData, "spaceId"))}?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid member input.")}`,
+    );
+  }
+
+  await assertSpaceAccess(defaultStore, {
+    actorId: actor.id,
+    spaceId: parsed.data.spaceId,
+    minimumRole: "owner",
+  });
+
+  if (parsed.data.userId === actor.id) {
+    redirect(`/spaces/${parsed.data.spaceId}?error=Cannot%20change%20the%20owner%20membership%20record.`);
+  }
+
+  await addSpaceMember(defaultStore, parsed.data);
+  revalidatePath(`/spaces/${parsed.data.spaceId}`);
+  redirect(`/spaces/${parsed.data.spaceId}?updated=member`);
+}
+
+export async function removeSpaceMemberAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const spaceId = getString(formData, "spaceId");
+  const userId = getString(formData, "userId");
+
+  await assertSpaceAccess(defaultStore, {
+    actorId: actor.id,
+    spaceId,
+    minimumRole: "owner",
+  });
+
+  if (userId === actor.id) {
+    redirect(`/spaces/${spaceId}?error=Cannot%20remove%20the%20space%20owner.`);
+  }
+
+  await removeSpaceMember(defaultStore, { spaceId, userId });
+  revalidatePath(`/spaces/${spaceId}`);
+  redirect(`/spaces/${spaceId}?updated=member`);
+}
+
 export async function sendBriefToWebhook(formData: FormData) {
   const actor = await requireSessionActor();
   const briefId = getString(formData, "briefId");
@@ -438,4 +529,86 @@ export async function sendBriefToSlack(formData: FormData) {
   revalidatePath(`/inbox/${briefId}`);
   revalidatePath("/settings");
   redirect(`/inbox/${briefId}?delivered=slack`);
+}
+
+export async function sendBriefToTelegram(formData: FormData) {
+  const actor = await requireSessionActor();
+  const briefId = getString(formData, "briefId");
+  await assertBriefAccess(defaultStore, {
+    actorId: actor.id,
+    briefId,
+    minimumRole: "viewer",
+  });
+
+  const brief = await getBriefById(defaultStore, briefId);
+
+  if (!brief) {
+    redirect("/inbox?error=Brief%20not%20found.");
+  }
+
+  const settings = await getTelegramSettings(defaultStore);
+
+  if (!settings.botToken || !settings.chatId) {
+    redirect(`/inbox/${briefId}?error=Configure%20Telegram%20delivery%20first.`);
+  }
+
+  try {
+    const result = await deliverStoredBriefToChannel(defaultStore, briefId, "telegram");
+
+    if (result.status !== "success") {
+      throw new Error(result.error);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown delivery failure.";
+
+    revalidatePath(`/inbox/${briefId}`);
+    revalidatePath("/settings");
+    redirect(`/inbox/${briefId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(`/inbox/${briefId}`);
+  revalidatePath("/settings");
+  redirect(`/inbox/${briefId}?delivered=telegram`);
+}
+
+export async function sendBriefToFeishu(formData: FormData) {
+  const actor = await requireSessionActor();
+  const briefId = getString(formData, "briefId");
+  await assertBriefAccess(defaultStore, {
+    actorId: actor.id,
+    briefId,
+    minimumRole: "viewer",
+  });
+
+  const brief = await getBriefById(defaultStore, briefId);
+
+  if (!brief) {
+    redirect("/inbox?error=Brief%20not%20found.");
+  }
+
+  const settings = await getFeishuSettings(defaultStore);
+
+  if (!settings.endpoint) {
+    redirect(`/inbox/${briefId}?error=Configure%20a%20Feishu%20webhook%20endpoint%20first.`);
+  }
+
+  try {
+    const result = await deliverStoredBriefToChannel(defaultStore, briefId, "feishu");
+
+    if (result.status !== "success") {
+      throw new Error(result.error);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown delivery failure.";
+
+    revalidatePath(`/inbox/${briefId}`);
+    revalidatePath("/settings");
+    redirect(`/inbox/${briefId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(`/inbox/${briefId}`);
+  revalidatePath("/settings");
+  redirect(`/inbox/${briefId}?delivered=feishu`);
 }

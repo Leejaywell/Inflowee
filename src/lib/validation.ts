@@ -91,3 +91,36 @@ export const slackWebhookEndpointSchema = z
       return false;
     }
   }, "Slack webhooks must use hooks.slack.com or hooks.slack-gov.com.");
+
+export const telegramSettingsSchema = z.object({
+  botToken: z
+    .string()
+    .trim()
+    .min(10, "Enter a valid Telegram bot token.")
+    .regex(/^\d+:[A-Za-z0-9_-]+$/, "Enter a valid Telegram bot token."),
+  chatId: z
+    .string()
+    .trim()
+    .min(1, "Enter a Telegram chat ID.")
+    .regex(/^-?\d+$/, "Enter a valid Telegram chat ID."),
+});
+
+export const feishuWebhookEndpointSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid Feishu webhook URL.")
+  .refine((value) => value.startsWith("https://"), "Enter a valid https Feishu webhook URL.")
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return ["open.feishu.cn", "open.larksuite.com"].includes(url.hostname);
+    } catch {
+      return false;
+    }
+  }, "Feishu webhooks must use open.feishu.cn or open.larksuite.com.");
+
+export const spaceMemberSchema = z.object({
+  spaceId: z.string().trim().min(1, "Select a space."),
+  userId: z.string().trim().min(2, "Enter a user ID."),
+  role: z.enum(["viewer", "editor"]),
+});

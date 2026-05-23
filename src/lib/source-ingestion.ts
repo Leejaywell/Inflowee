@@ -13,8 +13,10 @@ import {
   createItemRecordResult,
   createSyncRun,
   finishSyncRun,
+  getFeishuSettings,
   getSlackSettings,
   getSourceById,
+  getTelegramSettings,
   getTaskById,
   getWebhookSettings,
   listSources,
@@ -113,9 +115,11 @@ export async function storeSourceItemsAndCreateBriefs(
   }
 
   const briefs = await generateBriefsFromItems(task, unbriefedItems);
-  const [webhookSettings, slackSettings] = await Promise.all([
+  const [webhookSettings, slackSettings, telegramSettings, feishuSettings] = await Promise.all([
     getWebhookSettings(store),
     getSlackSettings(store),
+    getTelegramSettings(store),
+    getFeishuSettings(store),
   ]);
 
   for (const brief of briefs) {
@@ -131,7 +135,12 @@ export async function storeSourceItemsAndCreateBriefs(
       tags: brief.tags,
     });
 
-    if (webhookSettings.endpoint || slackSettings.endpoint) {
+    if (
+      webhookSettings.endpoint ||
+      slackSettings.endpoint ||
+      (telegramSettings.botToken && telegramSettings.chatId) ||
+      feishuSettings.endpoint
+    ) {
       try {
         await queueBriefDelivery(briefId, {
           requestKey: briefId,

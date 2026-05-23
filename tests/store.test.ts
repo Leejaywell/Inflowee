@@ -25,7 +25,9 @@ import {
   finishDeliveryLog,
   getBriefById,
   getDeliveryHealthSummary,
+  getFeishuSettings,
   getSlackSettings,
+  getTelegramSettings,
   getSourceHealthSummary,
   findChatThread,
   getWebhookSettings,
@@ -44,10 +46,13 @@ import {
   listSourcesByTask,
   markBriefRead,
   markBriefUnread,
+  removeSpaceMember,
   markSourceSyncResult,
   getSourceById,
   getTaskById,
   getTaskProfile,
+  saveFeishuSettings,
+  saveTelegramSettings,
   saveWebhookSettings,
   saveSlackSettings,
   saveTaskProfile,
@@ -223,6 +228,47 @@ describe("store promise contract", () => {
           role: "viewer",
         }),
       ]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
+  it("updates and removes a stored space member", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, {
+        ownerId: "user-1",
+        name: "Signals",
+      });
+
+      await addSpaceMember(store, {
+        spaceId,
+        userId: "user-2",
+        role: "viewer",
+      });
+      await addSpaceMember(store, {
+        spaceId,
+        userId: "user-2",
+        role: "editor",
+      });
+
+      expect(await listSpaceMembers(store, spaceId)).toEqual([
+        expect.objectContaining({
+          spaceId,
+          userId: "user-2",
+          role: "editor",
+        }),
+      ]);
+
+      await removeSpaceMember(store, {
+        spaceId,
+        userId: "user-2",
+      });
+
+      expect(await listSpaceMembers(store, spaceId)).toEqual([]);
     } finally {
       store.database.close();
       rmSync(tempDirectory, { recursive: true, force: true });
@@ -839,6 +885,35 @@ describe("store delivery persistence", () => {
     }
   });
 
+  it("stores Telegram and Feishu delivery settings in app settings", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-delivery-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      await saveTelegramSettings(store, {
+        botToken: "123456:ABCDEF_token",
+        chatId: "-1001234567890",
+      });
+      await saveFeishuSettings(
+        store,
+        "https://open.feishu.cn/open-apis/bot/v2/hook/abcdef",
+      );
+
+      expect(await getTelegramSettings(store)).toEqual({
+        botToken: "123456:ABCDEF_token",
+        chatId: "-1001234567890",
+        updatedAt: expect.any(String),
+      });
+      expect(await getFeishuSettings(store)).toEqual({
+        endpoint: "https://open.feishu.cn/open-apis/bot/v2/hook/abcdef",
+        updatedAt: expect.any(String),
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("persists delivery logs for a brief", async () => {
     const fixture = await seedBriefFixture();
 
@@ -884,6 +959,14 @@ describe("store delivery persistence", () => {
         fixture.store,
         "https://hooks.slack.com/services/T/B/X",
       );
+      await saveTelegramSettings(fixture.store, {
+        botToken: "123456:ABCDEF_token",
+        chatId: "-1001234567890",
+      });
+      await saveFeishuSettings(
+        fixture.store,
+        "https://open.feishu.cn/open-apis/bot/v2/hook/abcdef",
+      );
 
       const successLogId = await createDeliveryLog(fixture.store, {
         briefId: fixture.briefId,
@@ -914,6 +997,8 @@ describe("store delivery persistence", () => {
         running: 0,
         webhookConfigured: true,
         slackConfigured: true,
+        telegramConfigured: true,
+        feishuConfigured: true,
       });
     } finally {
       fixture.cleanup();

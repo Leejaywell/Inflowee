@@ -102,7 +102,7 @@ type DeliveryLogRow = {
   id: string;
   brief_id: string;
   endpoint: string;
-  payload_type: "html" | "slack";
+  payload_type: "html" | "slack" | "telegram" | "feishu";
   status: DeliveryStatus;
   attempt_count: number | null;
   response_status: number | null;
@@ -253,11 +253,22 @@ export type SlackSettingsRecord = {
   updatedAt: string | null;
 };
 
+export type TelegramSettingsRecord = {
+  botToken: string | null;
+  chatId: string | null;
+  updatedAt: string | null;
+};
+
+export type FeishuSettingsRecord = {
+  endpoint: string | null;
+  updatedAt: string | null;
+};
+
 export type DeliveryLogRecord = {
   id: string;
   briefId: string;
   endpoint: string;
-  payloadType: "html" | "slack";
+  payloadType: "html" | "slack" | "telegram" | "feishu";
   status: DeliveryStatus;
   attemptCount: number | null;
   responseStatus: number | null;
@@ -283,6 +294,8 @@ export type DeliveryHealthSummary = {
   running: number;
   webhookConfigured: boolean;
   slackConfigured: boolean;
+  telegramConfigured: boolean;
+  feishuConfigured: boolean;
 };
 
 export type SpaceMemberRecord = {
@@ -605,10 +618,10 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
     )
     .get() as { sql: string } | undefined;
 
-  const needsSlackPayloadType =
-    deliveryLogsTable && !deliveryLogsTable.sql.includes("'slack'");
+  const needsDeliveryPayloadUpgrade =
+    deliveryLogsTable && !deliveryLogsTable.sql.includes("'feishu'");
 
-  if (needsSlackPayloadType) {
+  if (needsDeliveryPayloadUpgrade) {
     database.exec(`
       PRAGMA foreign_keys = OFF;
       BEGIN;
@@ -617,7 +630,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
         id TEXT PRIMARY KEY,
         brief_id TEXT NOT NULL,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -665,7 +678,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       id TEXT PRIMARY KEY,
       brief_id TEXT NOT NULL,
       endpoint TEXT NOT NULL,
-      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack')),
+      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu')),
       status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
       attempt_count INTEGER,
       response_status INTEGER,
@@ -1118,7 +1131,7 @@ export function createStore(
         id TEXT PRIMARY KEY,
         brief_id TEXT NOT NULL,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -1595,6 +1608,32 @@ export async function listSpaceMembers(
     .all(spaceId) as SpaceMemberRow[];
 
   return rows.map(mapSpaceMember);
+}
+
+export async function removeSpaceMember(
+  store: Store,
+  input: {
+    spaceId: string;
+    userId: string;
+  },
+): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.spaceMember.deleteMany({
+      where: {
+        spaceId: input.spaceId,
+        userId: input.userId,
+      },
+    });
+    return;
+  }
+
+  store.database
+    .prepare(
+      `DELETE FROM space_members
+       WHERE space_id = ?
+         AND user_id = ?`,
+    )
+    .run(input.spaceId, input.userId);
 }
 
 export async function getSpaceMembership(
@@ -2612,12 +2651,55 @@ export async function getSlackSettings(
   };
 }
 
+export async function saveTelegramSettings(
+  store: Store,
+  input: {
+    botToken: string;
+    chatId: string;
+  },
+) {
+  await Promise.all([
+    saveAppSetting(store, "telegram_bot_token", input.botToken),
+    saveAppSetting(store, "telegram_chat_id", input.chatId),
+  ]);
+}
+
+export async function getTelegramSettings(
+  store: Store,
+): Promise<TelegramSettingsRecord> {
+  const [tokenRow, chatRow] = await Promise.all([
+    getAppSetting(store, "telegram_bot_token"),
+    getAppSetting(store, "telegram_chat_id"),
+  ]);
+
+  return {
+    botToken: tokenRow.value,
+    chatId: chatRow.value,
+    updatedAt: chatRow.updatedAt ?? tokenRow.updatedAt,
+  };
+}
+
+export async function saveFeishuSettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "feishu_webhook_endpoint", endpoint);
+}
+
+export async function getFeishuSettings(
+  store: Store,
+): Promise<FeishuSettingsRecord> {
+  const row = await getAppSetting(store, "feishu_webhook_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export async function createDeliveryLog(
   store: Store,
   input: {
     briefId: string;
     endpoint: string;
-    payloadType: "html" | "slack";
+    payloadType: "html" | "slack" | "telegram" | "feishu";
   },
 ) {
   if (store.prisma) {
@@ -2922,10 +3004,12 @@ export async function getDeliveryHealthSummary(
   store: Store,
   filters: { actorId?: string } = {},
 ): Promise<DeliveryHealthSummary> {
-  const [logs, webhookSettings, slackSettings] = await Promise.all([
+  const [logs, webhookSettings, slackSettings, telegramSettings, feishuSettings] = await Promise.all([
     listRecentDeliveryLogs(store, 50, filters),
     getWebhookSettings(store),
     getSlackSettings(store),
+    getTelegramSettings(store),
+    getFeishuSettings(store),
   ]);
 
   return logs.reduce<DeliveryHealthSummary>(
@@ -2941,6 +3025,10 @@ export async function getDeliveryHealthSummary(
       running: 0,
       webhookConfigured: Boolean(webhookSettings.endpoint),
       slackConfigured: Boolean(slackSettings.endpoint),
+      telegramConfigured: Boolean(
+        telegramSettings.botToken && telegramSettings.chatId,
+      ),
+      feishuConfigured: Boolean(feishuSettings.endpoint),
     },
   );
 }
