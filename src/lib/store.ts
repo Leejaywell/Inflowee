@@ -1,10 +1,22 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
+import { createRequire } from "node:module";
 import { dirname } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync } from "node:sqlite";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { getDatabaseUrl, getPrisma, requireDatabaseUrl } from "./db.ts";
+
+const requireModule = createRequire(import.meta.url);
+
+let cachedDatabaseSyncCtor: typeof import("node:sqlite").DatabaseSync | null = null;
+
+function getDatabaseSyncCtor() {
+  cachedDatabaseSyncCtor ??=
+    requireModule("node:sqlite").DatabaseSync as typeof import("node:sqlite").DatabaseSync;
+
+  return cachedDatabaseSyncCtor;
+}
 
 export type TaskType = "TOPIC" | "QUESTION";
 export type SourceType =
@@ -1054,7 +1066,8 @@ export function createStore(
   const initializeDatabase = () => {
     mkdirSync(dirname(filename), { recursive: true });
 
-    const nextDatabase = new DatabaseSync(filename);
+    const DatabaseSyncCtor = getDatabaseSyncCtor();
+    const nextDatabase = new DatabaseSyncCtor(filename);
 
     nextDatabase.exec(`
       PRAGMA foreign_keys = ON;
