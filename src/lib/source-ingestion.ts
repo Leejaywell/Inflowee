@@ -13,6 +13,7 @@ import {
   createItemRecordResult,
   createSyncRun,
   finishSyncRun,
+  getSlackSettings,
   getSourceById,
   getTaskById,
   getWebhookSettings,
@@ -112,7 +113,10 @@ export async function storeSourceItemsAndCreateBriefs(
   }
 
   const briefs = await generateBriefsFromItems(task, unbriefedItems);
-  const webhookSettings = await getWebhookSettings(store);
+  const [webhookSettings, slackSettings] = await Promise.all([
+    getWebhookSettings(store),
+    getSlackSettings(store),
+  ]);
 
   for (const brief of briefs) {
     const briefId = await createBriefRecord(store, {
@@ -127,13 +131,13 @@ export async function storeSourceItemsAndCreateBriefs(
       tags: brief.tags,
     });
 
-    if (webhookSettings.endpoint) {
+    if (webhookSettings.endpoint || slackSettings.endpoint) {
       try {
         await queueBriefDelivery(briefId, {
           requestKey: briefId,
         });
       } catch (error) {
-        console.error(`Failed to queue webhook delivery for brief ${briefId}:`, error);
+        console.error(`Failed to queue delivery for brief ${briefId}:`, error);
       }
     }
   }

@@ -75,6 +75,7 @@ describe("buildBriefsFromItems", () => {
       }),
       getOrCreateChatThread,
       getWebhookSettings: vi.fn().mockResolvedValue({ endpoint: null }),
+      getSlackSettings: vi.fn().mockResolvedValue({ endpoint: null }),
       listBriefItemIds: vi.fn().mockResolvedValue(["item-1"]),
       listChatMessages: vi.fn().mockResolvedValue([]),
       listItemsByBriefId: vi.fn().mockResolvedValue([
@@ -97,6 +98,7 @@ describe("buildBriefsFromItems", () => {
       }),
     }));
     vi.doMock("@/app/actions", () => ({
+      sendBriefToSlack: vi.fn(),
       sendBriefToWebhook: vi.fn(),
     }));
 

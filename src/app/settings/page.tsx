@@ -1,8 +1,10 @@
-import { saveWebhookEndpoint } from "@/app/actions";
+import { saveSlackEndpoint, saveWebhookEndpoint } from "@/app/actions";
 import { requireOperatorSessionActor } from "@/lib/auth";
 import { buildDeliveryPayload } from "@/lib/delivery";
 import {
   defaultStore,
+  getDeliveryHealthSummary,
+  getSlackSettings,
   getWebhookSettings,
   listRecentDeliveryLogs,
 } from "@/lib/store";
@@ -18,9 +20,11 @@ export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
   const actor = await requireOperatorSessionActor();
-  const [settings, recentLogs, params] = await Promise.all([
+  const [webhookSettings, slackSettings, recentLogs, deliveryHealth, params] = await Promise.all([
     getWebhookSettings(defaultStore),
+    getSlackSettings(defaultStore),
     listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),
+    getDeliveryHealthSummary(defaultStore, { actorId: actor.id }),
     searchParams,
   ]);
   const error = params?.error;
@@ -37,7 +41,7 @@ export default async function SettingsPage({
   return (
     <div className="grid gap-6">
       <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.05fr_0.95fr]">
-          <div className="space-y-4">
+        <div className="space-y-4">
           <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-white">
             Delivery settings
           </span>
@@ -70,7 +74,7 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-200">Endpoint URL</span>
             <input
               name="endpoint"
-              defaultValue={settings.endpoint ?? ""}
+              defaultValue={webhookSettings.endpoint ?? ""}
               placeholder="https://example.com/webhook"
               className="h-12 rounded-2xl border border-white/10 bg-white/10 px-4 text-white outline-none transition focus:border-white/30 focus:bg-white/15"
             />
@@ -81,11 +85,74 @@ export default async function SettingsPage({
           </button>
 
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-stone-300">
-            {settings.endpoint
-              ? `Current endpoint: ${settings.endpoint}`
+            {webhookSettings.endpoint
+              ? `Current endpoint: ${webhookSettings.endpoint}`
               : "No webhook configured yet."}
           </div>
         </form>
+      </section>
+
+      <section className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+        <form
+          action={saveSlackEndpoint}
+          className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+        >
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold">Slack webhook</h2>
+            <p className="text-sm leading-6 text-stone-500">
+              Use a Slack incoming webhook to receive the same brief stream in a channel.
+            </p>
+          </div>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">Slack webhook URL</span>
+            <input
+              name="endpoint"
+              defaultValue={slackSettings.endpoint ?? ""}
+              placeholder="https://hooks.slack.com/services/..."
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
+            Save Slack webhook
+          </button>
+
+          <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+            {slackSettings.endpoint
+              ? `Current Slack webhook: ${slackSettings.endpoint}`
+              : "No Slack webhook configured yet."}
+          </div>
+        </form>
+
+        <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+          <h2 className="text-xl font-semibold">Delivery health</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl bg-stone-50 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-stone-400">Recent</div>
+              <div className="mt-2 text-2xl font-semibold">{deliveryHealth.total}</div>
+            </div>
+            <div className="rounded-2xl bg-emerald-50 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-emerald-600">Success</div>
+              <div className="mt-2 text-2xl font-semibold text-emerald-700">{deliveryHealth.success}</div>
+            </div>
+            <div className="rounded-2xl bg-rose-50 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-rose-600">Failed</div>
+              <div className="mt-2 text-2xl font-semibold text-rose-700">{deliveryHealth.error}</div>
+            </div>
+            <div className="rounded-2xl bg-stone-100 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-stone-500">Channels</div>
+              <div className="mt-2 text-sm text-stone-700">
+                {deliveryHealth.webhookConfigured ? "Webhook" : null}
+                {deliveryHealth.webhookConfigured && deliveryHealth.slackConfigured ? " + " : null}
+                {deliveryHealth.slackConfigured ? "Slack" : null}
+                {!deliveryHealth.webhookConfigured && !deliveryHealth.slackConfigured
+                  ? "None configured"
+                  : null}
+              </div>
+            </div>
+          </div>
+        </section>
       </section>
 
       {(error || updated) && (
@@ -100,6 +167,8 @@ export default async function SettingsPage({
             ? decodeURIComponent(error)
             : updated === "webhook"
               ? "Webhook settings saved."
+              : updated === "slack"
+                ? "Slack settings saved."
               : "Update applied."}
         </section>
       )}
@@ -109,7 +178,7 @@ export default async function SettingsPage({
           <div>
             <h2 className="text-xl font-semibold">Recent delivery logs</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Latest manual webhook sends across all briefs.
+              Latest delivery attempts across all briefs and channels.
             </p>
           </div>
           <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
@@ -134,6 +203,9 @@ export default async function SettingsPage({
                       Brief {log.briefId}
                     </p>
                     <p className="text-sm text-stone-600">{log.endpoint}</p>
+                    <p className="text-xs uppercase tracking-[0.14em] text-stone-400">
+                      {log.payloadType}
+                    </p>
                   </div>
                   <span
                     className={`rounded-full px-3 py-1 text-xs font-medium ${
@@ -162,8 +234,8 @@ export default async function SettingsPage({
       <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
         <h2 className="text-xl font-semibold">Channel adapters</h2>
         <p className="mt-2 text-sm leading-6 text-stone-500">
-          Webhook delivery is active. Slack payload shaping is now available as
-          a first adapter foundation.
+          Slack now uses the same delivery pipeline as webhook sends. This preview
+          shows the payload shape sent to the Slack incoming webhook.
         </p>
         <pre className="mt-4 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-xs leading-6 text-stone-200">
           {JSON.stringify(slackPreview, null, 2)}

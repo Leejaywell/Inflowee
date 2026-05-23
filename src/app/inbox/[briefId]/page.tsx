@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { sendBriefToWebhook } from "@/app/actions";
+import { sendBriefToSlack, sendBriefToWebhook } from "@/app/actions";
 import { ChatDrawer } from "@/components/chat-drawer";
 import {
   assertBriefAccess,
@@ -11,6 +11,7 @@ import {
 import {
   defaultStore,
   getBriefById,
+  getSlackSettings,
   getWebhookSettings,
   listBriefItemIds,
   listRecentDeliveryLogsByBrief,
@@ -30,7 +31,7 @@ export default async function BriefDetailPage({
 }) {
   const actor = await requireSessionActor();
   const [{ briefId }, query] = await Promise.all([params, searchParams]);
-  const brief = await getBriefById(defaultStore, briefId);
+  const brief = await getBriefById(defaultStore, briefId, { actorId: actor.id });
 
   if (!brief) {
     notFound();
@@ -48,12 +49,13 @@ export default async function BriefDetailPage({
 
   const actorScopeId = getActorScopedChatScopeId(actor.id, briefId);
 
-  const [itemIds, linkedItems, chatThread, webhookSettings, deliveryLogs] =
+  const [itemIds, linkedItems, chatThread, webhookSettings, slackSettings, deliveryLogs] =
     await Promise.all([
       listBriefItemIds(defaultStore, briefId),
       listItemsByBriefId(defaultStore, briefId),
       getOrCreateChatThread(defaultStore, "brief", actorScopeId),
       getWebhookSettings(defaultStore),
+      getSlackSettings(defaultStore),
       listRecentDeliveryLogsByBrief(defaultStore, briefId),
     ]);
   const chatMessages = await listChatMessages(defaultStore, chatThread.id);
@@ -74,6 +76,8 @@ export default async function BriefDetailPage({
             ? decodeURIComponent(error)
             : delivered === "webhook"
               ? "Brief delivered to webhook."
+              : delivered === "slack"
+                ? "Brief delivered to Slack."
               : "Update applied."}
         </section>
       )}
@@ -195,15 +199,29 @@ export default async function BriefDetailPage({
                   Send webhook
                 </button>
               </form>
+              <form action={sendBriefToSlack}>
+                <input type="hidden" name="briefId" value={briefId} />
+                <button
+                  className="inline-flex h-10 items-center rounded-full border border-emerald-200 bg-emerald-50 px-4 text-sm font-medium text-emerald-700 transition hover:bg-emerald-100"
+                  disabled={!slackSettings.endpoint}
+                  title={
+                    slackSettings.endpoint
+                      ? "Send this brief to the configured Slack channel."
+                      : "Configure a Slack webhook endpoint in Settings first."
+                  }
+                >
+                  Send Slack
+                </button>
+              </form>
               <ChatDrawer
                 briefId={briefId}
                 briefTitle={brief.title}
                 initialMessages={chatMessages}
               />
             </div>
-            {!webhookSettings.endpoint ? (
+            {!webhookSettings.endpoint && !slackSettings.endpoint ? (
               <p className="mt-3 text-sm text-stone-500">
-                No webhook configured yet. Add one in{" "}
+                No delivery channel configured yet. Add one in{" "}
                 <Link href="/settings" className="text-[#0057ff] underline">
                   Settings
                 </Link>
@@ -211,8 +229,8 @@ export default async function BriefDetailPage({
               </p>
             ) : (
               <p className="mt-3 text-sm text-stone-500">
-                New briefs now queue automatic webhook delivery. Use this action
-                to resend on demand.
+                New briefs now queue automatic delivery to configured channels.
+                Use these actions to resend on demand.
               </p>
             )}
           </div>

@@ -106,9 +106,20 @@ model Brief {
   createdAt       DateTime  @default(now())
   task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
   briefItems      BriefItem[]
+  briefReads      BriefRead[]
   deliveryLogs    DeliveryLog[]
 
   @@index([taskId, createdAt])
+}
+
+model BriefRead {
+  briefId  String
+  actorId  String
+  readAt   DateTime @default(now())
+  brief    Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
+
+  @@id([briefId, actorId])
+  @@index([actorId, readAt])
 }
 
 model BriefItem {

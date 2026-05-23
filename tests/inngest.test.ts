@@ -155,7 +155,7 @@ describe("runScheduledSyncEvent", () => {
       getDefaultRuntimeStore: getDefaultRuntimeStoreMock,
     }));
     vi.doMock("@/lib/delivery", () => ({
-      deliverStoredBrief: deliverStoredBriefMock,
+      deliverStoredBriefToConfiguredChannels: deliverStoredBriefMock,
     }));
 
     try {
@@ -189,7 +189,7 @@ describe("runScheduledSyncEvent", () => {
       getDefaultRuntimeStore: vi.fn(() => ({ database: {} })),
     }));
     vi.doMock("@/lib/delivery", () => ({
-      deliverStoredBrief: vi.fn(async (...args: unknown[]) => {
+      deliverStoredBriefToConfiguredChannels: vi.fn(async (...args: unknown[]) => {
         deliveryLogs.push(args[1] as string);
         return deliverStoredBriefMock(...args);
       }),
@@ -237,7 +237,7 @@ describe("runScheduledSyncEvent", () => {
       getDefaultRuntimeStore: vi.fn(() => ({ database: {} })),
     }));
     vi.doMock("@/lib/delivery", () => ({
-      deliverStoredBrief: deliverStoredBriefMock,
+      deliverStoredBriefToConfiguredChannels: deliverStoredBriefMock,
     }));
 
     try {

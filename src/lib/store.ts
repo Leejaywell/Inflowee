@@ -102,7 +102,7 @@ type DeliveryLogRow = {
   id: string;
   brief_id: string;
   endpoint: string;
-  payload_type: "html";
+  payload_type: "html" | "slack";
   status: DeliveryStatus;
   attempt_count: number | null;
   response_status: number | null;
@@ -248,11 +248,16 @@ export type WebhookSettingsRecord = {
   updatedAt: string | null;
 };
 
+export type SlackSettingsRecord = {
+  endpoint: string | null;
+  updatedAt: string | null;
+};
+
 export type DeliveryLogRecord = {
   id: string;
   briefId: string;
   endpoint: string;
-  payloadType: "html";
+  payloadType: "html" | "slack";
   status: DeliveryStatus;
   attemptCount: number | null;
   responseStatus: number | null;
@@ -262,6 +267,23 @@ export type DeliveryLogRecord = {
 };
 
 export type SpaceRole = "viewer" | "editor" | "owner";
+
+export type SourceHealthSummary = {
+  total: number;
+  healthy: number;
+  errored: number;
+  idle: number;
+  dueNow: number;
+};
+
+export type DeliveryHealthSummary = {
+  total: number;
+  success: number;
+  error: number;
+  running: number;
+  webhookConfigured: boolean;
+  slackConfigured: boolean;
+};
 
 export type SpaceMemberRecord = {
   spaceId: string;
@@ -583,12 +605,67 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
     )
     .get() as { sql: string } | undefined;
 
+  const needsSlackPayloadType =
+    deliveryLogsTable && !deliveryLogsTable.sql.includes("'slack'");
+
+  if (needsSlackPayloadType) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+
+      CREATE TABLE delivery_logs_migrated (
+        id TEXT PRIMARY KEY,
+        brief_id TEXT NOT NULL,
+        endpoint TEXT NOT NULL,
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack')),
+        status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
+        attempt_count INTEGER,
+        response_status INTEGER,
+        error TEXT,
+        started_at TEXT NOT NULL,
+        finished_at TEXT,
+        FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO delivery_logs_migrated (
+        id,
+        brief_id,
+        endpoint,
+        payload_type,
+        status,
+        attempt_count,
+        response_status,
+        error,
+        started_at,
+        finished_at
+      )
+      SELECT
+        id,
+        brief_id,
+        endpoint,
+        payload_type,
+        status,
+        attempt_count,
+        response_status,
+        error,
+        started_at,
+        finished_at
+      FROM delivery_logs;
+
+      DROP TABLE delivery_logs;
+      ALTER TABLE delivery_logs_migrated RENAME TO delivery_logs;
+
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+
   database.exec(`
     CREATE TABLE IF NOT EXISTS delivery_logs (
       id TEXT PRIMARY KEY,
       brief_id TEXT NOT NULL,
       endpoint TEXT NOT NULL,
-      payload_type TEXT NOT NULL CHECK(payload_type IN ('html')),
+      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack')),
       status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
       attempt_count INTEGER,
       response_status INTEGER,
@@ -682,6 +759,21 @@ function migrateBriefsTable(database: DatabaseSync) {
 
     COMMIT;
     PRAGMA foreign_keys = ON;
+  `);
+}
+
+function migrateBriefReadsTable(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS brief_reads (
+      brief_id TEXT NOT NULL,
+      actor_id TEXT NOT NULL,
+      read_at TEXT NOT NULL,
+      PRIMARY KEY (brief_id, actor_id),
+      FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_brief_reads_actor_read_at
+      ON brief_reads(actor_id, read_at DESC);
   `);
 }
 
@@ -960,6 +1052,14 @@ export function createStore(
         FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS brief_reads (
+        brief_id TEXT NOT NULL,
+        actor_id TEXT NOT NULL,
+        read_at TEXT NOT NULL,
+        PRIMARY KEY (brief_id, actor_id),
+        FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS brief_items (
         brief_id TEXT NOT NULL,
         item_id TEXT NOT NULL,
@@ -1018,7 +1118,7 @@ export function createStore(
         id TEXT PRIMARY KEY,
         brief_id TEXT NOT NULL,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -1033,6 +1133,7 @@ export function createStore(
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_brief_reads_actor_read_at ON brief_reads(actor_id, read_at DESC);
       CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);
       CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);
       CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);
@@ -1043,6 +1144,7 @@ export function createStore(
     migrateSpacesTable(nextDatabase);
     migrateSpaceMembersTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
+    migrateBriefReadsTable(nextDatabase);
     migrateTasksTable(nextDatabase);
     migrateItemsTable(nextDatabase);
     migrateChatMessagesTable(nextDatabase);
@@ -1054,6 +1156,7 @@ export function createStore(
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_brief_reads_actor_read_at ON brief_reads(actor_id, read_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);");
@@ -1235,6 +1338,7 @@ function mapPrismaBrief(brief: {
   tagsJson: unknown;
   isRead: boolean;
   createdAt: Date;
+  briefReads?: Array<{ actorId: string }>;
   task?: { title: string; space?: { name: string } | null } | null;
 }): BriefRecord {
   return {
@@ -1247,7 +1351,7 @@ function mapPrismaBrief(brief: {
     relevanceScore: brief.relevanceScore,
     importanceScore: brief.importanceScore,
     tags: (brief.tagsJson as string[]) ?? [],
-    isRead: brief.isRead,
+    isRead: brief.briefReads ? brief.briefReads.length > 0 : brief.isRead,
     createdAt: brief.createdAt.toISOString(),
     taskTitle: brief.task?.title,
     spaceName: brief.task?.space?.name,
@@ -2421,17 +2525,17 @@ export async function listRecentSyncRunsBySource(
   return rows.map(mapSyncRun);
 }
 
-export async function saveWebhookSettings(store: Store, endpoint: string) {
+async function saveAppSetting(store: Store, key: string, value: string) {
   if (store.prisma) {
     await store.prisma.appSetting.upsert({
-      where: { key: "webhook_endpoint" },
+      where: { key },
       update: {
-        value: endpoint,
+        value,
         updatedAt: new Date(),
       },
       create: {
-        key: "webhook_endpoint",
-        value: endpoint,
+        key,
+        value,
         updatedAt: new Date(),
       },
     });
@@ -2443,24 +2547,22 @@ export async function saveWebhookSettings(store: Store, endpoint: string) {
   store.database
     .prepare(
       `INSERT INTO app_settings (key, value, updated_at)
-       VALUES ('webhook_endpoint', ?, ?)
+       VALUES (?, ?, ?)
        ON CONFLICT(key) DO UPDATE SET
          value = excluded.value,
          updated_at = excluded.updated_at`,
     )
-    .run(endpoint, updatedAt);
+    .run(key, value, updatedAt);
 }
 
-export async function getWebhookSettings(
-  store: Store,
-): Promise<WebhookSettingsRecord> {
+async function getAppSetting(store: Store, key: string) {
   if (store.prisma) {
     const row = await store.prisma.appSetting.findUnique({
-      where: { key: "webhook_endpoint" },
+      where: { key },
     });
 
     return {
-      endpoint: row?.value ?? null,
+      value: row?.value ?? null,
       updatedAt: row?.updatedAt.toISOString() ?? null,
     };
   }
@@ -2469,14 +2571,44 @@ export async function getWebhookSettings(
     .prepare(
       `SELECT value, updated_at
        FROM app_settings
-       WHERE key = 'webhook_endpoint'
+       WHERE key = ?
        LIMIT 1`,
     )
-    .get() as AppSettingRow | undefined;
+    .get(key) as AppSettingRow | undefined;
 
   return {
-    endpoint: row?.value ?? null,
+    value: row?.value ?? null,
     updatedAt: row?.updated_at ?? null,
+  };
+}
+
+export async function saveWebhookSettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "webhook_endpoint", endpoint);
+}
+
+export async function getWebhookSettings(
+  store: Store,
+): Promise<WebhookSettingsRecord> {
+  const row = await getAppSetting(store, "webhook_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function saveSlackSettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "slack_webhook_endpoint", endpoint);
+}
+
+export async function getSlackSettings(
+  store: Store,
+): Promise<SlackSettingsRecord> {
+  const row = await getAppSetting(store, "slack_webhook_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
   };
 }
 
@@ -2485,7 +2617,7 @@ export async function createDeliveryLog(
   input: {
     briefId: string;
     endpoint: string;
-    payloadType: "html";
+    payloadType: "html" | "slack";
   },
 ) {
   if (store.prisma) {
@@ -2691,6 +2823,128 @@ export async function listRecentDeliveryLogs(
   return rows.map(mapDeliveryLog);
 }
 
+export async function listRecentSyncRuns(
+  store: Store,
+  limit = 20,
+  filters: { actorId?: string } = {},
+): Promise<SyncRunRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.syncRun.findMany({
+      where: filters.actorId
+        ? {
+            source: {
+              task: {
+                space: {
+                  OR: [
+                    { ownerId: filters.actorId },
+                    { members: { some: { userId: filters.actorId } } },
+                  ],
+                },
+              },
+            },
+          }
+        : undefined,
+      orderBy: { startedAt: "desc" },
+      take: limit,
+    });
+
+    return rows.map(mapPrismaSyncRun);
+  }
+
+  const rows = (
+    filters.actorId
+      ? store.database
+          .prepare(
+            `SELECT sync_runs.*
+             FROM sync_runs
+             JOIN sources ON sources.id = sync_runs.source_id
+             JOIN tasks ON tasks.id = sources.task_id
+             JOIN spaces ON spaces.id = tasks.space_id
+             LEFT JOIN space_members
+               ON space_members.space_id = spaces.id
+              AND space_members.user_id = ?
+             WHERE spaces.owner_id = ?
+                OR space_members.user_id IS NOT NULL
+             ORDER BY sync_runs.started_at DESC
+             LIMIT ?`,
+          )
+          .all(filters.actorId, filters.actorId, limit)
+      : store.database
+          .prepare(
+            `SELECT * FROM sync_runs
+             ORDER BY started_at DESC
+             LIMIT ?`,
+          )
+          .all(limit)
+  ) as SyncRunRow[];
+
+  return rows.map(mapSyncRun);
+}
+
+export async function getSourceHealthSummary(
+  store: Store,
+  filters: { actorId?: string } = {},
+): Promise<SourceHealthSummary> {
+  const [sources, nowIso] = await Promise.all([
+    listSources(store, filters),
+    Promise.resolve(new Date().toISOString()),
+  ]);
+
+  return sources.reduce<SourceHealthSummary>(
+    (summary, source) => {
+      summary.total += 1;
+
+      if (source.status === "success") {
+        summary.healthy += 1;
+      } else if (source.status === "error") {
+        summary.errored += 1;
+      } else {
+        summary.idle += 1;
+      }
+
+      if (source.nextSyncAt && source.nextSyncAt <= nowIso) {
+        summary.dueNow += 1;
+      }
+
+      return summary;
+    },
+    {
+      total: 0,
+      healthy: 0,
+      errored: 0,
+      idle: 0,
+      dueNow: 0,
+    },
+  );
+}
+
+export async function getDeliveryHealthSummary(
+  store: Store,
+  filters: { actorId?: string } = {},
+): Promise<DeliveryHealthSummary> {
+  const [logs, webhookSettings, slackSettings] = await Promise.all([
+    listRecentDeliveryLogs(store, 50, filters),
+    getWebhookSettings(store),
+    getSlackSettings(store),
+  ]);
+
+  return logs.reduce<DeliveryHealthSummary>(
+    (summary, log) => {
+      summary.total += 1;
+      summary[log.status] += 1;
+      return summary;
+    },
+    {
+      total: 0,
+      success: 0,
+      error: 0,
+      running: 0,
+      webhookConfigured: Boolean(webhookSettings.endpoint),
+      slackConfigured: Boolean(slackSettings.endpoint),
+    },
+  );
+}
+
 export async function listSources(
   store: Store = defaultStore,
   filters: { actorId?: string } = {},
@@ -2742,11 +2996,20 @@ export async function listSources(
 export async function getBriefById(
   store: Store,
   briefId: string,
+  options: { actorId?: string } = {},
 ): Promise<BriefRecord | null> {
   if (store.prisma) {
     const row = await store.prisma.brief.findUnique({
       where: { id: briefId },
       include: {
+        ...(options.actorId
+          ? {
+              briefReads: {
+                where: { actorId: options.actorId },
+                select: { actorId: true },
+              },
+            }
+          : {}),
         task: {
           include: {
             space: true,
@@ -2761,16 +3024,37 @@ export async function getBriefById(
   const row = store.database
     .prepare(
       `SELECT
-         briefs.*,
+         briefs.id,
+         briefs.task_id,
+         briefs.title,
+         briefs.summary,
+         briefs.why_it_matters,
+         briefs.source_citations,
+         briefs.relevance_score,
+         briefs.importance_score,
+         briefs.tags_json,
+         ${
+           options.actorId
+             ? "CASE WHEN brief_reads.actor_id IS NULL THEN 0 ELSE 1 END"
+             : "briefs.is_read"
+         } AS is_read,
+         briefs.created_at,
          tasks.title AS task_title,
          spaces.name AS space_name
        FROM briefs
        JOIN tasks ON briefs.task_id = tasks.id
        JOIN spaces ON tasks.space_id = spaces.id
+       ${
+         options.actorId
+           ? "LEFT JOIN brief_reads ON brief_reads.brief_id = briefs.id AND brief_reads.actor_id = ?"
+           : ""
+       }
        WHERE briefs.id = ?
        LIMIT 1`,
     )
-    .get(briefId) as BriefRow | undefined;
+    .get(...(options.actorId ? [options.actorId, briefId] : [briefId])) as
+    | BriefRow
+    | undefined;
 
   return row ? mapBrief(row) : null;
 }
@@ -2819,35 +3103,78 @@ export async function briefExistsForItem(
 export async function markBriefRead(
   store: Store,
   briefId: string,
+  actorId?: string,
 ): Promise<void> {
   if (store.prisma) {
-    await store.prisma.brief.update({
-      where: { id: briefId },
-      data: { isRead: true },
-    });
+    if (actorId) {
+      await store.prisma.briefRead.upsert({
+        where: {
+          briefId_actorId: {
+            briefId,
+            actorId,
+          },
+        },
+        create: {
+          briefId,
+          actorId,
+        },
+        update: {
+          readAt: new Date(),
+        },
+      });
+    } else {
+      await store.prisma.brief.update({
+        where: { id: briefId },
+        data: { isRead: true },
+      });
+    }
     return;
   }
 
-  store.database
-    .prepare("UPDATE briefs SET is_read = 1 WHERE id = ?")
-    .run(briefId);
+  if (actorId) {
+    store.database
+      .prepare(
+        `INSERT INTO brief_reads (brief_id, actor_id, read_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(brief_id, actor_id) DO UPDATE SET read_at = excluded.read_at`,
+      )
+      .run(briefId, actorId, new Date().toISOString());
+    return;
+  }
+
+  store.database.prepare("UPDATE briefs SET is_read = 1 WHERE id = ?").run(briefId);
 }
 
 export async function markBriefUnread(
   store: Store,
   briefId: string,
+  actorId?: string,
 ): Promise<void> {
   if (store.prisma) {
-    await store.prisma.brief.update({
-      where: { id: briefId },
-      data: { isRead: false },
-    });
+    if (actorId) {
+      await store.prisma.briefRead.deleteMany({
+        where: {
+          briefId,
+          actorId,
+        },
+      });
+    } else {
+      await store.prisma.brief.update({
+        where: { id: briefId },
+        data: { isRead: false },
+      });
+    }
     return;
   }
 
-  store.database
-    .prepare("UPDATE briefs SET is_read = 0 WHERE id = ?")
-    .run(briefId);
+  if (actorId) {
+    store.database
+      .prepare("DELETE FROM brief_reads WHERE brief_id = ? AND actor_id = ?")
+      .run(briefId, actorId);
+    return;
+  }
+
+  store.database.prepare("UPDATE briefs SET is_read = 0 WHERE id = ?").run(briefId);
 }
 
 export async function countUnreadBriefs(
@@ -2857,7 +3184,9 @@ export async function countUnreadBriefs(
   if (store.prisma) {
     return store.prisma.brief.count({
       where: {
-        isRead: false,
+        ...(filters.actorId
+          ? { briefReads: { none: { actorId: filters.actorId } } }
+          : { isRead: false }),
         ...(filters.actorId
           ? {
               task: {
@@ -2885,10 +3214,13 @@ export async function countUnreadBriefs(
              LEFT JOIN space_members
                ON space_members.space_id = spaces.id
               AND space_members.user_id = ?
-             WHERE briefs.is_read = 0
+             LEFT JOIN brief_reads
+               ON brief_reads.brief_id = briefs.id
+              AND brief_reads.actor_id = ?
+             WHERE brief_reads.actor_id IS NULL
                AND (spaces.owner_id = ? OR space_members.user_id IS NOT NULL)`,
           )
-          .get(filters.actorId, filters.actorId)
+          .get(filters.actorId, filters.actorId, filters.actorId)
       : store.database
           .prepare("SELECT COUNT(*) AS count FROM briefs WHERE is_read = 0")
           .get()
@@ -2905,7 +3237,11 @@ export async function listBriefsFiltered(
     const rows = await store.prisma.brief.findMany({
       where: {
         ...(filters.taskId ? { taskId: filters.taskId } : {}),
-        ...(filters.unreadOnly ? { isRead: false } : {}),
+        ...(filters.unreadOnly
+          ? filters.actorId
+            ? { briefReads: { none: { actorId: filters.actorId } } }
+            : { isRead: false }
+          : {}),
         ...(filters.actorId
           ? {
               task: {
@@ -2925,6 +3261,14 @@ export async function listBriefsFiltered(
         { createdAt: "desc" },
       ],
       include: {
+        ...(filters.actorId
+          ? {
+              briefReads: {
+                where: { actorId: filters.actorId },
+                select: { actorId: true },
+              },
+            }
+          : {}),
         task: {
           include: {
             space: true,
@@ -2944,7 +3288,9 @@ export async function listBriefsFiltered(
     params.push(filters.taskId);
   }
   if (filters.unreadOnly) {
-    conditions.push("briefs.is_read = 0");
+    conditions.push(
+      filters.actorId ? "brief_reads.actor_id IS NULL" : "briefs.is_read = 0",
+    );
   }
   if (filters.actorId) {
     conditions.push("(spaces.owner_id = ? OR space_members.user_id IS NOT NULL)");
@@ -2956,7 +3302,21 @@ export async function listBriefsFiltered(
   const rows = store.database
     .prepare(
       `SELECT
-         briefs.*,
+         briefs.id,
+         briefs.task_id,
+         briefs.title,
+         briefs.summary,
+         briefs.why_it_matters,
+         briefs.source_citations,
+         briefs.relevance_score,
+         briefs.importance_score,
+         briefs.tags_json,
+         ${
+           filters.actorId
+             ? "CASE WHEN brief_reads.actor_id IS NULL THEN 0 ELSE 1 END"
+             : "briefs.is_read"
+         } AS is_read,
+         briefs.created_at,
          tasks.title AS task_title,
          spaces.name AS space_name
        FROM briefs
@@ -2965,10 +3325,17 @@ export async function listBriefsFiltered(
        LEFT JOIN space_members
          ON space_members.space_id = spaces.id
         AND space_members.user_id = ?
+       ${
+         filters.actorId
+           ? "LEFT JOIN brief_reads ON brief_reads.brief_id = briefs.id AND brief_reads.actor_id = ?"
+           : ""
+       }
        ${where}
        ORDER BY briefs.importance_score DESC, briefs.relevance_score DESC, briefs.created_at DESC`,
     )
-    .all(filters.actorId ?? "", ...params) as BriefRow[];
+    .all(
+      ...(filters.actorId ? [filters.actorId, filters.actorId, ...params] : ["", ...params]),
+    ) as BriefRow[];
 
   return rows.map(mapBrief);
 }
@@ -3217,19 +3584,47 @@ export async function getOrCreateChatThread(
   scopeId: string,
 ): Promise<ChatThreadRecord> {
   if (store.prisma) {
-    const thread = await store.prisma.chatThread.upsert({
-      where: {
-        scopeType_scopeId: {
+    let thread;
+
+    try {
+      thread = await store.prisma.chatThread.upsert({
+        where: {
+          scopeType_scopeId: {
+            scopeType,
+            scopeId,
+          },
+        },
+        update: {},
+        create: {
           scopeType,
           scopeId,
         },
-      },
-      update: {},
-      create: {
-        scopeType,
-        scopeId,
-      },
-    });
+      });
+    } catch (error) {
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "P2002"
+      ) {
+        thread = await store.prisma.chatThread.findUnique({
+          where: {
+            scopeType_scopeId: {
+              scopeType,
+              scopeId,
+            },
+          },
+        });
+      } else {
+        throw error;
+      }
+    }
+
+    if (!thread) {
+      throw new Error(
+        `Failed to resolve chat thread for ${scopeType}:${scopeId}.`,
+      );
+    }
 
     return mapChatThread({
       id: thread.id,

@@ -77,3 +77,17 @@ export const webhookEndpointSchema = z
     (value) => value.startsWith("https://"),
     "Enter a valid https webhook URL.",
   );
+
+export const slackWebhookEndpointSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid Slack webhook URL.")
+  .refine((value) => value.startsWith("https://"), "Enter a valid https Slack webhook URL.")
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return ["hooks.slack.com", "hooks.slack-gov.com"].includes(url.hostname);
+    } catch {
+      return false;
+    }
+  }, "Slack webhooks must use hooks.slack.com or hooks.slack-gov.com.");

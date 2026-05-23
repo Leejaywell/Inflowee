@@ -5,6 +5,8 @@ import {
   deliverBriefDigest,
   deliverBriefWithRetry,
   deliverStoredBrief,
+  deliverStoredBriefToChannel,
+  deliverStoredBriefToConfiguredChannels,
 } from "@/lib/delivery";
 import { renderBriefHtmlDigest } from "@/lib/brief-render";
 import {
@@ -14,6 +16,8 @@ import {
   createTaskRecord,
   finishDeliveryLog,
   listRecentDeliveryLogsByBrief,
+  saveSlackSettings,
+  saveWebhookSettings,
   type BriefRecord,
   type ItemRecord,
 } from "@/lib/store";
@@ -87,6 +91,7 @@ describe("webhook delivery transport", () => {
     expect(payload).toEqual(
       expect.objectContaining({
         text: expect.stringContaining("Launch"),
+        blocks: expect.any(Array),
       }),
     );
   });
@@ -276,18 +281,7 @@ describe("webhook delivery transport", () => {
           sourceCitations: ["https://openai.com/changelog"],
         });
 
-        await fixture.store.prisma!.appSetting.upsert({
-          where: { key: "webhook_endpoint" },
-          update: {
-            value: "https://example.com/webhook",
-            updatedAt: new Date(),
-          },
-          create: {
-            key: "webhook_endpoint",
-            value: "https://example.com/webhook",
-            updatedAt: new Date(),
-          },
-        });
+        await saveWebhookSettings(fixture.store, "https://example.com/webhook");
 
         const fetchImpl = vi.fn().mockResolvedValue({
           ok: true,
@@ -341,18 +335,7 @@ describe("webhook delivery transport", () => {
           sourceCitations: ["https://openai.com/changelog"],
         });
 
-        await fixture.store.prisma!.appSetting.upsert({
-          where: { key: "webhook_endpoint" },
-          update: {
-            value: "https://example.com/webhook",
-            updatedAt: new Date(),
-          },
-          create: {
-            key: "webhook_endpoint",
-            value: "https://example.com/webhook",
-            updatedAt: new Date(),
-          },
-        });
+        await saveWebhookSettings(fixture.store, "https://example.com/webhook");
 
         const result = await deliverStoredBrief(fixture.store, briefId, {
           fetchImpl: vi.fn().mockResolvedValue(new Response("nope", { status: 500 })),
@@ -372,6 +355,127 @@ describe("webhook delivery transport", () => {
             error: "Webhook delivery failed with status 500: nope",
           }),
         ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    15_000,
+  );
+
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "delivers a stored brief to Slack through the shared retry pipeline",
+    async () => {
+      const fixture = await createIsolatedPostgresStore();
+
+      try {
+        const spaceId = await createSpaceRecord(fixture.store, {
+          name: "AI Watch",
+        });
+        const taskId = await createTaskRecord(fixture.store, {
+          spaceId,
+          title: "Track OpenAI updates",
+          taskType: "TOPIC",
+          userPrompt: "Track OpenAI updates",
+        });
+        const briefId = await createBriefRecord(fixture.store, {
+          taskId,
+          itemIds: [],
+          title: "OpenAI ships a notable update",
+          summary: "The API changelog added a production-facing update.",
+          whyItMatters:
+            "The change affects teams that rely on the latest API behavior.",
+          sourceCitations: ["https://openai.com/changelog"],
+        });
+
+        await saveSlackSettings(
+          fixture.store,
+          "https://hooks.slack.com/services/T/B/X",
+        );
+
+        const fetchImpl = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 200,
+        });
+
+        const result = await deliverStoredBriefToChannel(
+          fixture.store,
+          briefId,
+          "slack",
+          {
+            fetchImpl,
+            maxAttempts: 2,
+          },
+        );
+
+        expect(result.status).toBe("success");
+        expect(fetchImpl).toHaveBeenCalledTimes(1);
+        expect(await listRecentDeliveryLogsByBrief(fixture.store, briefId)).toEqual([
+          expect.objectContaining({
+            briefId,
+            payloadType: "slack",
+            status: "success",
+            attemptCount: 1,
+          }),
+        ]);
+      } finally {
+        await fixture.cleanup();
+      }
+    },
+    15_000,
+  );
+
+  it.runIf(Boolean(process.env.DATABASE_URL))(
+    "delivers a stored brief to all configured channels",
+    async () => {
+      const fixture = await createIsolatedPostgresStore();
+
+      try {
+        const spaceId = await createSpaceRecord(fixture.store, {
+          name: "AI Watch",
+        });
+        const taskId = await createTaskRecord(fixture.store, {
+          spaceId,
+          title: "Track OpenAI updates",
+          taskType: "TOPIC",
+          userPrompt: "Track OpenAI updates",
+        });
+        const briefId = await createBriefRecord(fixture.store, {
+          taskId,
+          itemIds: [],
+          title: "OpenAI ships a notable update",
+          summary: "The API changelog added a production-facing update.",
+          whyItMatters:
+            "The change affects teams that rely on the latest API behavior.",
+          sourceCitations: ["https://openai.com/changelog"],
+        });
+
+        await saveWebhookSettings(fixture.store, "https://example.com/webhook");
+        await saveSlackSettings(
+          fixture.store,
+          "https://hooks.slack.com/services/T/B/X",
+        );
+
+        const fetchImpl = vi.fn().mockResolvedValue({
+          ok: true,
+          status: 202,
+        });
+
+        const result = await deliverStoredBriefToConfiguredChannels(
+          fixture.store,
+          briefId,
+          {
+            fetchImpl,
+            maxAttempts: 2,
+          },
+        );
+
+        expect(result.status).toBe("success");
+        expect(fetchImpl).toHaveBeenCalledTimes(2);
+        expect(
+          (await listRecentDeliveryLogsByBrief(fixture.store, briefId)).map(
+            (log) => log.payloadType,
+          ),
+        ).toEqual(["slack", "html"]);
       } finally {
         await fixture.cleanup();
       }

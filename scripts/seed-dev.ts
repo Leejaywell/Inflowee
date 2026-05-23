@@ -9,6 +9,9 @@ import {
   markBriefRead,
   markSourceSyncResult,
 } from "../src/lib/store.ts";
+import { loadDevEnv } from "./load-dev-env.ts";
+
+loadDevEnv();
 
 async function main() {
   const store = getDefaultRuntimeStore();

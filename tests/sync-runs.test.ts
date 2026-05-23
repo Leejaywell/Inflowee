@@ -327,6 +327,13 @@ describe("scheduled sync actions and surfaces", () => {
     }));
     vi.doMock("@/lib/store", () => ({
       defaultStore: {},
+      getSourceHealthSummary: () => ({
+        total: 1,
+        healthy: 1,
+        errored: 0,
+        idle: 0,
+        dueNow: 0,
+      }),
       listSpacesWithTasks: () => [
         {
           id: "space-1",
@@ -379,6 +386,18 @@ describe("scheduled sync actions and surfaces", () => {
         },
       ],
       listRecentSyncRunsBySource: () => [
+        {
+          id: "run-1",
+          sourceId: "source-1",
+          status: "success",
+          insertedItemCount: 2,
+          createdBriefCount: 1,
+          error: null,
+          startedAt: "2026-05-22T07:00:00.000Z",
+          finishedAt: "2026-05-22T07:01:00.000Z",
+        },
+      ],
+      listRecentSyncRuns: () => [
         {
           id: "run-1",
           sourceId: "source-1",

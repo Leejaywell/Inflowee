@@ -24,6 +24,9 @@ import {
   deleteTask,
   finishDeliveryLog,
   getBriefById,
+  getDeliveryHealthSummary,
+  getSlackSettings,
+  getSourceHealthSummary,
   findChatThread,
   getWebhookSettings,
   hasTaskRecord,
@@ -31,6 +34,7 @@ import {
   listBriefsFiltered,
   listRecentDeliveryLogs,
   listRecentDeliveryLogsByBrief,
+  listRecentSyncRuns,
   listItemsByBriefId,
   listItemsBySource,
   listRecentSyncRunsBySource,
@@ -40,11 +44,14 @@ import {
   listSourcesByTask,
   markBriefRead,
   markBriefUnread,
+  markSourceSyncResult,
   getSourceById,
   getTaskById,
   getTaskProfile,
   saveWebhookSettings,
+  saveSlackSettings,
   saveTaskProfile,
+  setSourceSchedule,
   finishSyncRun,
   updateTaskControls,
   getOrCreateChatThread,
@@ -571,6 +578,76 @@ describe("store source persistence", () => {
     }
   });
 
+  it("summarizes source health and lists recent sync runs", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      const spaceId = await createSpaceRecord(store, { name: "Signals" });
+      const taskId = await createTaskRecord(store, {
+        spaceId,
+        title: "Track sources",
+        taskType: "TOPIC",
+        userPrompt: "Track source health.",
+      });
+      const healthySourceId = await createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Healthy",
+        url: "https://example.com/healthy.xml",
+      });
+      const failingSourceId = await createSourceRecord(store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Failing",
+        url: "https://example.com/failing.xml",
+      });
+
+      await markSourceSyncResult(store, {
+        sourceId: healthySourceId,
+        status: "success",
+      });
+      await markSourceSyncResult(store, {
+        sourceId: failingSourceId,
+        status: "error",
+        error: "Fetch failed",
+      });
+      await setSourceSchedule(
+        store,
+        healthySourceId,
+        15,
+        "2000-01-01T00:00:00.000Z",
+      );
+
+      const syncRunId = await createSyncRun(store, { sourceId: healthySourceId });
+      await finishSyncRun(store, {
+        runId: syncRunId,
+        status: "success",
+        insertedItemCount: 2,
+        createdBriefCount: 1,
+      });
+
+      expect(await getSourceHealthSummary(store)).toEqual({
+        total: 2,
+        healthy: 1,
+        errored: 1,
+        idle: 0,
+        dueNow: 2,
+      });
+
+      expect(await listRecentSyncRuns(store, 5)).toEqual([
+        expect.objectContaining({
+          id: syncRunId,
+          sourceId: healthySourceId,
+          status: "success",
+        }),
+      ]);
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("validates source cadence updates", async () => {
     const parsed = updateSourceScheduleSchema.safeParse({
       sourceId: "source-1",
@@ -745,6 +822,23 @@ describe("store delivery persistence", () => {
     }
   });
 
+  it("stores a Slack webhook endpoint in app settings", async () => {
+    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-store-delivery-test-"));
+    const store = createStore(join(tempDirectory, "store.sqlite"));
+
+    try {
+      await saveSlackSettings(store, "https://hooks.slack.com/services/T/B/X");
+
+      expect(await getSlackSettings(store)).toEqual({
+        endpoint: "https://hooks.slack.com/services/T/B/X",
+        updatedAt: expect.any(String),
+      });
+    } finally {
+      store.database.close();
+      rmSync(tempDirectory, { recursive: true, force: true });
+    }
+  });
+
   it("persists delivery logs for a brief", async () => {
     const fixture = await seedBriefFixture();
 
@@ -779,6 +873,51 @@ describe("store delivery persistence", () => {
     const parsed = webhookEndpointSchema.safeParse("http://example.com/hook");
 
     expect(parsed.success).toBe(false);
+  });
+
+  it("summarizes delivery health by status and configured channels", async () => {
+    const fixture = await seedBriefFixture();
+
+    try {
+      await saveWebhookSettings(fixture.store, "https://example.com/webhook");
+      await saveSlackSettings(
+        fixture.store,
+        "https://hooks.slack.com/services/T/B/X",
+      );
+
+      const successLogId = await createDeliveryLog(fixture.store, {
+        briefId: fixture.briefId,
+        endpoint: "https://example.com/webhook",
+        payloadType: "html",
+      });
+      await finishDeliveryLog(fixture.store, {
+        logId: successLogId,
+        status: "success",
+        responseStatus: 202,
+      });
+
+      const failedLogId = await createDeliveryLog(fixture.store, {
+        briefId: fixture.briefId,
+        endpoint: "https://hooks.slack.com/services/T/B/X",
+        payloadType: "slack",
+      });
+      await finishDeliveryLog(fixture.store, {
+        logId: failedLogId,
+        status: "error",
+        error: "boom",
+      });
+
+      expect(await getDeliveryHealthSummary(fixture.store)).toEqual({
+        total: 2,
+        success: 1,
+        error: 1,
+        running: 0,
+        webhookConfigured: true,
+        slackConfigured: true,
+      });
+    } finally {
+      fixture.cleanup();
+    }
   });
 });
 
@@ -1035,6 +1174,89 @@ describe("read/unread and filtered briefs", () => {
     }
   });
 
+  it("tracks read state per actor without leaking across members", async () => {
+    const fixture = await seedBriefFixture();
+
+    try {
+      await addSpaceMember(fixture.store, {
+        spaceId: fixture.spaceId,
+        userId: "member-1",
+        role: "viewer",
+      });
+
+      expect(
+        (await getBriefById(fixture.store, fixture.briefId, { actorId: "local-user" }))
+          ?.isRead,
+      ).toBe(false);
+      expect(
+        (await getBriefById(fixture.store, fixture.briefId, { actorId: "member-1" }))
+          ?.isRead,
+      ).toBe(false);
+
+      await markBriefRead(fixture.store, fixture.briefId, "local-user");
+
+      expect(
+        (await getBriefById(fixture.store, fixture.briefId, { actorId: "local-user" }))
+          ?.isRead,
+      ).toBe(true);
+      expect(
+        (await getBriefById(fixture.store, fixture.briefId, { actorId: "member-1" }))
+          ?.isRead,
+      ).toBe(false);
+
+      await markBriefUnread(fixture.store, fixture.briefId, "local-user");
+
+      expect(
+        (await getBriefById(fixture.store, fixture.briefId, { actorId: "local-user" }))
+          ?.isRead,
+      ).toBe(false);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("counts unread briefs per actor membership state", async () => {
+    const fixture = await seedBriefFixture();
+
+    try {
+      await addSpaceMember(fixture.store, {
+        spaceId: fixture.spaceId,
+        userId: "member-1",
+        role: "viewer",
+      });
+
+      expect(
+        await countUnreadBriefs(fixture.store, { actorId: "local-user" }),
+      ).toBe(1);
+      expect(
+        await countUnreadBriefs(fixture.store, { actorId: "member-1" }),
+      ).toBe(1);
+
+      await markBriefRead(fixture.store, fixture.briefId, "local-user");
+
+      expect(
+        await countUnreadBriefs(fixture.store, { actorId: "local-user" }),
+      ).toBe(0);
+      expect(
+        await countUnreadBriefs(fixture.store, { actorId: "member-1" }),
+      ).toBe(1);
+      expect(
+        await listBriefsFiltered(fixture.store, {
+          actorId: "local-user",
+          unreadOnly: true,
+        }),
+      ).toHaveLength(0);
+      expect(
+        await listBriefsFiltered(fixture.store, {
+          actorId: "member-1",
+          unreadOnly: true,
+        }),
+      ).toHaveLength(1);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it("orders briefs by importance then relevance then recency", async () => {
     const fixture = await seedBriefFixture();
 
@@ -1128,6 +1350,34 @@ describe("cascade deletes", () => {
 });
 
 describe("store expansions for AI features", () => {
+  it("falls back to an existing prisma chat thread after a unique conflict", async () => {
+    const existingThread = {
+      id: "thread-1",
+      scopeType: "brief",
+      scopeId: "brief-1:actor:user-1",
+      createdAt: new Date("2026-05-23T00:00:00.000Z"),
+    };
+    const store = {
+      runtime: "prisma",
+      database: {} as DatabaseSync,
+      prisma: {
+        chatThread: {
+          upsert: vi.fn().mockRejectedValue({ code: "P2002" }),
+          findUnique: vi.fn().mockResolvedValue(existingThread),
+        },
+      },
+    } as unknown as Store;
+
+    await expect(
+      getOrCreateChatThread(store, "brief", "brief-1:actor:user-1"),
+    ).resolves.toEqual({
+      id: "thread-1",
+      scopeType: "brief",
+      scopeId: "brief-1:actor:user-1",
+      createdAt: "2026-05-23T00:00:00.000Z",
+    });
+  });
+
   it("stores enriched item metadata", async () => {
     const fixture = await seedBriefFixture();
 

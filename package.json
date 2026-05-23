@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node --experimental-strip-types scripts/run-with-dev-env.ts dev",
     "build": "next build",
-    "start": "next start",
+    "start": "node --experimental-strip-types scripts/run-with-dev-env.ts start",
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

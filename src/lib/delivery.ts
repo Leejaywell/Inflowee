@@ -1,6 +1,7 @@
 import { renderBriefHtmlDigest } from "@/lib/brief-render";
 import {
   createDeliveryLog,
+  getSlackSettings,
   finishDeliveryLog,
   getBriefById,
   getWebhookSettings,
@@ -18,6 +19,7 @@ export type DeliveryPayload = {
 export type DeliveryChannel = "webhook" | "slack";
 export type SlackDeliveryPayload = {
   text: string;
+  blocks: Array<Record<string, unknown>>;
 };
 
 type FetchLike = typeof fetch;
@@ -82,6 +84,22 @@ export async function buildDeliveryPayload(input: {
     case "slack":
       return {
         text: `${input.brief.title}\n${input.brief.summary}`,
+        blocks: [
+          {
+            type: "header",
+            text: {
+              type: "plain_text",
+              text: input.brief.title,
+            },
+          },
+          {
+            type: "section",
+            text: {
+              type: "mrkdwn",
+              text: input.brief.summary,
+            },
+          },
+        ],
       };
     default:
       return {
@@ -95,7 +113,7 @@ export async function buildDeliveryPayload(input: {
 
 export async function deliverBriefDigest(input: {
   endpoint: string;
-  payload: DeliveryPayload;
+  payload: DeliveryPayload | SlackDeliveryPayload;
   fetchImpl?: FetchLike;
 }): Promise<number> {
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -121,7 +139,7 @@ export async function deliverBriefDigest(input: {
 
 export async function deliverBriefWithRetry(input: {
   endpoint: string;
-  payload: DeliveryPayload;
+  payload: DeliveryPayload | SlackDeliveryPayload;
   fetchImpl?: FetchLike;
   maxAttempts?: number;
   sleepImpl?: SleepLike;
@@ -156,9 +174,10 @@ export async function deliverBriefWithRetry(input: {
   };
 }
 
-export async function deliverStoredBrief(
+export async function deliverStoredBriefToChannel(
   store: Store,
   briefId: string,
+  channel: DeliveryChannel,
   options?: {
     fetchImpl?: FetchLike;
     maxAttempts?: number;
@@ -171,31 +190,51 @@ export async function deliverStoredBrief(
     throw new Error("Brief not found.");
   }
 
-  const settings = await getWebhookSettings(store);
-
-  if (!settings.endpoint) {
-    throw new Error("Configure a webhook endpoint first.");
-  }
-
   const linkedItems = await listItemsByBriefId(store, briefId);
   const html = renderBriefHtmlDigest({ brief, linkedItems });
+  const endpointSettings =
+    channel === "slack"
+      ? await getSlackSettings(store)
+      : await getWebhookSettings(store);
+
+  if (!endpointSettings.endpoint) {
+    throw new Error(
+      channel === "slack"
+        ? "Configure a Slack webhook endpoint first."
+        : "Configure a webhook endpoint first.",
+    );
+  }
+
+  const payloadType = channel === "slack" ? "slack" : "html";
   const logId = await createDeliveryLog(store, {
     briefId,
-    endpoint: settings.endpoint,
-    payloadType: "html",
+    endpoint: endpointSettings.endpoint,
+    payloadType,
   });
 
+  const payload =
+    channel === "slack"
+      ? await buildDeliveryPayload({
+          channel: "slack",
+          brief: {
+            id: briefId,
+            title: brief.title,
+            summary: brief.summary,
+          },
+        })
+      : await buildDeliveryPayload({
+          channel: "webhook",
+          brief: {
+            id: briefId,
+            title: brief.title,
+            summary: brief.summary,
+          },
+          html,
+        });
+
   const result = await deliverBriefWithRetry({
-    endpoint: settings.endpoint,
-    payload: await buildDeliveryPayload({
-      channel: "webhook",
-      brief: {
-        id: briefId,
-        title: brief.title,
-        summary: brief.summary,
-      },
-      html,
-    }),
+    endpoint: endpointSettings.endpoint,
+    payload,
     fetchImpl: options?.fetchImpl,
     maxAttempts: options?.maxAttempts,
     sleepImpl: options?.sleepImpl,
@@ -226,4 +265,58 @@ export async function deliverStoredBrief(
     logId,
     ...result,
   };
+}
+
+export async function deliverStoredBrief(
+  store: Store,
+  briefId: string,
+  options?: {
+    fetchImpl?: FetchLike;
+    maxAttempts?: number;
+    sleepImpl?: SleepLike;
+  },
+) {
+  return deliverStoredBriefToChannel(store, briefId, "webhook", options);
+}
+
+export async function deliverStoredBriefToConfiguredChannels(
+  store: Store,
+  briefId: string,
+  options?: {
+    fetchImpl?: FetchLike;
+    maxAttempts?: number;
+    sleepImpl?: SleepLike;
+  },
+) {
+  const [webhookSettings, slackSettings] = await Promise.all([
+    getWebhookSettings(store),
+    getSlackSettings(store),
+  ]);
+  const channels: DeliveryChannel[] = [];
+
+  if (webhookSettings.endpoint) {
+    channels.push("webhook");
+  }
+  if (slackSettings.endpoint) {
+    channels.push("slack");
+  }
+
+  if (channels.length === 0) {
+    throw new Error("Configure at least one delivery channel first.");
+  }
+
+  const deliveries = [];
+
+  for (const channel of channels) {
+    deliveries.push(
+      await deliverStoredBriefToChannel(store, briefId, channel, options),
+    );
+  }
+
+  return {
+    status: deliveries.every((delivery) => delivery.status === "success")
+      ? "success"
+      : "error",
+    deliveries,
+  } as const;
 }

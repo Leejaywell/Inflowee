@@ -9,7 +9,9 @@ import Link from "next/link";
 import { requireSessionActor } from "@/lib/auth";
 import {
   defaultStore,
+  getSourceHealthSummary,
   listRecentSyncRunsBySource,
+  listRecentSyncRuns,
   listSources,
   listSpacesWithTasks,
   type SyncRunRecord,
@@ -44,14 +46,18 @@ type SourceWithRuns = SourceRecord & {
 
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
   const actor = await requireSessionActor();
-  const [spaces, sources, params] = await Promise.all([
+  const [spaces, sources, healthSummary, recentRuns, params] = await Promise.all([
     listSpacesWithTasks(defaultStore, { actorId: actor.id }),
     listSources(defaultStore, { actorId: actor.id }),
+    getSourceHealthSummary(defaultStore, { actorId: actor.id }),
+    listRecentSyncRuns(defaultStore, 12, { actorId: actor.id }),
     searchParams,
   ]);
   const sourcesByTask = new Map<string, SourceWithRuns[]>();
+  const sourceById = new Map<string, SourceRecord>();
 
   for (const source of sources) {
+    sourceById.set(source.id, source);
     const taskSources = sourcesByTask.get(source.taskId) ?? [];
     taskSources.push({
       ...source,
@@ -103,7 +109,11 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             <p className="text-4xl font-semibold">
               {tasks.reduce((count, task) => count + task.sources.length, 0)}
             </p>
-            <p className="text-sm text-stone-300">RSS sources connected</p>
+            <p className="text-sm text-stone-300">sources connected</p>
+          </div>
+          <div className="border-t border-white/10 pt-4 text-sm text-stone-300">
+            {healthSummary.healthy} healthy, {healthSummary.errored} failing,{" "}
+            {healthSummary.dueNow} due now
           </div>
         </div>
       </section>
@@ -129,6 +139,116 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                   : "Update applied."}
         </section>
       )}
+
+      <section className="grid gap-4 lg:grid-cols-[0.82fr_1.18fr]">
+        <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+          <h2 className="text-xl font-semibold">Source health</h2>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl bg-emerald-50 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-emerald-700">
+                Healthy
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-emerald-800">
+                {healthSummary.healthy}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-rose-50 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-rose-700">
+                Failing
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-rose-800">
+                {healthSummary.errored}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-stone-100 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-stone-500">
+                Idle
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-stone-700">
+                {healthSummary.idle}
+              </div>
+            </div>
+            <div className="rounded-2xl bg-amber-50 px-4 py-4">
+              <div className="text-xs uppercase tracking-[0.16em] text-amber-700">
+                Due now
+              </div>
+              <div className="mt-2 text-2xl font-semibold text-amber-800">
+                {healthSummary.dueNow}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-semibold">Recent sync runs</h2>
+              <p className="text-sm leading-6 text-stone-500">
+                Latest ingestion attempts across visible sources.
+              </p>
+            </div>
+            <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
+              {recentRuns.length} entries
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {recentRuns.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
+                No sync runs yet.
+              </div>
+            ) : (
+              recentRuns.map((run) => {
+                const source = sourceById.get(run.sourceId);
+
+                return (
+                  <article
+                    key={run.id}
+                    className="rounded-[20px] border border-stone-200 bg-stone-50 px-4 py-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-stone-900">
+                          {source ? (
+                            <Link
+                              href={`/sources/${source.id}`}
+                              className="hover:text-[#0057ff]"
+                            >
+                              {source.title}
+                            </Link>
+                          ) : (
+                            run.sourceId
+                          )}
+                        </p>
+                        <p className="text-xs uppercase tracking-[0.14em] text-stone-400">
+                          {new Date(run.startedAt).toLocaleString()}
+                        </p>
+                      </div>
+                      <span
+                        className={`rounded-full px-3 py-1 text-xs font-medium ${
+                          run.status === "success"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : run.status === "error"
+                              ? "bg-rose-100 text-rose-700"
+                              : "bg-stone-200 text-stone-700"
+                        }`}
+                      >
+                        {run.status}
+                      </span>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-4 text-xs text-stone-500">
+                      <span>{run.insertedItemCount} items</span>
+                      <span>{run.createdBriefCount} briefs</span>
+                      {run.error ? <span>{run.error}</span> : null}
+                    </div>
+                  </article>
+                );
+              })
+            )}
+          </div>
+        </section>
+      </section>
 
       <section className="grid gap-6 lg:grid-cols-[0.84fr_1.16fr]">
         <form
@@ -207,7 +327,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             <div>
               <h2 className="text-xl font-semibold">Task sources</h2>
               <p className="text-sm leading-6 text-stone-500">
-                RSS sources currently attached to each task.
+                Sources currently attached to each task.
               </p>
             </div>
             <div className="flex items-center gap-3">

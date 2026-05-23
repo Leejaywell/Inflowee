@@ -1,6 +1,6 @@
 import { Inngest } from "inngest";
 
-import { deliverStoredBrief } from "@/lib/delivery";
+import { deliverStoredBriefToConfiguredChannels } from "@/lib/delivery";
 import { defaultStore, getDefaultRuntimeStore } from "@/lib/store";
 import { syncDueSources } from "@/lib/sync-runs";
 
@@ -76,7 +76,7 @@ export async function runBriefDeliveryEvent(data: BriefDeliveryEventData) {
     ? getDefaultRuntimeStore()
     : defaultStore;
 
-  return deliverStoredBrief(runtimeStore, data.briefId, {
+  return deliverStoredBriefToConfiguredChannels(runtimeStore, data.briefId, {
     maxAttempts: 2,
   });
 }

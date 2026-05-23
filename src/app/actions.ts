@@ -11,7 +11,7 @@ import {
   requireOperatorSessionActor,
   requireSessionActor,
 } from "@/lib/auth";
-import { deliverStoredBrief } from "@/lib/delivery";
+import { deliverStoredBrief, deliverStoredBriefToChannel } from "@/lib/delivery";
 import {
   createSourceRecord,
   createSpaceRecord,
@@ -22,6 +22,7 @@ import {
   deleteSpace as deleteSpaceRecord,
   deleteTask as deleteTaskRecord,
   getBriefById,
+  getSlackSettings,
   getWebhookSettings,
   getTaskById,
   hasTaskRecord,
@@ -29,6 +30,7 @@ import {
   markBriefRead,
   markBriefUnread,
   saveWebhookSettings,
+  saveSlackSettings,
   setSourceSchedule,
 } from "@/lib/store";
 import { syncSourceById } from "@/lib/source-ingestion";
@@ -37,6 +39,7 @@ import {
   createSourceSchema,
   createSpaceSchema,
   createTaskSchema,
+  slackWebhookEndpointSchema,
   updateSourceScheduleSchema,
   webhookEndpointSchema,
 } from "@/lib/validation";
@@ -218,9 +221,9 @@ export async function toggleBriefRead(formData: FormData) {
   });
 
   if (isRead === "1") {
-    await markBriefUnread(defaultStore, briefId);
+    await markBriefUnread(defaultStore, briefId, actor.id);
   } else {
-    await markBriefRead(defaultStore, briefId);
+    await markBriefRead(defaultStore, briefId, actor.id);
   }
 
   revalidatePath("/inbox");
@@ -342,6 +345,21 @@ export async function saveWebhookEndpoint(formData: FormData) {
   redirect("/settings?updated=webhook");
 }
 
+export async function saveSlackEndpoint(formData: FormData) {
+  await requireOperatorSessionActor();
+  const parsed = slackWebhookEndpointSchema.safeParse(getString(formData, "endpoint"));
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid Slack webhook endpoint.")}`,
+    );
+  }
+
+  await saveSlackSettings(defaultStore, parsed.data);
+  revalidatePath("/settings");
+  redirect("/settings?updated=slack");
+}
+
 export async function sendBriefToWebhook(formData: FormData) {
   const actor = await requireSessionActor();
   const briefId = getString(formData, "briefId");
@@ -380,4 +398,44 @@ export async function sendBriefToWebhook(formData: FormData) {
   revalidatePath(`/inbox/${briefId}`);
   revalidatePath("/settings");
   redirect(`/inbox/${briefId}?delivered=webhook`);
+}
+
+export async function sendBriefToSlack(formData: FormData) {
+  const actor = await requireSessionActor();
+  const briefId = getString(formData, "briefId");
+  await assertBriefAccess(defaultStore, {
+    actorId: actor.id,
+    briefId,
+    minimumRole: "viewer",
+  });
+  const brief = await getBriefById(defaultStore, briefId);
+
+  if (!brief) {
+    redirect("/inbox?error=Brief%20not%20found.");
+  }
+
+  const settings = await getSlackSettings(defaultStore);
+
+  if (!settings.endpoint) {
+    redirect(`/inbox/${briefId}?error=Configure%20a%20Slack%20webhook%20endpoint%20first.`);
+  }
+
+  try {
+    const result = await deliverStoredBriefToChannel(defaultStore, briefId, "slack");
+
+    if (result.status !== "success") {
+      throw new Error(result.error);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown delivery failure.";
+
+    revalidatePath(`/inbox/${briefId}`);
+    revalidatePath("/settings");
+    redirect(`/inbox/${briefId}?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath(`/inbox/${briefId}`);
+  revalidatePath("/settings");
+  redirect(`/inbox/${briefId}?delivered=slack`);
 }
