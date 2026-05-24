@@ -424,6 +424,9 @@ export default async function SettingsPage({
             <p className="mt-2 text-sm leading-6 text-stone-500">
               {aiStatus.configured ? t.aiConfigured : t.aiNotConfigured}
             </p>
+            <p className="mt-1 text-xs leading-5 text-stone-400">
+              {aiStatus.provider} · {aiStatus.model} · {aiStatus.baseUrl}
+            </p>
           </div>
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${

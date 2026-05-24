@@ -286,8 +286,8 @@ export const dictionary = {
       aiRuntime: "AI 运行状态",
       aiLive: "实时 OpenAI",
       aiFallback: "Fallback 模式",
-      aiConfigured: "OPENAI_API_KEY 已配置，推荐、抽取和聊天会优先使用真实模型。",
-      aiNotConfigured: "未配置 OPENAI_API_KEY，系统会使用本地 fallback，关键能力仍可演示但质量有限。",
+      aiConfigured: "AI 服务商已配置，推荐、抽取和聊天会优先使用真实模型。",
+      aiNotConfigured: "未配置 AI API Key，系统会使用本地 fallback，关键能力仍可演示但质量有限。",
     },
   },
   en: {
@@ -577,9 +577,9 @@ export const dictionary = {
       aiLive: "Live OpenAI",
       aiFallback: "Fallback mode",
       aiConfigured:
-        "OPENAI_API_KEY is configured. Recommendations, extraction, and chat prefer the live model.",
+        "AI provider is configured. Recommendations, extraction, and chat prefer the live model.",
       aiNotConfigured:
-        "OPENAI_API_KEY is not configured. Local fallback keeps demos usable, but quality is limited.",
+        "AI API key is not configured. Local fallback keeps demos usable, but quality is limited.",
     },
   },
 } as const;

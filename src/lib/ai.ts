@@ -3,6 +3,7 @@ import { fetchLiveContext, type LiveFetchResult } from "./live-fetch";
 import { TaskRecord, ItemRecord, BriefRecord, type SourceType } from "./store";
 import { clusterItemsForBriefs } from "./brief-clustering";
 import { deriveTopicTags } from "./topic-tags";
+import { getAiProviderConfig } from "./ai-config";
 
 export type TaskProfile = {
   keywords: string[];
@@ -73,24 +74,28 @@ export type GroundedAnswer = {
   provenance: "stored" | "mixed";
 };
 
-// Low-dependency standard fetch completion caller for OpenAI GPT models
+function hasLiveAiProvider() {
+  return getAiProviderConfig().configured;
+}
+
+// Low-dependency standard fetch completion caller for OpenAI-compatible models
 async function callOpenAIChatCompletion(
   messages: Array<{ role: string; content: string }>,
   jsonMode = false,
 ): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing process.env.OPENAI_API_KEY");
+  const config = getAiProviderConfig();
+  if (!config.apiKey) {
+    throw new Error("Missing OPENAI_API_KEY or AI_API_KEY");
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: config.model,
       messages,
       temperature: 0.2,
       response_format: jsonMode ? { type: "json_object" } : undefined,
@@ -99,7 +104,9 @@ async function callOpenAIChatCompletion(
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+    throw new Error(
+      `${config.provider} API error: ${response.status} - ${errorText}`,
+    );
   }
 
   const result = await response.json();
@@ -113,8 +120,7 @@ async function callOpenAIChatCompletion(
 
 // 2.1: understandTaskIntent
 export async function understandTaskIntent(prompt: string): Promise<TaskProfile> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) {
+  if (hasLiveAiProvider()) {
     try {
       const systemPrompt = `Analyze the user's intent from their information tracking prompt.
 Extract up to 5 relevant technical keywords and generate 3 highly targeted search query phrases for search engines.
@@ -272,9 +278,7 @@ async function generateSubscriptionDiscoveryPlan(input: {
   prompt: string;
   profile?: TaskProfile | null;
 }): Promise<SubscriptionDiscoveryPlan> {
-  const apiKey = process.env.OPENAI_API_KEY;
-
-  if (apiKey) {
+  if (hasLiveAiProvider()) {
     try {
       const systemPrompt = `You plan a personal subscription discovery surface.
 Given a monitoring goal, generate broad source-discovery tags and query phrases.
@@ -342,8 +346,7 @@ Return strict JSON:
 }
 
 async function generateSourceBundles(prompt: string): Promise<SourceBundle[]> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) {
+  if (hasLiveAiProvider()) {
     try {
       const systemPrompt = `You are Inflowee AI source recommendation engine. Recommend up to 3 high-quality source bundles relevant to the user's information tracking prompt.
 Prefer these package types:
@@ -518,15 +521,13 @@ export async function generateBriefsFromItems(
 
   // Step 2: Synthesize each cluster into a BriefCandidate
   const candidates: BriefCandidate[] = [];
-  const apiKey = process.env.OPENAI_API_KEY;
-
   for (const cluster of clusters) {
     const citations = cluster.citations;
     const itemIds = cluster.itemIds;
     const clusterItems = cluster.items;
     const relevanceScore = Math.min(1, 0.55 + clusterItems.length * 0.1);
 
-    if (apiKey) {
+    if (hasLiveAiProvider()) {
       try {
         const systemPrompt = `You are Inflowee AI Synthesizer. You synthesize a set of clustered articles/updates into a single cohesive Brief for the user's tracking task.
 Task Title: "${task.title}"
@@ -639,8 +640,7 @@ export async function generateChatResponse(
   briefs: BriefRecord[],
   items: ItemRecord[]
 ): Promise<ChatResponse> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) {
+  if (hasLiveAiProvider()) {
     try {
       const systemPrompt = `You are Inflowee Grounded AI assistant. You answer user queries based STRICTLY and ONLY on the provided grounding Briefs and raw feed Items.
 Cite the sources you mention by providing their canonical URLs inside your response. Do not invent any outside details that are not supported by the provided grounding files.

@@ -1,4 +1,5 @@
 import * as cheerio from "cheerio";
+import { getAiProviderConfig } from "@/lib/ai-config";
 
 export type ExtractedListItem = {
   title: string;
@@ -26,8 +27,7 @@ export async function extractStructuredListDiagnostics(
   html: string,
   baseUrl: string
 ): Promise<StructuredListDiagnostics> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (apiKey) {
+  if (getAiProviderConfig().configured) {
     try {
       // Remove scripts, styles, navs, footers to clean up the content
       const $ = cheerio.load(html);
@@ -242,19 +242,19 @@ function collectStructuredWarnings(items: ExtractedListItem[], html: string) {
 }
 
 async function callOpenAIChatCompletion(messages: Array<{ role: string; content: string }>, jsonMode = false): Promise<string> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    throw new Error("Missing process.env.OPENAI_API_KEY");
+  const config = getAiProviderConfig();
+  if (!config.apiKey) {
+    throw new Error("Missing OPENAI_API_KEY or AI_API_KEY");
   }
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+  const response = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
+      Authorization: `Bearer ${config.apiKey}`,
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: config.model,
       messages,
       temperature: 0.2,
       response_format: jsonMode ? { type: "json_object" } : undefined,
@@ -263,7 +263,7 @@ async function callOpenAIChatCompletion(messages: Array<{ role: string; content:
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`OpenAI API error: ${response.status} - ${errorText}`);
+    throw new Error(`${config.provider} API error: ${response.status} - ${errorText}`);
   }
 
   const result = await response.json();
