@@ -102,7 +102,9 @@ type AppSettingRow = {
 
 type DeliveryLogRow = {
   id: string;
-  brief_id: string;
+  brief_id: string | null;
+  content_type: string | null;
+  content_id: string | null;
   endpoint: string;
   payload_type: DeliveryPayloadType;
   status: DeliveryStatus;
@@ -304,7 +306,9 @@ export type DeliveryPayloadType =
 
 export type DeliveryLogRecord = {
   id: string;
-  briefId: string;
+  briefId: string | null;
+  contentType: string;
+  contentId: string | null;
   endpoint: string;
   payloadType: DeliveryPayloadType;
   status: DeliveryStatus;
@@ -484,6 +488,8 @@ function mapDeliveryLog(row: DeliveryLogRow): DeliveryLogRecord {
   return {
     id: row.id,
     briefId: row.brief_id,
+    contentType: row.content_type ?? "brief",
+    contentId: row.content_id ?? row.brief_id,
     endpoint: row.endpoint,
     payloadType: row.payload_type,
     status: row.status,
@@ -746,16 +752,28 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
   }
 
   const needsDeliveryPayloadUpgrade =
-    deliveryLogsTable && !deliveryLogsTable.sql.includes("'email'");
+    deliveryLogsTable &&
+    (!deliveryLogsTable.sql.includes("'email'") ||
+      !deliveryLogsTable.sql.includes("content_type") ||
+      deliveryLogsTable.sql.includes("brief_id TEXT NOT NULL"));
 
   if (needsDeliveryPayloadUpgrade) {
+    const contentTypeSelect = deliveryLogsTable.sql.includes("content_type")
+      ? "content_type"
+      : "'brief'";
+    const contentIdSelect = deliveryLogsTable.sql.includes("content_id")
+      ? "content_id"
+      : "brief_id";
+
     database.exec(`
       PRAGMA foreign_keys = OFF;
       BEGIN;
 
       CREATE TABLE delivery_logs_migrated (
         id TEXT PRIMARY KEY,
-        brief_id TEXT NOT NULL,
+        brief_id TEXT,
+        content_type TEXT NOT NULL DEFAULT 'brief',
+        content_id TEXT,
         endpoint TEXT NOT NULL,
         payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
@@ -770,6 +788,8 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       INSERT INTO delivery_logs_migrated (
         id,
         brief_id,
+        content_type,
+        content_id,
         endpoint,
         payload_type,
         status,
@@ -782,6 +802,8 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       SELECT
         id,
         brief_id,
+        ${contentTypeSelect},
+        ${contentIdSelect},
         endpoint,
         payload_type,
         status,
@@ -803,7 +825,9 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS delivery_logs (
       id TEXT PRIMARY KEY,
-      brief_id TEXT NOT NULL,
+      brief_id TEXT,
+      content_type TEXT NOT NULL DEFAULT 'brief',
+      content_id TEXT,
       endpoint TEXT NOT NULL,
       payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
       status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
@@ -817,6 +841,8 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at
       ON delivery_logs(brief_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_delivery_logs_content_started_at
+      ON delivery_logs(content_type, content_id, started_at DESC);
   `);
 
   if (deliveryLogsTable && !deliveryLogsTable.sql.includes("attempt_count")) {
@@ -1383,7 +1409,9 @@ export function createStore(
 
       CREATE TABLE IF NOT EXISTS delivery_logs (
         id TEXT PRIMARY KEY,
-        brief_id TEXT NOT NULL,
+        brief_id TEXT,
+        content_type TEXT NOT NULL DEFAULT 'brief',
+        content_id TEXT,
         endpoint TEXT NOT NULL,
         payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
@@ -1427,6 +1455,7 @@ export function createStore(
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at ON delivery_logs(brief_id, started_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_delivery_logs_content_started_at ON delivery_logs(content_type, content_id, started_at DESC);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -1687,9 +1716,11 @@ function mapPrismaSyncRun(run: {
 
 type PrismaDeliveryLogRow = {
   id: string;
-  brief_id: string;
+  brief_id: string | null;
+  content_type: string | null;
+  content_id: string | null;
   endpoint: string;
-  payload_type: "html";
+  payload_type: DeliveryPayloadType;
   status: DeliveryStatus;
   attempt_count: number | null;
   response_status: number | null;
@@ -1702,6 +1733,8 @@ function mapPrismaDeliveryLogRow(row: PrismaDeliveryLogRow): DeliveryLogRecord {
   return {
     id: row.id,
     briefId: row.brief_id,
+    contentType: row.content_type ?? "brief",
+    contentId: row.content_id ?? row.brief_id,
     endpoint: row.endpoint,
     payloadType: row.payload_type,
     status: row.status,
@@ -2938,15 +2971,22 @@ export async function markDeliveryRequestProcessed(
 export async function createDeliveryLog(
   store: Store,
   input: {
-    briefId: string;
+    briefId?: string | null;
+    contentType?: "brief" | "report" | "message";
+    contentId?: string | null;
     endpoint: string;
     payloadType: DeliveryPayloadType;
   },
 ) {
+  const contentType = input.contentType ?? "brief";
+  const contentId = input.contentId ?? input.briefId ?? null;
+
   if (store.prisma) {
     const log = await store.prisma.deliveryLog.create({
       data: {
-        briefId: input.briefId,
+        briefId: input.briefId ?? null,
+        contentType,
+        contentId,
         endpoint: input.endpoint,
         payloadType: input.payloadType,
         status: "running",
@@ -2965,13 +3005,23 @@ export async function createDeliveryLog(
       `INSERT INTO delivery_logs (
         id,
         brief_id,
+        content_type,
+        content_id,
         endpoint,
         payload_type,
         status,
         started_at
-      ) VALUES (?, ?, ?, ?, 'running', ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)`,
     )
-    .run(id, input.briefId, input.endpoint, input.payloadType, startedAt);
+    .run(
+      id,
+      input.briefId ?? null,
+      contentType,
+      contentId,
+      input.endpoint,
+      input.payloadType,
+      startedAt,
+    );
 
   return id;
 }
@@ -3036,6 +3086,8 @@ export async function listRecentDeliveryLogsByBrief(
       SELECT
         "id",
         "briefId" AS brief_id,
+        "contentType" AS content_type,
+        "contentId" AS content_id,
         "endpoint",
         "payloadType" AS payload_type,
         "status",
@@ -3065,6 +3117,50 @@ export async function listRecentDeliveryLogsByBrief(
   return rows.map(mapDeliveryLog);
 }
 
+export async function listRecentDeliveryLogsByContent(
+  store: Store,
+  contentType: "brief" | "report" | "message",
+  contentId: string,
+  limit = 10,
+): Promise<DeliveryLogRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.$queryRaw<PrismaDeliveryLogRow[]>`
+      SELECT
+        "id",
+        "briefId" AS brief_id,
+        "contentType" AS content_type,
+        "contentId" AS content_id,
+        "endpoint",
+        "payloadType" AS payload_type,
+        "status",
+        "attemptCount" AS attempt_count,
+        "responseStatus" AS response_status,
+        "error",
+        "startedAt" AS started_at,
+        "finishedAt" AS finished_at
+      FROM "DeliveryLog"
+      WHERE "contentType" = ${contentType}
+        AND "contentId" = ${contentId}
+      ORDER BY "startedAt" DESC
+      LIMIT ${limit}
+    `;
+
+    return rows.map(mapPrismaDeliveryLogRow);
+  }
+
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM delivery_logs
+       WHERE content_type = ?
+         AND content_id = ?
+       ORDER BY started_at DESC
+       LIMIT ?`,
+    )
+    .all(contentType, contentId, limit) as DeliveryLogRow[];
+
+  return rows.map(mapDeliveryLog);
+}
+
 export async function listRecentDeliveryLogs(
   store: Store,
   limit = 20,
@@ -3076,6 +3172,8 @@ export async function listRecentDeliveryLogs(
           SELECT
             dl."id",
             dl."briefId" AS brief_id,
+            dl."contentType" AS content_type,
+            dl."contentId" AS content_id,
             dl."endpoint",
             dl."payloadType" AS payload_type,
             dl."status",
@@ -3085,8 +3183,9 @@ export async function listRecentDeliveryLogs(
             dl."startedAt" AS started_at,
             dl."finishedAt" AS finished_at
           FROM "DeliveryLog" dl
-          JOIN "Brief" b ON b."id" = dl."briefId"
-          JOIN "Task" t ON t."id" = b."taskId"
+          LEFT JOIN "Brief" b ON b."id" = dl."briefId"
+          LEFT JOIN "Report" r ON r."id" = dl."contentId" AND dl."contentType" = 'report'
+          JOIN "Task" t ON t."id" = COALESCE(b."taskId", r."taskId")
           WHERE t."ownerId" = ${filters.actorId}
           ORDER BY dl."startedAt" DESC
           LIMIT ${limit}
@@ -3095,6 +3194,8 @@ export async function listRecentDeliveryLogs(
           SELECT
             "id",
             "briefId" AS brief_id,
+            "contentType" AS content_type,
+            "contentId" AS content_id,
             "endpoint",
             "payloadType" AS payload_type,
             "status",
@@ -3117,8 +3218,10 @@ export async function listRecentDeliveryLogs(
           .prepare(
             `SELECT delivery_logs.*
              FROM delivery_logs
-             JOIN briefs ON briefs.id = delivery_logs.brief_id
-             JOIN tasks ON tasks.id = briefs.task_id
+             LEFT JOIN briefs ON briefs.id = delivery_logs.brief_id
+             LEFT JOIN reports ON reports.id = delivery_logs.content_id
+               AND delivery_logs.content_type = 'report'
+             JOIN tasks ON tasks.id = COALESCE(briefs.task_id, reports.task_id)
              WHERE tasks.owner_id = ?
              ORDER BY delivery_logs.started_at DESC
              LIMIT ?`,

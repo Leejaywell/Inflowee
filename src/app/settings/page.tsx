@@ -21,11 +21,7 @@ import {
   getDeliveryHealthSummary,
   getDingTalkSettings,
   getEmailSettings,
-  getFeishuSettings,
-  getNtfySettings,
   getSlackSettings,
-  getTelegramSourceSettings,
-  getTelegramSettings,
   getWeComSettings,
   getWebhookSettings,
   listRecentDeliveryLogs,
@@ -51,10 +47,6 @@ export default async function SettingsPage({
   const [
     webhookSettings,
     slackSettings,
-    telegramSettings,
-    telegramSourceSettings,
-    feishuSettings,
-    ntfySettings,
     dingTalkSettings,
     weComSettings,
     barkSettings,
@@ -66,10 +58,6 @@ export default async function SettingsPage({
   ] = await Promise.all([
     getWebhookSettings(defaultStore),
     getSlackSettings(defaultStore),
-    getTelegramSettings(defaultStore),
-    getTelegramSourceSettings(defaultStore),
-    getFeishuSettings(defaultStore),
-    getNtfySettings(defaultStore),
     getDingTalkSettings(defaultStore),
     getWeComSettings(defaultStore),
     getBarkSettings(defaultStore),
@@ -89,7 +77,7 @@ export default async function SettingsPage({
         ? "通过钉钉自定义机器人 Webhook 投递简报。"
         : "Send briefs to a DingTalk custom robot webhook.",
       placeholder: "https://oapi.dingtalk.com/robot/send?access_token=...",
-      value: dingTalkSettings.endpoint,
+      configured: Boolean(dingTalkSettings.endpoint),
       action: saveDingTalkEndpoint,
     },
     {
@@ -99,7 +87,7 @@ export default async function SettingsPage({
         ? "通过企业微信群机器人 Webhook 投递简报。"
         : "Send briefs to an enterprise WeChat group robot webhook.",
       placeholder: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...",
-      value: weComSettings.endpoint,
+      configured: Boolean(weComSettings.endpoint),
       action: saveWeComEndpoint,
     },
     {
@@ -109,17 +97,17 @@ export default async function SettingsPage({
         ? "通过 Bark endpoint 发送 iOS 推送。"
         : "Send iOS push notifications through a Bark endpoint.",
       placeholder: "https://api.day.app/your-key",
-      value: barkSettings.endpoint,
+      configured: Boolean(barkSettings.endpoint),
       action: saveBarkEndpoint,
     },
     {
       key: "email",
-      title: "Email SMTP relay",
+      title: "Email SMTP",
       description: isZh
-        ? "通过 HTTPS SMTP relay endpoint 发送邮件。"
-        : "Send email through a configured HTTPS SMTP relay endpoint.",
-      placeholder: "https://example.com/smtp-relay",
-      value: emailSettings.endpoint,
+        ? "通过 smtp:// 或 smtps:// 配置直接发送邮件。"
+        : "Send email through a configured smtp:// or smtps:// endpoint.",
+      placeholder: "smtps://user:pass@smtp.example.com:465?from=me@example.com&to=you@example.com",
+      configured: Boolean(emailSettings.endpoint),
       action: saveEmailEndpoint,
     },
   ];
@@ -165,7 +153,6 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-200">{t.endpointUrl}</span>
             <input
               name="endpoint"
-              defaultValue={webhookSettings.endpoint ?? ""}
               placeholder="https://example.com/webhook"
               className="h-12 rounded-2xl border border-white/10 bg-white/10 px-4 text-white outline-none transition focus:border-white/30 focus:bg-white/15"
             />
@@ -177,7 +164,7 @@ export default async function SettingsPage({
 
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-stone-300">
             {webhookSettings.endpoint
-              ? `${t.currentEndpoint} ${webhookSettings.endpoint}`
+              ? `${t.currentEndpoint} ${isZh ? "已配置" : "configured"}`
               : t.noWebhook}
           </div>
         </form>
@@ -199,7 +186,6 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-700">{t.slackUrl}</span>
             <input
               name="endpoint"
-              defaultValue={slackSettings.endpoint ?? ""}
               placeholder="https://hooks.slack.com/services/..."
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
             />
@@ -211,7 +197,7 @@ export default async function SettingsPage({
 
           <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
             {slackSettings.endpoint
-              ? `${t.currentSlack} ${slackSettings.endpoint}`
+              ? `${t.currentSlack} ${isZh ? "已配置" : "configured"}`
               : t.noSlack}
           </div>
         </form>
@@ -231,7 +217,6 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-700">{t.botToken}</span>
             <input
               name="botToken"
-              defaultValue={telegramSettings.botToken ?? ""}
               placeholder="123456:ABCDEF..."
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
             />
@@ -241,7 +226,6 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-700">{t.chatId}</span>
             <input
               name="chatId"
-              defaultValue={telegramSettings.chatId ?? ""}
               placeholder="-1001234567890"
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
             />
@@ -269,7 +253,6 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-700">{t.botToken}</span>
             <input
               name="botToken"
-              defaultValue={telegramSourceSettings.botToken ?? ""}
               placeholder="123456:ABCDEF..."
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
             />
@@ -297,7 +280,6 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-700">{t.feishuUrl}</span>
             <input
               name="endpoint"
-              defaultValue={feishuSettings.endpoint ?? ""}
               placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/..."
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
             />
@@ -325,7 +307,6 @@ export default async function SettingsPage({
             <span className="font-medium text-stone-700">ntfy endpoint</span>
             <input
               name="endpoint"
-              defaultValue={ntfySettings.endpoint ?? ""}
               placeholder="https://ntfy.sh/inflowee"
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
             />
@@ -353,7 +334,6 @@ export default async function SettingsPage({
               <span className="font-medium text-stone-700">Endpoint</span>
               <input
                 name="endpoint"
-                defaultValue={channel.value ?? ""}
                 placeholder={channel.placeholder}
                 className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
               />
@@ -362,6 +342,15 @@ export default async function SettingsPage({
             <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
               {isZh ? "保存" : "Save"} {channel.title}
             </button>
+            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
+              {channel.configured
+                ? isZh
+                  ? "已配置，凭据已隐藏。"
+                  : "Configured. Credentials are hidden."
+                : isZh
+                  ? "未配置。"
+                  : "Not configured."}
+            </div>
           </form>
         ))}
 

@@ -68,6 +68,7 @@ import {
   deliveryEndpointSchema,
   feishuWebhookEndpointSchema,
   ntfyEndpointSchema,
+  smtpEndpointSchema,
   slackWebhookEndpointSchema,
   telegramSettingsSchema,
   telegramSourceSettingsSchema,
@@ -633,7 +634,10 @@ async function saveGenericDeliveryEndpoint(
   key: "dingtalk" | "wecom" | "bark" | "email",
 ) {
   await requireSessionActor();
-  const parsed = deliveryEndpointSchema.safeParse(getString(formData, "endpoint"));
+  const parsed =
+    key === "email"
+      ? smtpEndpointSchema.safeParse(getString(formData, "endpoint"))
+      : deliveryEndpointSchema.safeParse(getString(formData, "endpoint"));
 
   if (!parsed.success) {
     redirect(

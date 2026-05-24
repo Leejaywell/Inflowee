@@ -145,6 +145,7 @@ export async function syncDueSources(
           id: report.id,
           title: report.title,
           body: report.markdown,
+          contentType: "report",
         },
         { maxAttempts: 1 },
       );

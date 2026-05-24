@@ -365,6 +365,7 @@ export async function runInfloweeMcpTool(
         id: report.id,
         title: report.title,
         body: report.markdown,
+        contentType: "report",
       },
       { maxAttempts: 1 },
     );

@@ -169,7 +169,9 @@ model AppSetting {
 
 model DeliveryLog {
   id             String    @id @default(uuid())
-  briefId        String
+  briefId        String?
+  contentType    String    @default("brief")
+  contentId      String?
   endpoint       String
   payloadType    String
   status         String
@@ -178,9 +180,10 @@ model DeliveryLog {
   error          String?
   startedAt      DateTime
   finishedAt     DateTime?
-  brief          Brief     @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  brief          Brief?    @relation(fields: [briefId], references: [id], onDelete: Cascade)
 
   @@index([briefId, startedAt])
+  @@index([contentType, contentId, startedAt])
 }
 
 model RecommendationBundle {

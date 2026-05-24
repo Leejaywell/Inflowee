@@ -1,4 +1,5 @@
 import { renderBriefHtmlDigest } from "@/lib/brief-render";
+import nodemailer from "nodemailer";
 import {
   createDeliveryLog,
   getBarkSettings,
@@ -144,6 +145,49 @@ function getDeliveryRetryDelayMs(attempt: number) {
     DELIVERY_RETRY_MAX_DELAY_MS,
     DELIVERY_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1),
   );
+}
+
+function isEmailPayload(payload: DeliveryPayloadUnion): payload is EmailDeliveryPayload {
+  return "subject" in payload && "text" in payload;
+}
+
+async function deliverEmailSmtp(
+  endpoint: string,
+  payload: EmailDeliveryPayload,
+) {
+  const url = new URL(endpoint);
+  const secure = url.protocol === "smtps:";
+  const from = url.searchParams.get("from");
+  const to = url.searchParams.get("to");
+
+  if (url.protocol !== "smtp:" && url.protocol !== "smtps:") {
+    throw new Error("Email delivery requires an smtp:// or smtps:// endpoint.");
+  }
+  if (!from || !to) {
+    throw new Error("Email SMTP endpoint must include from and to query parameters.");
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: url.hostname,
+    port: url.port ? Number(url.port) : secure ? 465 : 587,
+    secure,
+    auth: url.username
+      ? {
+          user: decodeURIComponent(url.username),
+          pass: decodeURIComponent(url.password),
+        }
+      : undefined,
+  });
+
+  await transporter.sendMail({
+    from,
+    to,
+    subject: payload.subject,
+    text: payload.text,
+    html: payload.html,
+  });
+
+  return 250;
 }
 
 export function splitDeliveryText(
@@ -342,6 +386,10 @@ export async function deliverBriefDigest(input: {
   payload: DeliveryPayloadUnion;
   fetchImpl?: FetchLike;
 }): Promise<number> {
+  if (isEmailPayload(input.payload)) {
+    return deliverEmailSmtp(input.endpoint, input.payload);
+  }
+
   const fetchImpl = input.fetchImpl ?? fetch;
   const response = await fetchImpl(input.endpoint, {
     method: "POST",
@@ -750,6 +798,7 @@ export async function deliverTextToChannel(
     id: string;
     title: string;
     body: string;
+    contentType?: "report" | "message";
   },
   options?: {
     fetchImpl?: FetchLike;
@@ -773,6 +822,12 @@ export async function deliverTextToChannel(
     html: input.body,
     store,
   });
+  const logId = await createDeliveryLog(store, {
+    contentType: input.contentType ?? "message",
+    contentId: input.id,
+    endpoint,
+    payloadType: adapter.payloadType,
+  });
   let attempts = 0;
   let responseStatus = 0;
 
@@ -788,7 +843,15 @@ export async function deliverTextToChannel(
     attempts += result.attempts;
 
     if (result.status === "error") {
+      await finishDeliveryLog(store, {
+        logId,
+        status: "error",
+        attemptCount: attempts,
+        error: result.error,
+      });
+
       return {
+        logId,
         ...result,
         attempts,
       };
@@ -797,7 +860,15 @@ export async function deliverTextToChannel(
     responseStatus = result.responseStatus;
   }
 
+  await finishDeliveryLog(store, {
+    logId,
+    status: "success",
+    attemptCount: attempts,
+    responseStatus,
+  });
+
   return {
+    logId,
     attempts,
     status: "success" as const,
     responseStatus,

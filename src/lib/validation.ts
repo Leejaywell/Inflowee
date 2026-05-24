@@ -184,3 +184,20 @@ export const deliveryEndpointSchema = z
     (value) => value.startsWith("https://"),
     "Enter a valid https delivery endpoint URL.",
   );
+
+export const smtpEndpointSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid SMTP endpoint URL.")
+  .refine((value) => {
+    try {
+      const url = new URL(value);
+      return ["smtp:", "smtps:"].includes(url.protocol);
+    } catch {
+      return false;
+    }
+  }, "Enter an smtp:// or smtps:// endpoint URL.")
+  .refine((value) => {
+    const url = new URL(value);
+    return Boolean(url.searchParams.get("from") && url.searchParams.get("to"));
+  }, "SMTP endpoint must include from and to query parameters.");

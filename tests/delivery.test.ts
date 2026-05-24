@@ -4,12 +4,14 @@ import {
   buildDeliveryPayload,
   deliverBriefWithRetry,
   deliverStoredBriefToConfiguredChannels,
+  deliverTextToChannel,
   listConfiguredDeliveryChannels,
   splitDeliveryText,
 } from "@/lib/delivery";
 import {
   createBriefRecord,
   createTaskRecord,
+  listRecentDeliveryLogsByContent,
   saveDingTalkSettings,
   saveNtfySettings,
   saveWeComSettings,
@@ -141,6 +143,65 @@ describe("delivery payloads", () => {
     } finally {
       fixture.cleanup();
     }
+  });
+
+  it("logs report delivery independently from brief delivery", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("ok", { status: 200 }),
+      );
+
+      const result = await deliverTextToChannel(
+        fixture.store,
+        "ntfy",
+        {
+          id: "report-1",
+          title: "Weekly report",
+          body: "Report body",
+          contentType: "report",
+        },
+        { fetchImpl },
+      );
+
+      expect(result.status).toBe("success");
+      expect(
+        await listRecentDeliveryLogsByContent(
+          fixture.store,
+          "report",
+          "report-1",
+        ),
+      ).toEqual([
+        expect.objectContaining({
+          contentType: "report",
+          contentId: "report-1",
+          payloadType: "ntfy",
+          status: "success",
+        }),
+      ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("requires direct SMTP email endpoints to include sender and recipient", async () => {
+    await expect(
+      deliverBriefWithRetry({
+        endpoint: "smtps://user:pass@smtp.example.com:465",
+        payload: {
+          subject: "Agent launch",
+          text: "A new coding agent launched.",
+        },
+        maxAttempts: 1,
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        status: "error",
+        error: "Email SMTP endpoint must include from and to query parameters.",
+      }),
+    );
   });
 
   it("splits long delivery text on batch limits", () => {
