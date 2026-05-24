@@ -3,6 +3,7 @@ import nodemailer from "nodemailer";
 import {
   createDeliveryLog,
   getBarkSettings,
+  getDefaultDeliveryChannels,
   getDingTalkSettings,
   getEmailSettings,
   getFeishuSettings,
@@ -739,6 +740,15 @@ export async function listDeliveryChannelsForTask(
   const overrides = task?.deliveryChannels?.filter(Boolean) ?? [];
 
   if (overrides.length === 0) {
+    const defaults = await getDefaultDeliveryChannels(store);
+    const defaultChannels = defaults.channels.filter(Boolean);
+
+    if (defaultChannels.length > 0) {
+      return channels.filter(
+        (channel) => channel.enabled && defaultChannels.includes(channel.type),
+      );
+    }
+
     return channels.filter((channel) => channel.enabled);
   }
 

@@ -37,6 +37,7 @@ import {
   markBriefRead,
   markBriefUnread,
   saveBarkSettings,
+  saveDefaultDeliveryChannels,
   saveDingTalkSettings,
   saveEmailSettings,
   saveFeishuSettings,
@@ -537,6 +538,22 @@ export async function saveTaskDeliveryChannelsAction(formData: FormData) {
 
   revalidatePath(`/tasks/${taskId}`);
   redirect(`/tasks/${taskId}`);
+}
+
+export async function saveDefaultDeliveryChannelsAction(formData: FormData) {
+  await requireSessionActor();
+  const allowedChannels = new Set<string>(
+    DELIVERY_ADAPTERS.map((adapter) => adapter.type),
+  );
+  const channels = formData
+    .getAll("channels")
+    .map((value) => String(value))
+    .filter((value) => allowedChannels.has(value));
+
+  await saveDefaultDeliveryChannels(defaultStore, channels);
+
+  revalidatePath("/settings");
+  redirect("/settings?updated=default-delivery-channels");
 }
 
 export async function saveWebhookEndpoint(formData: FormData) {

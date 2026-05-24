@@ -13,6 +13,7 @@ import {
   createTaskRecord,
   listRecentDeliveryLogsByContent,
   saveDingTalkSettings,
+  saveDefaultDeliveryChannels,
   saveNtfySettings,
   saveWeComSettings,
   updateTaskDeliveryChannels,
@@ -141,6 +142,51 @@ describe("delivery payloads", () => {
       expect(result.deliveries).toHaveLength(1);
       expect(fetchImpl).toHaveBeenCalledTimes(1);
       expect(fetchImpl.mock.calls[0]?.[0]).toBe("https://ntfy.sh/inflowee");
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("uses global default delivery channels when a task has no override", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      const taskId = await createTaskRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "Track agents",
+        taskType: "TOPIC",
+        userPrompt: "Track coding agents.",
+      });
+      const briefId = await createBriefRecord(fixture.store, {
+        taskId,
+        itemIds: [],
+        title: "Agent launch",
+        summary: "A new coding agent launched.",
+        whyItMatters: "Developer tooling is changing.",
+        sourceCitations: ["https://example.com/agent"],
+      });
+      await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
+      await saveWeComSettings(
+        fixture.store,
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+      );
+      await saveDefaultDeliveryChannels(fixture.store, ["wecom"]);
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("ok", { status: 200 }),
+      );
+
+      const result = await deliverStoredBriefToConfiguredChannels(
+        fixture.store,
+        briefId,
+        { fetchImpl },
+      );
+
+      expect(result.status).toBe("success");
+      expect(result.deliveries).toHaveLength(1);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+      );
     } finally {
       fixture.cleanup();
     }

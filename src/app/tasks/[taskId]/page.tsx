@@ -35,6 +35,40 @@ type TaskDetailPageProps = {
   params: Promise<{ taskId: string }>;
 };
 
+function getReportMetric(content: Record<string, unknown>, key: string) {
+  const value = content[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function getReportTags(content: Record<string, unknown>) {
+  const tags = content.tags;
+
+  if (!Array.isArray(tags)) {
+    return [];
+  }
+
+  return tags
+    .map((tag) => {
+      if (!tag || typeof tag !== "object") {
+        return null;
+      }
+
+      const record = tag as Record<string, unknown>;
+      const label = record.tag;
+      const count = record.count;
+
+      if (typeof label !== "string" || typeof count !== "number") {
+        return null;
+      }
+
+      return {
+        tag: label,
+        count,
+      };
+    })
+    .filter((tag): tag is { tag: string; count: number } => Boolean(tag));
+}
+
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { taskId } = await params;
   const store = defaultStore;
@@ -85,6 +119,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const scheduleTimezone = task.scheduleProfile?.timezone ?? "Asia/Shanghai";
   const currentWindow = task.scheduleProfile?.windows[0];
   const isZh = locale === "zh";
+  const latestReport = reports[0];
+  const latestReportTags = latestReport ? getReportTags(latestReport.content) : [];
+  const maxTagCount = Math.max(
+    1,
+    ...latestReportTags.map((tag) => tag.count),
+  );
 
   return (
     <div className="grid gap-6">
@@ -280,8 +320,8 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
               </h2>
               <p className="mt-1 text-sm text-stone-500">
                 {isZh
-                  ? "留空则使用所有已配置通道。"
-                  : "Leave empty to use every configured channel."}
+                  ? "留空则使用全局默认通道；没有默认时使用所有已配置通道。"
+                  : "Leave empty to use global defaults, or every configured channel when no defaults exist."}
               </p>
             </div>
             <form action={saveTaskDeliveryChannelsAction} className="grid gap-4">
@@ -441,7 +481,64 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
                   : "No reports yet. Generate a current report after syncing sources."}
               </div>
             ) : (
-              <div className="grid gap-3">
+              <div className="grid gap-4">
+                {latestReport ? (
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <div className="rounded-xl bg-white p-3">
+                        <div className="text-lg font-semibold text-stone-950">
+                          {getReportMetric(latestReport.content, "briefCount")}
+                        </div>
+                        <div className="text-[10px] font-semibold uppercase text-stone-400">
+                          {isZh ? "简报" : "Briefs"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-white p-3">
+                        <div className="text-lg font-semibold text-stone-950">
+                          {getReportMetric(latestReport.content, "itemCount")}
+                        </div>
+                        <div className="text-[10px] font-semibold uppercase text-stone-400">
+                          {isZh ? "内容" : "Items"}
+                        </div>
+                      </div>
+                      <div className="rounded-xl bg-white p-3">
+                        <div className="text-lg font-semibold text-stone-950">
+                          {latestReport.sourceCitations.length}
+                        </div>
+                        <div className="text-[10px] font-semibold uppercase text-stone-400">
+                          {isZh ? "引用" : "Citations"}
+                        </div>
+                      </div>
+                    </div>
+
+                    {latestReportTags.length > 0 ? (
+                      <div className="mt-4 grid gap-2">
+                        {latestReportTags.slice(0, 6).map((tag) => (
+                          <div
+                            key={tag.tag}
+                            className="grid grid-cols-[120px_1fr_36px] items-center gap-3 text-xs"
+                          >
+                            <span className="truncate font-medium text-stone-700">
+                              {tag.tag}
+                            </span>
+                            <div className="h-2 rounded-full bg-white">
+                              <div
+                                className="h-2 rounded-full bg-[#0057ff]"
+                                style={{
+                                  width: `${Math.max(8, (tag.count / maxTagCount) * 100)}%`,
+                                }}
+                              />
+                            </div>
+                            <span className="text-right text-stone-500">
+                              {tag.count}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
                 {reports.slice(0, 3).map((report) => (
                   <article
                     key={report.id}

@@ -293,6 +293,11 @@ export type NtfySettingsRecord = {
   updatedAt: string | null;
 };
 
+export type DefaultDeliveryChannelsRecord = {
+  channels: string[];
+  updatedAt: string | null;
+};
+
 export type DeliveryPayloadType =
   | "html"
   | "slack"
@@ -2947,6 +2952,46 @@ export async function getEmailSettings(
     endpoint: row.value,
     updatedAt: row.updatedAt,
   };
+}
+
+export async function saveDefaultDeliveryChannels(
+  store: Store,
+  channels: string[],
+) {
+  await saveAppSetting(
+    store,
+    "default_delivery_channels",
+    JSON.stringify([...new Set(channels)].filter(Boolean)),
+  );
+}
+
+export async function getDefaultDeliveryChannels(
+  store: Store,
+): Promise<DefaultDeliveryChannelsRecord> {
+  const row = await getAppSetting(store, "default_delivery_channels");
+
+  if (!row.value) {
+    return {
+      channels: [],
+      updatedAt: row.updatedAt,
+    };
+  }
+
+  try {
+    const channels = JSON.parse(row.value);
+
+    return {
+      channels: Array.isArray(channels)
+        ? channels.filter((channel): channel is string => typeof channel === "string")
+        : [],
+      updatedAt: row.updatedAt,
+    };
+  } catch {
+    return {
+      channels: [],
+      updatedAt: row.updatedAt,
+    };
+  }
 }
 
 export async function hasProcessedDeliveryRequest(

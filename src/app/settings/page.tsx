@@ -7,6 +7,7 @@ import {
   saveSlackEndpoint,
   saveTelegramSourceBot,
   saveTelegramDelivery,
+  saveDefaultDeliveryChannelsAction,
   testDeliveryChannelAction,
   saveWeComEndpoint,
   saveWebhookEndpoint,
@@ -20,6 +21,7 @@ import {
   defaultStore,
   getBarkSettings,
   getDeliveryHealthSummary,
+  getDefaultDeliveryChannels,
   getDingTalkSettings,
   getEmailSettings,
   getSlackSettings,
@@ -55,6 +57,7 @@ export default async function SettingsPage({
     recentLogs,
     deliveryHealth,
     deliveryChannels,
+    defaultDeliveryChannels,
     params,
   ] = await Promise.all([
     getWebhookSettings(defaultStore),
@@ -66,10 +69,17 @@ export default async function SettingsPage({
     listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),
     getDeliveryHealthSummary(defaultStore, { actorId: actor.id }),
     listConfiguredDeliveryChannels(defaultStore),
+    getDefaultDeliveryChannels(defaultStore),
     searchParams,
   ]);
   const error = params?.error;
   const updated = params?.updated;
+  const configuredDeliveryChannels = deliveryChannels.filter(
+    (channel) => channel.enabled,
+  );
+  const recentDeliveryErrors = recentLogs
+    .filter((log) => log.status === "error")
+    .slice(0, 3);
   const extraDeliveryForms = [
     {
       key: "dingtalk",
@@ -372,40 +382,34 @@ export default async function SettingsPage({
             </div>
             <div className="rounded-2xl bg-stone-100 px-4 py-4">
               <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{t.channels}</div>
-              <div className="mt-2 text-sm text-stone-700">
-                {deliveryHealth.webhookConfigured ? "Webhook" : null}
-                {deliveryHealth.webhookConfigured && deliveryHealth.slackConfigured ? " + " : null}
-                {deliveryHealth.slackConfigured ? "Slack" : null}
-                {(deliveryHealth.webhookConfigured || deliveryHealth.slackConfigured) &&
-                deliveryHealth.telegramConfigured
-                  ? " + "
-                  : null}
-                {deliveryHealth.telegramConfigured ? "Telegram" : null}
-                {(deliveryHealth.webhookConfigured ||
-                  deliveryHealth.slackConfigured ||
-                  deliveryHealth.telegramConfigured) &&
-                deliveryHealth.feishuConfigured
-                  ? " + "
-                  : null}
-                {deliveryHealth.feishuConfigured ? "Feishu" : null}
-                {(deliveryHealth.webhookConfigured ||
-                  deliveryHealth.slackConfigured ||
-                  deliveryHealth.telegramConfigured ||
-                  deliveryHealth.feishuConfigured) &&
-                deliveryHealth.ntfyConfigured
-                  ? " + "
-                  : null}
-                {deliveryHealth.ntfyConfigured ? "ntfy" : null}
-                {!deliveryHealth.webhookConfigured &&
-                !deliveryHealth.slackConfigured &&
-                !deliveryHealth.telegramConfigured &&
-                !deliveryHealth.feishuConfigured &&
-                !deliveryHealth.ntfyConfigured
-                  ? t.noneConfigured
-                  : null}
+              <div className="mt-2 text-2xl font-semibold text-stone-800">
+                {configuredDeliveryChannels.length}
+              </div>
+              <div className="mt-1 text-xs leading-5 text-stone-600">
+                {configuredDeliveryChannels.length > 0
+                  ? configuredDeliveryChannels
+                      .map((channel) => channel.name)
+                      .join(" + ")
+                  : t.noneConfigured}
               </div>
             </div>
           </div>
+          {recentDeliveryErrors.length > 0 ? (
+            <div className="mt-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3">
+              <div className="text-xs font-semibold uppercase tracking-[0.16em] text-rose-700">
+                {isZh ? "最近失败" : "Recent failures"}
+              </div>
+              <div className="mt-3 grid gap-2">
+                {recentDeliveryErrors.map((log) => (
+                  <div key={log.id} className="text-xs leading-5 text-rose-700">
+                    <span className="font-semibold">{log.payloadType}</span>
+                    {": "}
+                    {log.error ?? (isZh ? "未知错误" : "Unknown error")}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
         </section>
       </section>
 
@@ -473,9 +477,72 @@ export default async function SettingsPage({
                     ? isZh
                       ? "邮件设置已保存。"
                       : "Email settings saved."
+                  : updated === "default-delivery-channels"
+                    ? isZh
+                      ? "默认投递通道已保存。"
+                      : "Default delivery channels saved."
                 : t.updateApplied}
         </section>
       )}
+
+      <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+        <div className="mb-4 border-b border-stone-100 pb-4">
+          <h2 className="text-xl font-semibold">
+            {isZh ? "默认投递通道" : "Default delivery channels"}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-stone-500">
+            {isZh
+              ? "任务没有单独选择通道时，会优先使用这里的默认通道。留空则发送到所有已配置通道。"
+              : "Tasks without their own channel selection use these defaults first. Leave empty to send to every configured channel."}
+          </p>
+        </div>
+        <form action={saveDefaultDeliveryChannelsAction} className="grid gap-4">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {deliveryChannels.map((channel) => (
+              <label
+                key={channel.type}
+                className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+                  channel.enabled
+                    ? "border-stone-200 bg-stone-50 text-stone-800"
+                    : "border-stone-100 bg-stone-50/60 text-stone-400"
+                }`}
+              >
+                <span>
+                  <span className="block font-semibold">{channel.name}</span>
+                  <span className="text-xs">
+                    {channel.enabled
+                      ? isZh
+                        ? "已配置"
+                        : "configured"
+                      : isZh
+                        ? "未配置"
+                        : "not configured"}
+                  </span>
+                </span>
+                <input
+                  name="channels"
+                  type="checkbox"
+                  value={channel.type}
+                  defaultChecked={defaultDeliveryChannels.channels.includes(
+                    channel.type,
+                  )}
+                  disabled={!channel.enabled}
+                  className="size-4"
+                />
+              </label>
+            ))}
+          </div>
+          {defaultDeliveryChannels.updatedAt ? (
+            <p className="text-xs text-stone-400">
+              {isZh ? "更新于" : "Updated"}{" "}
+              {new Date(defaultDeliveryChannels.updatedAt).toLocaleString()}
+            </p>
+          ) : null}
+          <button className="h-11 justify-self-start rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
+            {isZh ? "保存默认通道" : "Save default channels"}
+          </button>
+        </form>
+      </section>
 
       <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
         <div className="flex items-end justify-between gap-3">
