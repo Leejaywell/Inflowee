@@ -3,7 +3,13 @@ import { fetchSourceFeed } from "@/lib/source-sync";
 import type { SourceRecord, TaskRecord } from "@/lib/store";
 import { expandQualityTerms, type CandidateHeatMetrics } from "@/lib/item-quality";
 
-export type RadarProvider = "bing" | "hacker-news" | "weibo" | "bilibili";
+export type RadarProvider =
+  | "bing"
+  | "hacker-news"
+  | "reddit"
+  | "product-hunt"
+  | "weibo"
+  | "bilibili";
 
 export type RadarCandidate = {
   title: string;
@@ -33,6 +39,14 @@ export type RadarSourceConfig = {
 };
 
 const DEFAULT_PROVIDERS: RadarProvider[] = ["bing", "hacker-news"];
+const RADAR_PROVIDERS: RadarProvider[] = [
+  "bing",
+  "hacker-news",
+  "reddit",
+  "product-hunt",
+  "weibo",
+  "bilibili",
+];
 
 function uniqueValues(values: string[]) {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
@@ -72,7 +86,7 @@ export function buildRadarSourceConfig(
 ): RadarSourceConfig {
   const providers =
     sourceType === "COMMUNITY_DISCOVERY"
-      ? ["hacker-news" as const]
+      ? (["hacker-news", "reddit", "product-hunt"] as const)
       : sourceType === "SOCIAL_DISCOVERY"
       ? (["weibo", "bilibili"] as const)
       : DEFAULT_PROVIDERS;
@@ -93,7 +107,7 @@ function getRadarConfig(task: TaskRecord, source: SourceRecord): RadarSourceConf
   return {
     providers: Array.isArray(raw.providers)
       ? raw.providers.filter((provider): provider is RadarProvider =>
-          ["bing", "hacker-news", "weibo", "bilibili"].includes(String(provider)),
+          RADAR_PROVIDERS.includes(String(provider) as RadarProvider),
         )
       : fallback.providers,
     queries: Array.isArray(raw.queries)
@@ -123,6 +137,10 @@ function dedupeCandidates(candidates: RadarCandidate[]) {
   }
 
   return result;
+}
+
+function buildSiteSearchQuery(query: string, domains: string[]) {
+  return `${query} ${domains.map((domain) => `site:${domain}`).join(" OR ")}`;
 }
 
 async function fetchBingNewsCandidates(
@@ -196,6 +214,73 @@ async function fetchHackerNewsCandidates(
     });
 }
 
+async function fetchRedditCandidates(
+  query: string,
+  quota: number,
+  fetchImpl: typeof fetch,
+): Promise<RadarCandidate[]> {
+  const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&sort=new&limit=${quota}`;
+  const response = await fetchImpl(url, {
+    headers: {
+      "User-Agent": "InfloweeRadar/1.0",
+    },
+    signal: AbortSignal.timeout(10_000),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Reddit search failed with ${response.status}.`);
+  }
+
+  const data = (await response.json()) as {
+    data?: {
+      children?: Array<{
+        data?: {
+          title?: string;
+          permalink?: string;
+          url?: string;
+          selftext?: string;
+          created_utc?: number;
+          score?: number;
+          num_comments?: number;
+          author?: string;
+          subreddit?: string;
+        };
+      }>;
+    };
+  };
+
+  return (data.data?.children ?? [])
+    .map((child) => child.data)
+    .filter((post): post is NonNullable<typeof post> & { title: string } =>
+      Boolean(post?.title),
+    )
+    .slice(0, quota)
+    .map((post) => {
+      const permalink = post.permalink
+        ? `https://www.reddit.com${post.permalink}`
+        : (post.url ?? "https://www.reddit.com/search/");
+
+      return {
+        title: post.title,
+        canonicalUrl: permalink,
+        summary: post.selftext?.slice(0, 280) || `Reddit discussion for ${post.title}.`,
+        rawContent: post.selftext ?? post.title,
+        publishedAt: post.created_utc
+          ? new Date(post.created_utc * 1000).toISOString()
+          : null,
+        commentCount: post.num_comments ?? null,
+        sourceNativeScore: post.score ?? null,
+        authorUsername: post.author ?? null,
+        structuredFields: {
+          sourceProvider: "reddit",
+          subreddit: post.subreddit,
+          externalUrl: post.url,
+          query,
+        },
+      };
+    });
+}
+
 async function fetchProviderCandidates(
   provider: RadarProvider,
   query: string,
@@ -211,7 +296,31 @@ async function fetchProviderCandidates(
     return fetchHackerNewsCandidates(query, quota, fetchImpl);
   }
 
-  throw new Error(`${provider} discovery is not configured yet.`);
+  if (provider === "reddit") {
+    return fetchRedditCandidates(query, quota, fetchImpl);
+  }
+
+  if (provider === "product-hunt") {
+    return fetchBingNewsCandidates(
+      buildSiteSearchQuery(query, ["producthunt.com/products", "producthunt.com/posts"]),
+      quota,
+      fetchSourceFeedImpl,
+    );
+  }
+
+  if (provider === "weibo") {
+    return fetchBingNewsCandidates(
+      buildSiteSearchQuery(query, ["weibo.com", "m.weibo.cn"]),
+      quota,
+      fetchSourceFeedImpl,
+    );
+  }
+
+  return fetchBingNewsCandidates(
+    buildSiteSearchQuery(query, ["bilibili.com", "b23.tv"]),
+    quota,
+    fetchSourceFeedImpl,
+  );
 }
 
 export async function discoverRadarCandidates(

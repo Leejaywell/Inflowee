@@ -8,6 +8,8 @@ import {
 } from "@/app/actions";
 import Link from "next/link";
 import { requireSessionActor } from "@/lib/auth";
+import { getDictionary } from "@/lib/i18n";
+import { getRequestLocale } from "@/lib/i18n-server";
 import {
   defaultStore,
   getSourceHealthSummary,
@@ -30,12 +32,6 @@ type SourcesPageProps = {
   }>;
 };
 
-const statusLabels: Record<SourceStatus, string> = {
-  idle: "Idle",
-  success: "Healthy",
-  error: "Error",
-};
-
 const statusClasses: Record<SourceStatus, string> = {
   idle: "bg-stone-100 text-stone-600",
   success: "bg-emerald-100 text-emerald-700",
@@ -47,7 +43,16 @@ type SourceWithRuns = SourceRecord & {
 };
 
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
-  const actor = await requireSessionActor();
+  const [actor, locale] = await Promise.all([
+    requireSessionActor(),
+    getRequestLocale(),
+  ]);
+  const t = getDictionary(locale).sources;
+  const statusLabels: Record<SourceStatus, string> = {
+    idle: t.statusIdle,
+    success: t.statusSuccess,
+    error: t.statusError,
+  };
   const [tasksRaw, sources, healthSummary, recentRuns, params] = await Promise.all([
     listTasks(defaultStore, { actorId: actor.id }),
     listSources(defaultStore, { actorId: actor.id }),
@@ -82,16 +87,14 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
       <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.35fr_0.65fr]">
         <div className="space-y-4">
           <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium tracking-[0.18em] text-white uppercase">
-            Source management
+            {t.badge}
           </span>
           <div className="space-y-3">
             <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-              Attach feeds, job boards, and Telegram sources to the tasks already defined.
+              {t.title}
             </h1>
             <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-              Pick a task, add a custom source, or start with built-in job-site
-              presets. Telegram public channels and groups can be tracked with a
-              dedicated source type.
+              {t.description}
             </p>
           </div>
         </div>
@@ -99,20 +102,22 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         <div className="grid gap-4 rounded-[22px] bg-stone-950 p-5 text-stone-50">
           <div>
             <p className="text-sm uppercase tracking-[0.2em] text-stone-400">
-              Snapshot
+              {t.snapshot}
             </p>
             <p className="mt-3 text-4xl font-semibold">{tasks.length}</p>
-            <p className="text-sm text-stone-300">tasks available for feeds</p>
+            <p className="text-sm text-stone-300">{t.tasksAvailable}</p>
           </div>
           <div className="border-t border-white/10 pt-4">
             <p className="text-4xl font-semibold">
               {tasks.reduce((count, task) => count + task.sources.length, 0)}
             </p>
-            <p className="text-sm text-stone-300">sources connected</p>
+            <p className="text-sm text-stone-300">{t.sourcesConnected}</p>
           </div>
           <div className="border-t border-white/10 pt-4 text-sm text-stone-300">
-            {healthSummary.healthy} healthy, {healthSummary.errored} failing,{" "}
-            {healthSummary.dueNow} due now
+            {t.healthLine
+              .replace("{healthy}", String(healthSummary.healthy))
+              .replace("{errored}", String(healthSummary.errored))
+              .replace("{dueNow}", String(healthSummary.dueNow))}
           </div>
         </div>
       </section>
@@ -128,24 +133,24 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           {error
             ? decodeURIComponent(error)
             : created === "source"
-              ? "Source created."
+              ? t.created
               : synced === "source"
-                ? "Source synced."
+                ? t.synced
                 : synced === "all"
-                  ? "All non-error sources synced."
+                  ? t.syncedAll
                   : updated === "schedule"
-                    ? "Source cadence updated."
-                  : "Update applied."}
+                    ? t.cadenceUpdated
+                  : t.updateApplied}
         </section>
       )}
 
       <section className="grid gap-4 lg:grid-cols-[0.82fr_1.18fr]">
         <div className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-          <h2 className="text-xl font-semibold">Source health</h2>
+          <h2 className="text-xl font-semibold">{t.sourceHealth}</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <div className="rounded-2xl bg-emerald-50 px-4 py-4">
               <div className="text-xs uppercase tracking-[0.16em] text-emerald-700">
-                Healthy
+                {t.healthy}
               </div>
               <div className="mt-2 text-2xl font-semibold text-emerald-800">
                 {healthSummary.healthy}
@@ -153,7 +158,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             </div>
             <div className="rounded-2xl bg-rose-50 px-4 py-4">
               <div className="text-xs uppercase tracking-[0.16em] text-rose-700">
-                Failing
+                {t.failing}
               </div>
               <div className="mt-2 text-2xl font-semibold text-rose-800">
                 {healthSummary.errored}
@@ -161,7 +166,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             </div>
             <div className="rounded-2xl bg-stone-100 px-4 py-4">
               <div className="text-xs uppercase tracking-[0.16em] text-stone-500">
-                Idle
+                {t.idle}
               </div>
               <div className="mt-2 text-2xl font-semibold text-stone-700">
                 {healthSummary.idle}
@@ -169,7 +174,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             </div>
             <div className="rounded-2xl bg-amber-50 px-4 py-4">
               <div className="text-xs uppercase tracking-[0.16em] text-amber-700">
-                Due now
+                {t.dueNow}
               </div>
               <div className="mt-2 text-2xl font-semibold text-amber-800">
                 {healthSummary.dueNow}
@@ -181,20 +186,20 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold">Recent sync runs</h2>
+              <h2 className="text-xl font-semibold">{t.recentSyncRuns}</h2>
               <p className="text-sm leading-6 text-stone-500">
-                Latest ingestion attempts across visible sources.
+                {t.recentSyncDescription}
               </p>
             </div>
             <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
-              {recentRuns.length} entries
+              {recentRuns.length} {t.entries}
             </span>
           </div>
 
           <div className="mt-4 grid gap-3">
             {recentRuns.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
-                No sync runs yet.
+                {t.noSyncRuns}
               </div>
             ) : (
               recentRuns.map((run) => {
@@ -237,8 +242,8 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                     </div>
 
                     <div className="mt-3 flex flex-wrap gap-4 text-xs text-stone-500">
-                      <span>{run.insertedItemCount} items</span>
-                      <span>{run.createdBriefCount} briefs</span>
+                      <span>{run.insertedItemCount} {t.items}</span>
+                      <span>{run.createdBriefCount} {t.briefs}</span>
                       {run.error ? <span>{run.error}</span> : null}
                     </div>
                   </article>
@@ -255,22 +260,21 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Built-in job sources</h2>
+            <h2 className="text-xl font-semibold">{t.builtInSources}</h2>
             <p className="text-sm leading-6 text-stone-500">
-              One-click presets for common hiring boards and structured job
-              feeds.
+              {t.builtInDescription}
             </p>
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Task</span>
+            <span className="font-medium text-stone-700">{t.task}</span>
             <select
               name="taskId"
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
               defaultValue=""
             >
               <option value="" disabled>
-                Select a task
+                {t.selectTask}
               </option>
               {tasks.map((task) => (
                 <option key={task.id} value={task.id}>
@@ -310,7 +314,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                     className="inline-flex h-10 shrink-0 items-center justify-center rounded-xl bg-stone-900 px-3 text-xs font-semibold tracking-wider uppercase text-white transition hover:bg-stone-800"
                     disabled={tasks.length === 0}
                   >
-                    Add
+                    {t.add}
                   </button>
                 </div>
               </article>
@@ -323,22 +327,21 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Add a source</h2>
+            <h2 className="text-xl font-semibold">{t.addSource}</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Attach an RSS feed, structured list, update page, newsletter
-              archive, or Telegram public feed to a task.
+              {t.addSourceDescription}
             </p>
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Task</span>
+            <span className="font-medium text-stone-700">{t.task}</span>
             <select
               name="taskId"
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
               defaultValue=""
             >
               <option value="" disabled>
-                Select a task
+                {t.selectTask}
               </option>
               {tasks.map((task) => (
                 <option key={task.id} value={task.id}>
@@ -349,7 +352,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           </label>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Source type</span>
+            <span className="font-medium text-stone-700">{t.sourceType}</span>
             <select
               name="sourceType"
               className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
@@ -366,7 +369,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           </label>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Source title</span>
+            <span className="font-medium text-stone-700">{t.sourceTitle}</span>
             <input
               name="title"
               placeholder="OpenAI Blog RSS"
@@ -375,7 +378,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
           </label>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Feed URL</span>
+            <span className="font-medium text-stone-700">{t.feedUrl}</span>
             <input
               name="url"
               placeholder="https://example.com/feed.xml"
@@ -383,48 +386,42 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             />
           </label>
           <p className="text-xs leading-5 text-stone-400">
-            Telegram public sources accept <span className="font-mono">https://t.me/&lt;slug&gt;</span> or{" "}
-            <span className="font-mono">https://t.me/s/&lt;slug&gt;</span>. The
-            saved URL is normalized to the public history view. Telegram bot
-            feeds use the same URL format, but require a Telegram source bot
-            token in Settings and only ingest messages observed after the bot
-            joins the chat.
+            {t.telegramHelp}
           </p>
 
           <button
             className="inline-flex h-12 items-center justify-center rounded-2xl bg-[#0057ff] px-4 text-sm font-medium text-white transition hover:bg-[#0049d6]"
             disabled={tasks.length === 0}
           >
-            Save source
+            {t.saveSource}
           </button>
         </form>
 
         <section className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)] lg:col-span-2">
           <div className="flex items-end justify-between gap-3">
             <div>
-              <h2 className="text-xl font-semibold">Task sources</h2>
+              <h2 className="text-xl font-semibold">{t.taskSources}</h2>
               <p className="text-sm leading-6 text-stone-500">
-                Sources currently attached to each task.
+                {t.taskSourcesDescription}
               </p>
             </div>
             <div className="flex items-center gap-3">
               {tasks.length > 0 && tasks.some((t) => t.sources.length > 0) && (
                 <form action={runSyncAll}>
                   <button className="inline-flex h-9 items-center justify-center rounded-xl bg-stone-900 px-4 text-xs font-semibold tracking-wider uppercase text-white transition hover:bg-stone-800">
-                    Sync all
+                    {t.syncAll}
                   </button>
                 </form>
               )}
               <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
-                Local DB
+                {t.localDb}
               </span>
             </div>
           </div>
 
           {tasks.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
-              No tasks yet. Create tasks on the home page before adding
-              sources.
+              {t.noTasks}
             </div>
           ) : (
             <div className="grid gap-4">
@@ -436,7 +433,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-                        Monitoring goal
+                        {t.monitoringGoal}
                       </p>
                       <h3 className="text-lg font-semibold text-stone-950">
                         {task.title}
@@ -446,14 +443,14 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                       </p>
                     </div>
                     <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-stone-500">
-                      {task.sources.length} sources
+                      {task.sources.length} {t.sources}
                     </span>
                   </div>
 
                   <div className="mt-4 grid gap-3">
                     {task.sources.length === 0 ? (
                       <p className="text-sm text-stone-500">
-                        No sources linked to this task yet.
+                        {t.noSourcesForTask}
                       </p>
                     ) : (
                       task.sources.map((source) => (
@@ -481,7 +478,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                                   value={source.id}
                                 />
                                 <button className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
-                                  Sync now
+                                  {t.syncNow}
                                 </button>
                               </form>
                               <form action={deleteSource}>
@@ -491,14 +488,14 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                                   value={source.id}
                                 />
                                 <button className="inline-flex h-9 items-center justify-center rounded-xl border border-rose-200 px-3 text-sm font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50">
-                                  Delete
+                                  {t.delete}
                                 </button>
                               </form>
                               <Link
                                 href={`/sources/${source.id}`}
                                 className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-sm font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"
                               >
-                                Diagnostics
+                                {t.diagnostics}
                               </Link>
                             </div>
                           </div>
@@ -520,17 +517,17 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                                 defaultValue={String(source.syncIntervalMinutes)}
                                 className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs text-stone-600"
                               >
-                                <option value="15">Every 15 min</option>
-                                <option value="60">Every 60 min</option>
-                                <option value="360">Every 6 hr</option>
-                                <option value="1440">Daily</option>
+                                <option value="15">{t.every15Min}</option>
+                                <option value="60">{t.every60Min}</option>
+                                <option value="360">{t.every6Hr}</option>
+                                <option value="1440">{t.daily}</option>
                               </select>
                               <button className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-xs font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50">
-                                Save cadence
+                                {t.saveCadence}
                               </button>
                             </form>
                             <span className="text-xs text-stone-500">
-                              Next sync:{" "}
+                              {t.nextSync}{" "}
                               {source.nextSyncAt
                                 ? new Date(source.nextSyncAt).toLocaleString(
                                     "en-US",
@@ -539,16 +536,16 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                                       timeStyle: "short",
                                     },
                                   )
-                                : "Not scheduled"}
+                                : t.notScheduled}
                             </span>
                           </div>
                           <div className="mt-4 rounded-2xl bg-stone-50 px-4 py-4">
                             <div className="text-xs font-semibold uppercase tracking-[0.16em] text-stone-400">
-                              Recent runs
+                              {t.recentRuns}
                             </div>
                             {source.recentRuns.length === 0 ? (
                               <p className="mt-3 text-xs text-stone-500">
-                                No recorded runs yet.
+                                {t.noRecordedRuns}
                               </p>
                             ) : (
                               <ul className="mt-3 grid gap-2">
@@ -561,8 +558,8 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                                       {run.status}
                                     </span>
                                     <span>
-                                      {run.insertedItemCount} items /{" "}
-                                      {run.createdBriefCount} briefs
+                                      {run.insertedItemCount} {t.items} /{" "}
+                                      {run.createdBriefCount} {t.briefs}
                                     </span>
                                   </li>
                                 ))}

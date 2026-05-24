@@ -18,6 +18,8 @@ import {
   listRecommendationBundlesByTask,
   listSourcesByTask,
 } from "@/lib/store";
+import { getDictionary } from "@/lib/i18n";
+import { getRequestLocale } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +30,12 @@ type TaskDetailPageProps = {
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { taskId } = await params;
   const store = defaultStore;
-  const actor = await requireSessionActor();
+  const [actor, locale] = await Promise.all([
+    requireSessionActor(),
+    getRequestLocale(),
+  ]);
+  const dict = getDictionary(locale);
+  const t = dict.task;
   const task = await getTaskById(store, taskId);
 
   if (!task) {
@@ -65,11 +72,11 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
         <div className="space-y-4">
           <div className="flex items-center gap-2 text-sm text-stone-500">
             <Link href="/" className="hover:text-stone-700">
-              Dashboard
+              {t.dashboard}
             </Link>
             <span className="text-stone-300">/</span>
             <span className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-              Monitoring goal
+              {t.badge}
             </span>
           </div>
 
@@ -79,14 +86,14 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
                 {task.taskType}
               </span>
               <span className="rounded-full bg-[#0057ff]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#0057ff]">
-                Level {task.relevanceLevel}
+                {t.level} {task.relevanceLevel}
               </span>
             </div>
             <h1 className="text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
               {task.title}
             </h1>
             <p className="max-w-3xl text-sm leading-relaxed text-stone-600">
-              <strong className="text-stone-800">Monitoring goal:</strong>{" "}
+              <strong className="text-stone-800">{t.monitoringGoal}</strong>{" "}
               {task.userPrompt}
             </p>
           </div>
@@ -106,22 +113,22 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             taskId={taskId}
             taskProfile={task.taskProfile ?? null}
             recommendedBundles={recommendedBundles}
+            labels={dict.recommendation}
           />
 
           <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
             <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-4">
               <h2 className="text-lg font-semibold text-stone-950">
-                Subscribed sources
+                {t.subscribedSources}
               </h2>
               <Link href="/sources" className="text-xs font-bold text-[#0057ff] hover:underline">
-                Advanced source manager
+                {t.advancedSourceManager}
               </Link>
             </div>
 
             {activeSources.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-center text-sm text-stone-500">
-                No sources are subscribed yet. Choose a recommended subscription
-                package above or add a custom source.
+                {t.emptySources}
               </div>
             ) : (
               <div className="grid gap-3">
@@ -152,17 +159,16 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
           <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
             <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-4">
               <h2 className="text-lg font-semibold text-stone-950">
-                Recent briefs
+                {t.recentBriefs}
               </h2>
               <Link href={`/inbox?taskId=${taskId}`} className="text-xs font-bold text-[#0057ff] hover:underline">
-                Open inbox
+                {t.openInbox}
               </Link>
             </div>
 
             {recentBriefs.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-center text-sm text-stone-500">
-                No briefs yet. Subscribe and sync sources to generate the first
-                monitoring results.
+                {t.emptyBriefs}
               </div>
             ) : (
               <div className="grid gap-3">
@@ -189,11 +195,11 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
           scopeType="task"
           scopeId={taskId}
           initialMessages={chatMessages}
-          title={`${task.title} Assistant`}
-          subtitle="Answers grounded in stored briefs and raw items for this monitoring goal."
+          title={`${task.title} ${t.assistantSuffix}`}
+          subtitle={t.assistantSubtitle}
+          labels={dict.chat}
         />
       </div>
     </div>
   );
 }
-

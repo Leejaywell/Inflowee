@@ -1,19 +1,29 @@
 "use client";
 
 import { useState } from "react";
-import { ChatConsole } from "./chat-console";
+import { ChatConsole, type ChatConsoleLabels } from "./chat-console";
 import { ChatMessageRecord } from "@/lib/store";
 
 type ChatDrawerProps = {
   briefId: string;
   briefTitle: string;
   initialMessages: ChatMessageRecord[];
+  labels?: Partial<ChatConsoleLabels>;
+  triggerLabel?: string;
+  drawerLabel?: string;
+  title?: string;
+  subtitle?: string;
 };
 
 export function ChatDrawer({
   briefId,
   briefTitle,
   initialMessages,
+  labels,
+  triggerLabel = "Discuss with AI",
+  drawerLabel = "CONTEXTUAL BRIEFS CHAT",
+  title = "Grounded Conversation",
+  subtitle = "Ask questions grounded strictly in this brief's cited papers/articles.",
 }: ChatDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -38,7 +48,7 @@ export function ChatDrawer({
             d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
           />
         </svg>
-        Discuss with AI
+        {triggerLabel}
       </button>
 
       {/* Slide-out Drawer Overlay */}
@@ -56,7 +66,7 @@ export function ChatDrawer({
             <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50/50 px-5 py-4">
               <div className="min-w-0">
                 <span className="text-[10px] font-bold text-[#0057ff] uppercase tracking-wider block">
-                  CONTEXTUAL BRIEFS CHAT
+                  {drawerLabel}
                 </span>
                 <h3 className="font-semibold text-stone-950 text-sm truncate mt-0.5" title={briefTitle}>
                   {briefTitle}
@@ -89,8 +99,9 @@ export function ChatDrawer({
                 scopeType="brief"
                 scopeId={briefId}
                 initialMessages={initialMessages}
-                title="Grounded Conversation"
-                subtitle="Ask questions grounded strictly in this brief's cited papers/articles."
+                title={title}
+                subtitle={subtitle}
+                labels={labels}
               />
             </div>
           </div>

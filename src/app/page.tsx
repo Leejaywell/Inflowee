@@ -36,6 +36,7 @@ export default async function Home({ searchParams }: HomeProps) {
   }
 
   const t = getDictionary(locale).home;
+  const chatLabels = getDictionary(locale).chat;
   const taskTypeLabels: Record<TaskType, string> = {
     TOPIC: t.taskTypeTopic,
     QUESTION: t.taskTypeQuestion,
@@ -160,6 +161,7 @@ export default async function Home({ searchParams }: HomeProps) {
             initialMessages={globalMessages}
             title={t.assistantTitle}
             subtitle={t.assistantSubtitle}
+            labels={chatLabels}
           />
         </div>
 

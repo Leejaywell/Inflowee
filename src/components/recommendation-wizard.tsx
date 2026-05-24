@@ -14,6 +14,70 @@ type RecommendationWizardProps = {
   taskId: string;
   taskProfile: TaskProfile | null;
   recommendedBundles: SourceBundle[];
+  labels?: RecommendationWizardLabels;
+};
+
+export type RecommendationWizardLabels = {
+  noRecommendations: string;
+  noIntelligence: string;
+  refreshHint: string;
+  refreshIntelligence: string;
+  refreshingIntelligence: string;
+  refreshError: string;
+  previewError: string;
+  subscribedTitle: string;
+  subscribedDescription: string;
+  viewChannels: string;
+  title: string;
+  description: string;
+  refreshing: string;
+  package: string;
+  rationale: string;
+  sourcesInBundle: string;
+  previewTitle: string;
+  previewDescription: string;
+  previewing: string;
+  previewSelected: string;
+  sourcesChecked: string;
+  itemsFound: string;
+  briefReady: string;
+  filtered: string;
+  recommendedCadence: string;
+  notificationLevel: string;
+  confirming: string;
+  confirm: string;
+};
+
+const defaultLabels: RecommendationWizardLabels = {
+  noRecommendations: "No stored recommendations are available for this task yet.",
+  noIntelligence: "This task has no stored intelligence yet.",
+  refreshHint: "Refresh to regenerate source bundles from the saved task profile.",
+  refreshIntelligence: "Refresh intelligence",
+  refreshingIntelligence: "Refreshing intelligence...",
+  refreshError: "Unable to refresh recommendations right now.",
+  previewError: "Unable to preview selected subscriptions.",
+  subscribedTitle: "Subscribed successfully!",
+  subscribedDescription:
+    "Your new intelligence channels are set up. Run synchronization from the Sources tab to fetch raw updates.",
+  viewChannels: "View feed channels",
+  title: "Recommended subscriptions",
+  description: "Choose source packages, preview likely briefs, then confirm.",
+  refreshing: "Refreshing...",
+  package: "Subscription package",
+  rationale: "AI Rationale",
+  sourcesInBundle: "Sources in bundle",
+  previewTitle: "First sync preview",
+  previewDescription: "Runs a light check without saving sources.",
+  previewing: "Previewing...",
+  previewSelected: "Preview selected",
+  sourcesChecked: "Sources checked",
+  itemsFound: "Items found",
+  briefReady: "Brief-ready",
+  filtered: "Filtered",
+  recommendedCadence: "Recommended cadence: every {minutes} minutes",
+  notificationLevel: "notification level: {level}",
+  confirming: "Confirming subscriptions...",
+  confirm: "Confirm {count} subscription{s}",
 };
 
 type SelectedSource = {
@@ -26,7 +90,9 @@ export function RecommendationWizard({
   taskId,
   taskProfile,
   recommendedBundles,
+  labels: labelsProp,
 }: RecommendationWizardProps) {
+  const labels = labelsProp ?? defaultLabels;
   // Store selected sources as mapping of url -> source object
   const [selectedMap, setSelectedMap] = useState<Record<string, SelectedSource>>(() => {
     const initial: Record<string, SelectedSource> = {};
@@ -97,7 +163,7 @@ export function RecommendationWizard({
         setPreviewError(
           err instanceof Error
             ? err.message
-            : "Unable to preview selected subscriptions.",
+            : labels.previewError,
         );
       }
     });
@@ -112,7 +178,7 @@ export function RecommendationWizard({
         setRefreshError(
           error instanceof Error
             ? error.message
-            : "Unable to refresh recommendations right now.",
+            : labels.refreshError,
         );
       }
     });
@@ -127,12 +193,12 @@ export function RecommendationWizard({
           <div className="space-y-2">
             <p className="text-sm text-stone-500 font-medium">
               {taskProfile
-                ? "No stored recommendations are available for this task yet."
-                : "This task has no stored intelligence yet."}
+                ? labels.noRecommendations
+                : labels.noIntelligence}
             </p>
             {taskProfile ? (
               <p className="text-xs text-stone-400">
-                Refresh to regenerate source bundles from the saved task profile.
+                {labels.refreshHint}
               </p>
             ) : null}
             {refreshError ? (
@@ -145,7 +211,7 @@ export function RecommendationWizard({
             disabled={isRefreshing}
             className="inline-flex h-10 items-center justify-center rounded-xl border border-stone-200 px-4 text-xs font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
           >
-            {isRefreshing ? "Refreshing intelligence..." : "Refresh intelligence"}
+            {isRefreshing ? labels.refreshingIntelligence : labels.refreshIntelligence}
           </button>
         </div>
       </div>
@@ -172,16 +238,16 @@ export function RecommendationWizard({
           </svg>
         </div>
         <div className="space-y-1">
-          <h3 className="text-xl font-semibold text-stone-950">Subscribed successfully!</h3>
+          <h3 className="text-xl font-semibold text-stone-950">{labels.subscribedTitle}</h3>
           <p className="text-sm text-stone-500 max-w-sm mx-auto leading-normal">
-            Your new intelligence channels are set up. Run synchronization from the Sources tab to fetch raw updates.
+            {labels.subscribedDescription}
           </p>
         </div>
         <button
           onClick={() => setSuccess(false)}
           className="inline-flex h-10 items-center justify-center rounded-xl bg-stone-950 px-4 text-xs font-semibold text-stone-50 transition hover:bg-stone-800"
         >
-          View feed channels
+          {labels.viewChannels}
         </button>
       </div>
     );
@@ -193,10 +259,10 @@ export function RecommendationWizard({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-semibold text-stone-950">
-              Recommended subscriptions
+              {labels.title}
             </h2>
             <p className="text-xs text-stone-500 mt-1">
-              Choose source packages, preview likely briefs, then confirm.
+              {labels.description}
             </p>
           </div>
           <button
@@ -205,7 +271,7 @@ export function RecommendationWizard({
             disabled={isRefreshing}
             className="inline-flex h-10 items-center justify-center rounded-xl border border-stone-200 px-3 text-[11px] font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
           >
-            {isRefreshing ? "Refreshing..." : "Refresh intelligence"}
+            {isRefreshing ? labels.refreshing : labels.refreshIntelligence}
           </button>
         </div>
         {refreshError ? (
@@ -221,7 +287,7 @@ export function RecommendationWizard({
           >
             <div>
               <span className="inline-flex rounded-full bg-[#0057ff]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#0057ff] uppercase">
-                Subscription package
+                {labels.package}
               </span>
               <h3 className="text-lg font-bold text-stone-950 mt-1.5">{bundle.title}</h3>
               <p className="text-xs text-stone-600 mt-0.5 leading-relaxed">
@@ -234,7 +300,7 @@ export function RecommendationWizard({
               <span className="text-lg font-serif text-stone-400 select-none">“</span>
               <div>
                 <span className="font-semibold text-stone-700 not-italic block mb-0.5">
-                  AI Rationale
+                  {labels.rationale}
                 </span>
                 {bundle.rationale}
               </div>
@@ -243,7 +309,7 @@ export function RecommendationWizard({
             {/* Recommendations checklist */}
             <div className="space-y-2 pt-1">
               <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 block">
-                SOURCES IN BUNDLE
+                {labels.sourcesInBundle}
               </span>
               <div className="grid gap-2">
                 {bundle.sources.map((src) => {
@@ -289,10 +355,10 @@ export function RecommendationWizard({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-stone-950">
-              First sync preview
+              {labels.previewTitle}
             </h3>
             <p className="mt-1 text-xs text-stone-500">
-              Runs a light check without saving sources.
+              {labels.previewDescription}
             </p>
           </div>
           <button
@@ -301,7 +367,7 @@ export function RecommendationWizard({
             disabled={selectedCount === 0 || isPreviewing}
             className="inline-flex h-10 items-center justify-center rounded-xl border border-stone-200 bg-white px-4 text-xs font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
           >
-            {isPreviewing ? "Previewing..." : "Preview selected"}
+            {isPreviewing ? labels.previewing : labels.previewSelected}
           </button>
         </div>
 
@@ -317,7 +383,7 @@ export function RecommendationWizard({
                   {preview.sourceCount}
                 </div>
                 <div className="text-[10px] font-semibold uppercase text-stone-400">
-                  Sources checked
+                  {labels.sourcesChecked}
                 </div>
               </div>
               <div className="rounded-xl bg-white p-3">
@@ -325,7 +391,7 @@ export function RecommendationWizard({
                   {preview.candidateItemCount}
                 </div>
                 <div className="text-[10px] font-semibold uppercase text-stone-400">
-                  Items found
+                  {labels.itemsFound}
                 </div>
               </div>
               <div className="rounded-xl bg-white p-3">
@@ -333,7 +399,7 @@ export function RecommendationWizard({
                   {preview.acceptedItemCount}
                 </div>
                 <div className="text-[10px] font-semibold uppercase text-stone-400">
-                  Brief-ready
+                  {labels.briefReady}
                 </div>
               </div>
               <div className="rounded-xl bg-white p-3">
@@ -341,7 +407,7 @@ export function RecommendationWizard({
                   {preview.rejectedItemCount}
                 </div>
                 <div className="text-[10px] font-semibold uppercase text-stone-400">
-                  Filtered
+                  {labels.filtered}
                 </div>
               </div>
             </div>
@@ -356,7 +422,7 @@ export function RecommendationWizard({
                     {item.title}
                   </div>
                   <div className="mt-1 text-[11px] text-emerald-700">
-                    Brief-ready · {Math.round((item.relevanceScore ?? 0) * 100)}% ·{" "}
+                    {labels.briefReady} · {Math.round((item.relevanceScore ?? 0) * 100)}% ·{" "}
                     {item.relevanceReason}
                   </div>
                 </div>
@@ -370,7 +436,7 @@ export function RecommendationWizard({
                     {item.title}
                   </div>
                   <div className="mt-1 text-[11px] text-stone-500">
-                    Filtered · {item.qualityError ?? item.relevanceReason}
+                    {labels.filtered} · {item.qualityError ?? item.relevanceReason}
                   </div>
                 </div>
               ))}
@@ -385,8 +451,13 @@ export function RecommendationWizard({
             </div>
 
             <div className="text-[11px] text-stone-500">
-              Recommended cadence: every {preview.recommendedSyncIntervalMinutes} minutes ·
-              notification level: {preview.recommendedNotificationLevel}
+              {labels.recommendedCadence.replace(
+                "{minutes}",
+                String(preview.recommendedSyncIntervalMinutes),
+              )} · {labels.notificationLevel.replace(
+                "{level}",
+                preview.recommendedNotificationLevel,
+              )}
             </div>
           </div>
         ) : null}
@@ -405,11 +476,13 @@ export function RecommendationWizard({
         {isPending ? (
           <>
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-stone-400 border-t-stone-850" />
-            Confirming subscriptions...
+            {labels.confirming}
           </>
         ) : (
           <>
-            Confirm {selectedCount} Subscription{selectedCount !== 1 ? "s" : ""}
+            {labels.confirm
+              .replace("{count}", String(selectedCount))
+              .replace("{s}", selectedCount !== 1 ? "s" : "")}
           </>
         )}
       </button>

@@ -26,6 +26,8 @@ import {
   getOrCreateChatThread,
   listChatMessages,
 } from "@/lib/store";
+import { getDictionary } from "@/lib/i18n";
+import { getRequestLocale } from "@/lib/i18n-server";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +38,11 @@ export default async function BriefDetailPage({
   params: Promise<{ briefId: string }>;
   searchParams?: Promise<{ delivered?: string; error?: string }>;
 }) {
-  const actor = await requireSessionActor();
+  const [actor, locale] = await Promise.all([
+    requireSessionActor(),
+    getRequestLocale(),
+  ]);
+  const dict = getDictionary(locale);
   const [{ briefId }, query] = await Promise.all([params, searchParams]);
   const brief = await getBriefById(defaultStore, briefId, { actorId: actor.id });
 
@@ -258,6 +264,15 @@ export default async function BriefDetailPage({
                 briefId={briefId}
                 briefTitle={brief.title}
                 initialMessages={chatMessages}
+                labels={dict.chat}
+                triggerLabel={locale === "zh" ? "和 AI 讨论" : "Discuss with AI"}
+                drawerLabel={locale === "zh" ? "简报上下文对话" : "CONTEXTUAL BRIEFS CHAT"}
+                title={locale === "zh" ? "基于简报的对话" : "Grounded Conversation"}
+                subtitle={
+                  locale === "zh"
+                    ? "围绕这份简报引用的材料提问。"
+                    : "Ask questions grounded strictly in this brief's cited papers/articles."
+                }
               />
             </div>
             {!webhookSettings.endpoint &&

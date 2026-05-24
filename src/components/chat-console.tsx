@@ -10,6 +10,36 @@ type ChatConsoleProps = {
   initialMessages: ChatMessageRecord[];
   title?: string;
   subtitle?: string;
+  labels?: Partial<ChatConsoleLabels>;
+};
+
+export type ChatConsoleLabels = {
+  clear: string;
+  clearConfirm: string;
+  clearTitle: string;
+  emptyTitle: string;
+  emptyDescription: string;
+  liveContext: string;
+  storedContext: string;
+  loading: string;
+  placeholder: string;
+  send: string;
+  fallbackHint: string;
+};
+
+const defaultLabels: ChatConsoleLabels = {
+  clear: "Clear",
+  clearConfirm: "Are you sure you want to clear chat history for this console?",
+  clearTitle: "Clear chat history",
+  emptyTitle: "Start a grounded conversation",
+  emptyDescription:
+    "Ask questions about latest topics, updates, and materials in this scope.",
+  liveContext: "Live context",
+  storedContext: "Stored context",
+  loading: "AI is synthesizing grounding context",
+  placeholder: "Ask a clarifying or follow-up question...",
+  send: "Send",
+  fallbackHint: "Empty task scopes can fall back to bounded live fetch.",
 };
 
 export function ChatConsole({
@@ -18,7 +48,9 @@ export function ChatConsole({
   initialMessages,
   title = "AI Contextual Assistant",
   subtitle = "Grounded on active monitoring goals and briefs.",
+  labels: labelsProp,
 }: ChatConsoleProps) {
+  const labels = { ...defaultLabels, ...labelsProp };
   const [messages, setMessages] = useState<ChatMessageRecord[]>(initialMessages);
   const [inputValue, setInputValue] = useState("");
   const [, startTransition] = useTransition();
@@ -70,7 +102,7 @@ export function ChatConsole({
   };
 
   const handleClear = () => {
-    if (confirm("Are you sure you want to clear chat history for this console?")) {
+    if (confirm(labels.clearConfirm)) {
       startTransition(async () => {
         try {
           await clearChatThread(scopeType, scopeId);
@@ -83,22 +115,22 @@ export function ChatConsole({
   };
 
   return (
-    <div className="flex h-[550px] flex-col rounded-[24px] border border-stone-900/10 bg-white shadow-[0_16px_50px_rgba(33,24,9,0.06)] overflow-hidden">
+    <div className="app-card flex h-[550px] flex-col overflow-hidden rounded-[24px]">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-stone-100 bg-stone-50/50 px-5 py-4">
         <div>
           <h3 className="font-semibold text-stone-950 text-base">{title}</h3>
           <p className="text-xs text-stone-500 mt-0.5">
-            {subtitle} Empty task scopes can fall back to bounded live fetch.
+            {subtitle} {labels.fallbackHint}
           </p>
         </div>
         {messages.length > 0 && (
           <button
             onClick={handleClear}
-            className="rounded-lg border border-stone-200 bg-white px-2.5 py-1.5 text-xs font-medium text-stone-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
-            title="Clear Chat History"
+            className="app-button-secondary rounded-lg px-2.5 py-1.5 text-xs font-medium transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-600"
+            title={labels.clearTitle}
           >
-            Clear
+            {labels.clear}
           </button>
         )}
       </div>
@@ -124,11 +156,9 @@ export function ChatConsole({
               </svg>
             </div>
             <div>
-              <p className="text-sm font-medium text-stone-800">
-                Start a grounded conversation
-              </p>
+              <p className="text-sm font-medium text-stone-800">{labels.emptyTitle}</p>
               <p className="text-xs text-stone-500 max-w-xs mt-1 leading-normal">
-                Ask questions about latest topics, updates, and materials in this scope.
+                {labels.emptyDescription}
               </p>
             </div>
           </div>
@@ -157,8 +187,8 @@ export function ChatConsole({
                           {message.provenance && (
                             <span className="mb-2 inline-flex rounded-full bg-stone-100 px-2 py-0.5 font-semibold text-stone-500">
                               {message.provenance === "mixed"
-                                ? "Live context"
-                                : "Stored context"}
+                                ? labels.liveContext
+                                : labels.storedContext}
                             </span>
                           )}
                           {message.citations && message.citations.length > 0 && (
@@ -190,7 +220,7 @@ export function ChatConsole({
                 <div className="max-w-[80%] rounded-[20px] rounded-bl-sm bg-white border border-stone-200/80 px-4 py-3 shadow-sm text-sm">
                   <div className="flex items-center space-x-2">
                     <span className="text-xs text-stone-400 font-medium">
-                      AI is synthesizing grounding context
+                      {labels.loading}
                     </span>
                     <div className="flex space-x-1">
                       <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-stone-400" />
@@ -216,8 +246,8 @@ export function ChatConsole({
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           disabled={isLoading}
-          placeholder="Ask a clarifying or follow-up question..."
-          className="flex-1 h-11 bg-white border border-stone-200 rounded-xl px-4 text-sm outline-none placeholder-stone-400 focus:border-stone-400 transition"
+          placeholder={labels.placeholder}
+          className="app-input flex-1 h-11 rounded-xl px-4 text-sm outline-none placeholder-stone-400 transition focus:border-stone-400"
         />
         <button
           type="submit"
@@ -228,7 +258,7 @@ export function ChatConsole({
               : "bg-stone-200 text-stone-400 cursor-not-allowed"
           }`}
         >
-          Send
+          {labels.send}
         </button>
       </form>
     </div>

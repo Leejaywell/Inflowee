@@ -5,8 +5,11 @@ import {
   saveTelegramDelivery,
   saveWebhookEndpoint,
 } from "@/app/actions";
+import { getAiRuntimeStatus } from "@/lib/ai-config";
 import { requireSessionActor } from "@/lib/auth";
 import { buildDeliveryPayload } from "@/lib/delivery";
+import { getDictionary } from "@/lib/i18n";
+import { getRequestLocale } from "@/lib/i18n-server";
 import {
   defaultStore,
   getDeliveryHealthSummary,
@@ -28,7 +31,12 @@ type SettingsPageProps = {
 export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
-  const actor = await requireSessionActor();
+  const [actor, locale] = await Promise.all([
+    requireSessionActor(),
+    getRequestLocale(),
+  ]);
+  const t = getDictionary(locale).settings;
+  const aiStatus = getAiRuntimeStatus();
   const [webhookSettings, slackSettings, telegramSettings, telegramSourceSettings, feishuSettings, recentLogs, deliveryHealth, params] = await Promise.all([
     getWebhookSettings(defaultStore),
     getSlackSettings(defaultStore),
@@ -55,18 +63,15 @@ export default async function SettingsPage({
       <section className="grid gap-6 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur lg:grid-cols-[1.05fr_0.95fr]">
         <div className="space-y-4">
           <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-white">
-            Delivery settings
+            {t.badge}
           </span>
           <p className="text-sm text-stone-500">
-            Current session owner: {actor.email}
+            {t.owner} {actor.email}
           </p>
           <div className="space-y-3">
-            <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">
-              Configure delivery channels for brief routing.
-            </h1>
+            <h1 className="max-w-3xl text-4xl font-semibold tracking-tight text-balance sm:text-5xl">{t.title}</h1>
             <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-              Automatic background delivery and manual resend both use the same
-              channel pipeline.
+              {t.description}
             </p>
           </div>
         </div>
@@ -76,14 +81,14 @@ export default async function SettingsPage({
           className="grid gap-4 rounded-[24px] bg-stone-950 p-6 text-stone-50"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Webhook endpoint</h2>
+            <h2 className="text-xl font-semibold">{t.webhookTitle}</h2>
             <p className="text-sm leading-6 text-stone-300">
-              Only `https://` endpoints are accepted.
+              {t.webhookDescription}
             </p>
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-200">Endpoint URL</span>
+            <span className="font-medium text-stone-200">{t.endpointUrl}</span>
             <input
               name="endpoint"
               defaultValue={webhookSettings.endpoint ?? ""}
@@ -93,13 +98,13 @@ export default async function SettingsPage({
           </label>
 
           <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-white px-4 text-sm font-medium text-stone-950 transition hover:bg-stone-100">
-            Save webhook
+            {t.saveWebhook}
           </button>
 
           <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-stone-300">
             {webhookSettings.endpoint
-              ? `Current endpoint: ${webhookSettings.endpoint}`
-              : "No webhook configured yet."}
+              ? `${t.currentEndpoint} ${webhookSettings.endpoint}`
+              : t.noWebhook}
           </div>
         </form>
       </section>
@@ -110,14 +115,14 @@ export default async function SettingsPage({
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Slack webhook</h2>
+            <h2 className="text-xl font-semibold">{t.slackTitle}</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Use a Slack incoming webhook to receive the same brief stream in a channel.
+              {t.slackDescription}
             </p>
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Slack webhook URL</span>
+            <span className="font-medium text-stone-700">{t.slackUrl}</span>
             <input
               name="endpoint"
               defaultValue={slackSettings.endpoint ?? ""}
@@ -127,13 +132,13 @@ export default async function SettingsPage({
           </label>
 
           <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
-            Save Slack webhook
+            {t.saveSlack}
           </button>
 
           <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm text-stone-600">
             {slackSettings.endpoint
-              ? `Current Slack webhook: ${slackSettings.endpoint}`
-              : "No Slack webhook configured yet."}
+              ? `${t.currentSlack} ${slackSettings.endpoint}`
+              : t.noSlack}
           </div>
         </form>
 
@@ -142,14 +147,14 @@ export default async function SettingsPage({
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Telegram delivery</h2>
+            <h2 className="text-xl font-semibold">{t.telegramDelivery}</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Use a Telegram bot token and chat ID to send short brief summaries.
+              {t.telegramDeliveryDescription}
             </p>
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Bot token</span>
+            <span className="font-medium text-stone-700">{t.botToken}</span>
             <input
               name="botToken"
               defaultValue={telegramSettings.botToken ?? ""}
@@ -159,7 +164,7 @@ export default async function SettingsPage({
           </label>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Chat ID</span>
+            <span className="font-medium text-stone-700">{t.chatId}</span>
             <input
               name="chatId"
               defaultValue={telegramSettings.chatId ?? ""}
@@ -169,7 +174,7 @@ export default async function SettingsPage({
           </label>
 
           <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
-            Save Telegram delivery
+            {t.saveTelegram}
           </button>
         </form>
       </section>
@@ -180,16 +185,14 @@ export default async function SettingsPage({
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Telegram source bot</h2>
+            <h2 className="text-xl font-semibold">{t.telegramSourceBot}</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Use a separate bot token for Telegram source ingestion. The bot
-              must already be a member of the target public group or channel,
-              and new messages must arrive after it is added.
+              {t.telegramSourceDescription}
             </p>
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Bot token</span>
+            <span className="font-medium text-stone-700">{t.botToken}</span>
             <input
               name="botToken"
               defaultValue={telegramSourceSettings.botToken ?? ""}
@@ -199,7 +202,7 @@ export default async function SettingsPage({
           </label>
 
           <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
-            Save Telegram source bot
+            {t.saveTelegramSourceBot}
           </button>
         </form>
       </section>
@@ -210,14 +213,14 @@ export default async function SettingsPage({
           className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
         >
           <div className="space-y-1">
-            <h2 className="text-xl font-semibold">Feishu webhook</h2>
+            <h2 className="text-xl font-semibold">{t.feishuTitle}</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Use a Feishu or Lark custom bot webhook to mirror the brief stream.
+              {t.feishuDescription}
             </p>
           </div>
 
           <label className="grid gap-2 text-sm">
-            <span className="font-medium text-stone-700">Feishu webhook URL</span>
+            <span className="font-medium text-stone-700">{t.feishuUrl}</span>
             <input
               name="endpoint"
               defaultValue={feishuSettings.endpoint ?? ""}
@@ -227,27 +230,27 @@ export default async function SettingsPage({
           </label>
 
           <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
-            Save Feishu webhook
+            {t.saveFeishu}
           </button>
         </form>
 
         <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-          <h2 className="text-xl font-semibold">Delivery health</h2>
+          <h2 className="text-xl font-semibold">{t.deliveryHealth}</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <div className="rounded-2xl bg-stone-50 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-stone-400">Recent</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-stone-400">{t.recent}</div>
               <div className="mt-2 text-2xl font-semibold">{deliveryHealth.total}</div>
             </div>
             <div className="rounded-2xl bg-emerald-50 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-emerald-600">Success</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-emerald-600">{t.success}</div>
               <div className="mt-2 text-2xl font-semibold text-emerald-700">{deliveryHealth.success}</div>
             </div>
             <div className="rounded-2xl bg-rose-50 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-rose-600">Failed</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-rose-600">{t.failed}</div>
               <div className="mt-2 text-2xl font-semibold text-rose-700">{deliveryHealth.error}</div>
             </div>
             <div className="rounded-2xl bg-stone-100 px-4 py-4">
-              <div className="text-xs uppercase tracking-[0.16em] text-stone-500">Channels</div>
+              <div className="text-xs uppercase tracking-[0.16em] text-stone-500">{t.channels}</div>
               <div className="mt-2 text-sm text-stone-700">
                 {deliveryHealth.webhookConfigured ? "Webhook" : null}
                 {deliveryHealth.webhookConfigured && deliveryHealth.slackConfigured ? " + " : null}
@@ -268,12 +271,32 @@ export default async function SettingsPage({
                 !deliveryHealth.slackConfigured &&
                 !deliveryHealth.telegramConfigured &&
                 !deliveryHealth.feishuConfigured
-                  ? "None configured"
+                  ? t.noneConfigured
                   : null}
               </div>
             </div>
           </div>
         </section>
+      </section>
+
+      <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-xl font-semibold">{t.aiRuntime}</h2>
+            <p className="mt-2 text-sm leading-6 text-stone-500">
+              {aiStatus.configured ? t.aiConfigured : t.aiNotConfigured}
+            </p>
+          </div>
+          <span
+            className={`rounded-full px-3 py-1 text-xs font-semibold ${
+              aiStatus.configured
+                ? "bg-emerald-100 text-emerald-700"
+                : "bg-amber-100 text-amber-800"
+            }`}
+          >
+            {aiStatus.mode === "live" ? t.aiLive : t.aiFallback}
+          </span>
+        </div>
       </section>
 
       {(error || updated) && (
@@ -287,36 +310,36 @@ export default async function SettingsPage({
           {error
             ? decodeURIComponent(error)
             : updated === "webhook"
-              ? "Webhook settings saved."
+              ? t.webhookSaved
               : updated === "slack"
-                ? "Slack settings saved."
+                ? t.slackSaved
                 : updated === "telegram"
-                  ? "Telegram settings saved."
+                  ? t.telegramSaved
                   : updated === "telegram-source-bot"
-                    ? "Telegram source bot saved."
+                    ? t.telegramSourceSaved
                   : updated === "feishu"
-                    ? "Feishu settings saved."
-                : "Update applied."}
+                    ? t.feishuSaved
+                : t.updateApplied}
         </section>
       )}
 
       <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
         <div className="flex items-end justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold">Recent delivery logs</h2>
+            <h2 className="text-xl font-semibold">{t.logsTitle}</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Latest delivery attempts across all briefs and channels.
+              {t.logsDescription}
             </p>
           </div>
           <span className="text-xs uppercase tracking-[0.16em] text-stone-400">
-            {recentLogs.length} entries
+            {recentLogs.length} {t.entries}
           </span>
         </div>
 
         <div className="mt-4 grid gap-3">
           {recentLogs.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
-              No deliveries yet. Send a brief from the inbox detail page.
+              {t.noDeliveries}
             </div>
           ) : (
             recentLogs.map((log) => (
@@ -327,7 +350,7 @@ export default async function SettingsPage({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <p className="text-xs uppercase tracking-[0.16em] text-stone-400">
-                      Brief {log.briefId}
+                      {t.brief} {log.briefId}
                     </p>
                     <p className="text-sm text-stone-600">{log.endpoint}</p>
                     <p className="text-xs uppercase tracking-[0.14em] text-stone-400">
@@ -348,7 +371,7 @@ export default async function SettingsPage({
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-4 text-xs text-stone-500">
-                  <span>Started {new Date(log.startedAt).toLocaleString()}</span>
+                  <span>{t.started} {new Date(log.startedAt).toLocaleString()}</span>
                   {log.responseStatus ? <span>HTTP {log.responseStatus}</span> : null}
                   {log.error ? <span>{log.error}</span> : null}
                 </div>
@@ -359,10 +382,9 @@ export default async function SettingsPage({
       </section>
 
       <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-        <h2 className="text-xl font-semibold">Channel adapters</h2>
+        <h2 className="text-xl font-semibold">{t.adaptersTitle}</h2>
         <p className="mt-2 text-sm leading-6 text-stone-500">
-          Slack now uses the same delivery pipeline as webhook sends. This preview
-          shows the payload shape sent to the Slack incoming webhook.
+          {t.adaptersDescription}
         </p>
         <pre className="mt-4 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-xs leading-6 text-stone-200">
           {JSON.stringify(slackPreview, null, 2)}
