@@ -101,4 +101,56 @@ describe("discovery source subscriptions", () => {
       fixture.cleanup();
     }
   });
+
+  it("keeps separate discovery sources when their provider config differs", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      const taskId = await createTaskRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "AI tools",
+        taskType: "TOPIC",
+        userPrompt: "Monitor AI coding tools.",
+      });
+      await createSourceRecord(fixture.store, {
+        taskId,
+        title: "AI search",
+        url: "radar://search-discovery",
+        sourceType: "SEARCH_DISCOVERY",
+        configJson: {
+          providers: ["bing"],
+          queries: ["AI tools"],
+          freshnessDays: 7,
+          providerQuota: 10,
+          totalQuota: 30,
+        },
+      });
+
+      const result = await createDiscoverySourcesForTask(fixture.store, taskId, [
+        {
+          id: "different-query",
+          title: "Agent search",
+          description: "Different radar query.",
+          url: "radar://search-discovery",
+          sourceType: "SEARCH_DISCOVERY",
+          categoryIds: ["all", "technology"],
+          tagIds: ["search"],
+          origin: "discovery",
+          trendLabels: [],
+          configJson: {
+            providers: ["bing"],
+            queries: ["coding agents"],
+            freshnessDays: 7,
+            providerQuota: 10,
+            totalQuota: 30,
+          },
+        },
+      ]);
+
+      expect(result.createdSourceIds).toHaveLength(1);
+      expect(await listSourcesByTask(fixture.store, taskId)).toHaveLength(2);
+    } finally {
+      fixture.cleanup();
+    }
+  });
 });

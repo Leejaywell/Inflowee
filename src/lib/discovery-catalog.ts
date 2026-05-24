@@ -1,4 +1,5 @@
 import { sourcePresets, type SourcePresetCategory } from "@/lib/source-presets";
+import type { SubscriptionDiscoveryPlan } from "@/lib/ai";
 import type { SourceType, TaskProfile } from "@/lib/store";
 
 export type DiscoveryCategory = {
@@ -40,6 +41,19 @@ export type DiscoverySourceCandidate = {
   relevanceScore?: number;
   trendLabels: string[];
   configJson?: Record<string, unknown> | null;
+};
+
+export type DiscoverySourceStats = {
+  subscriberCountByUrl: Map<string, number>;
+  heatScoreByUrl: Map<string, number>;
+};
+
+export type DiscoveryCatalogContext = {
+  profile?: TaskProfile | null;
+  aiPlan?: SubscriptionDiscoveryPlan | null;
+  stats?: DiscoverySourceStats | null;
+  categoryId?: string;
+  selectedTagIds?: string[];
 };
 
 export const discoveryCategories: DiscoveryCategory[] = [
@@ -209,6 +223,19 @@ function normalize(value: string) {
   return value.toLowerCase();
 }
 
+function normalizeCandidateId(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 64);
+}
+
+function normalizeUrlKey(value: string) {
+  return value.trim().toLowerCase();
+}
+
 function sourceTypeTags(sourceType: SourceType) {
   if (sourceType === "RSS") {
     return ["rss"];
@@ -276,14 +303,33 @@ function keywordScore(text: string, profile?: TaskProfile | null) {
   }, 0);
 }
 
-export function getDiscoveryCategories() {
-  return discoveryCategories;
+export function getDiscoveryCategories(aiPlan?: SubscriptionDiscoveryPlan | null) {
+  const existingIds = new Set(discoveryCategories.map((category) => category.id));
+  const plannedCategories =
+    aiPlan?.categories
+      .filter((category) => category.id && !existingIds.has(category.id))
+      .map((category, index) => ({
+        id: category.id,
+        title: category.title,
+        description: category.description || "AI 动态规划的兴趣分类",
+        accent: ["bg-blue-600", "bg-emerald-600", "bg-rose-500", "bg-violet-600"][
+          index % 4
+        ],
+        icon: "AI",
+      })) ?? [];
+
+  return [...discoveryCategories, ...plannedCategories];
 }
 
 export function getDiscoveryTags(
   categoryId: string,
-  profile?: TaskProfile | null,
+  profileOrContext?: TaskProfile | DiscoveryCatalogContext | null,
 ): DiscoveryTag[] {
+  const context =
+    profileOrContext && "profile" in profileOrContext
+      ? profileOrContext
+      : { profile: profileOrContext as TaskProfile | null | undefined };
+  const profile = context.profile;
   const categoryTags = baseTags.filter(
     (tag) => tag.categoryId === "all" || tag.categoryId === categoryId,
   );
@@ -296,7 +342,18 @@ export function getDiscoveryTags(
       weight: 100 - index,
     })) ?? [];
 
-  return [...taskTags, ...categoryTags].sort(
+  const aiTags =
+    context.aiPlan?.tags
+      .filter((tag) => tag.categoryId === "all" || tag.categoryId === categoryId)
+      .map((tag) => ({
+        id: tag.id,
+        label: tag.label,
+        categoryId: tag.categoryId,
+        kind: "task_relevance" as const,
+        weight: tag.weight,
+      })) ?? [];
+
+  return [...aiTags, ...taskTags, ...categoryTags].sort(
     (a, b) => b.weight - a.weight || a.label.localeCompare(b.label),
   );
 }
@@ -316,9 +373,14 @@ export function getDiscoveryTagBatch(
 }
 
 export function mapSourcePresetsToDiscoveryCandidates(
-  profile?: TaskProfile | null,
+  contextOrProfile?: DiscoveryCatalogContext | TaskProfile | null,
 ): DiscoverySourceCandidate[] {
-  return sourcePresets.map((preset, index) => {
+  const context =
+    contextOrProfile && "profile" in contextOrProfile
+      ? contextOrProfile
+      : { profile: contextOrProfile as TaskProfile | null | undefined };
+  const profile = context.profile;
+  return sourcePresets.map((preset) => {
     const categoryIds = ["all", ...(presetCategoryMap[preset.category] ?? [])];
     const tagIds = inferPresetTags({
       title: preset.title,
@@ -337,11 +399,17 @@ export function mapSourcePresetsToDiscoveryCandidates(
         : preset.sourceType.includes("DISCOVERY")
           ? 20
           : 0;
-    const subscriberCount = 900 + ((index * 137) % 3200);
-    const heatScore = Math.min(100, 45 + sourceTypeHeat + relevanceBoost * 12);
+    const urlKey = normalizeUrlKey(preset.url);
+    const subscriberCount = context.stats?.subscriberCountByUrl.get(urlKey) ?? 0;
+    const statHeat = context.stats?.heatScoreByUrl.get(urlKey) ?? 0;
+    const heatScore = Math.min(
+      100,
+      45 + sourceTypeHeat + relevanceBoost * 12 + Math.min(20, statHeat),
+    );
     const relevanceScore = Math.min(1, 0.35 + relevanceBoost * 0.18);
     const trendLabels = [
       ...(heatScore >= 70 ? ["高热度"] : []),
+      ...(subscriberCount > 0 ? ["已有用户订阅"] : []),
       ...(relevanceScore >= 0.7 ? ["与目标相关"] : []),
       ...(preset.sourceType === "RSS" || preset.sourceType === "UPDATE"
         ? ["官方源"]
@@ -358,7 +426,7 @@ export function mapSourcePresetsToDiscoveryCandidates(
       categoryIds,
       tagIds,
       origin: "preset",
-      subscriberCount,
+      subscriberCount: subscriberCount || undefined,
       heatScore,
       relevanceScore,
       trendLabels,
@@ -413,13 +481,131 @@ export function buildTaskDiscoveryCandidates(
   }));
 }
 
-export function getDiscoverySourceCandidates(
-  profile?: TaskProfile | null,
-) {
+function queryFromContext(context: DiscoveryCatalogContext) {
+  const tagIds = new Set(context.selectedTagIds ?? []);
+  const selectedPlanLabels =
+    context.aiPlan?.tags
+      .filter((tag) => tagIds.has(tag.id))
+      .map((tag) => tag.label) ?? [];
+  const selectedBaseLabels = baseTags
+    .filter((tag) => tagIds.has(tag.id))
+    .map((tag) => tag.label);
+  const category = discoveryCategories.find(
+    (item) => item.id === context.categoryId,
+  )?.title;
+  const profileQueries = context.profile?.suggestedQueries ?? [];
+  const keywords = context.profile?.keywords ?? [];
+
   return [
-    ...buildTaskAiCandidates(profile),
-    ...buildTaskDiscoveryCandidates(profile),
-    ...mapSourcePresetsToDiscoveryCandidates(profile),
+    ...selectedPlanLabels,
+    ...selectedBaseLabels,
+    ...profileQueries,
+    ...(category && category !== "全部" ? [category] : []),
+    ...keywords,
+  ]
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .slice(0, 6);
+}
+
+export function buildContextualDiscoveryCandidates(
+  context: DiscoveryCatalogContext,
+): DiscoverySourceCandidate[] {
+  const queries = queryFromContext(context);
+
+  if (queries.length === 0) {
+    return [];
+  }
+
+  const queryKey = normalizeCandidateId(queries.join("-"));
+  const displayQuery = queries.slice(0, 2).join(" / ");
+  const categoryIds = ["all", context.categoryId].filter(
+    (value): value is string => Boolean(value),
+  );
+  const tagIds = [
+    "ai-recommended",
+    "high-relevance",
+    "search",
+    "trend-hot",
+    ...(context.selectedTagIds ?? []),
+  ];
+
+  return [
+    {
+      id: `discovery:radar:${queryKey}`,
+      title: `${displayQuery} 实时搜索发现`,
+      description: "通过 Bing News、Hacker News、Reddit、Product Hunt 等真实外部来源持续发现内容。",
+      url: "radar://search-discovery",
+      sourceType: "SEARCH_DISCOVERY",
+      categoryIds,
+      tagIds,
+      origin: "discovery",
+      heatScore: 88,
+      relevanceScore: 0.92,
+      trendLabels: ["AI 推荐", "实时发现", "与目标相关", "搜索发现"],
+      configJson: {
+        providers: ["bing", "hacker-news", "reddit", "product-hunt"],
+        queries,
+        freshnessDays: 7,
+        providerQuota: 10,
+        totalQuota: 30,
+      },
+    },
+    {
+      id: `discovery:community:${queryKey}`,
+      title: `${displayQuery} 社区讨论雷达`,
+      description: "从 HN、Reddit、Product Hunt 等社区源抓取讨论热度和早期信号。",
+      url: "radar://community-discovery",
+      sourceType: "COMMUNITY_DISCOVERY",
+      categoryIds: [...new Set([...categoryIds, "forums", "programming"])],
+      tagIds: [...new Set([...tagIds, "community"])],
+      origin: "discovery",
+      heatScore: 82,
+      relevanceScore: 0.88,
+      trendLabels: ["社区讨论", "与目标相关"],
+      configJson: {
+        providers: ["hacker-news", "reddit", "product-hunt"],
+        queries,
+        freshnessDays: 7,
+        providerQuota: 10,
+        totalQuota: 30,
+      },
+    },
+    {
+      id: `discovery:hotlist:${queryKey}`,
+      title: `${displayQuery} 热榜发现`,
+      description: "从百度、微博、知乎、B站等公开热榜抓取趋势内容，再用任务相关性过滤。",
+      url: "radar://hotlist-discovery",
+      sourceType: "HOTLIST_DISCOVERY",
+      categoryIds: [...new Set([...categoryIds, "media", "social"])],
+      tagIds: [...new Set([...tagIds, "hotlist"])],
+      origin: "discovery",
+      heatScore: 84,
+      relevanceScore: 0.78,
+      trendLabels: ["高热度", "热榜"],
+      configJson: {
+        providers: ["baidu", "weibo", "zhihu", "bilibili"],
+        queries,
+        providerQuota: 20,
+        totalQuota: 60,
+      },
+    },
+  ];
+}
+
+export function getDiscoverySourceCandidates(
+  contextOrProfile?: DiscoveryCatalogContext | TaskProfile | null,
+) {
+  const context =
+    contextOrProfile && "profile" in contextOrProfile
+      ? contextOrProfile
+      : { profile: contextOrProfile as TaskProfile | null | undefined };
+
+  return [
+    ...buildTaskAiCandidates(context.profile),
+    ...buildTaskDiscoveryCandidates(context.profile),
+    ...buildContextualDiscoveryCandidates(context),
+    ...mapSourcePresetsToDiscoveryCandidates(context),
   ].sort((a, b) => {
     const aScore = (a.heatScore ?? 0) + (a.relevanceScore ?? 0) * 100;
     const bScore = (b.heatScore ?? 0) + (b.relevanceScore ?? 0) * 100;

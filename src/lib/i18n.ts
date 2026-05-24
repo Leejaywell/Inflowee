@@ -24,6 +24,7 @@ export const dictionary = {
     shell: {
       navLabel: "主导航",
       home: "工作台",
+      discover: "发现",
       sources: "来源",
       inbox: "简报",
       settings: "设置",
@@ -296,6 +297,7 @@ export const dictionary = {
     shell: {
       navLabel: "Primary navigation",
       home: "Workspace",
+      discover: "Discover",
       sources: "Sources",
       inbox: "Briefs",
       settings: "Settings",

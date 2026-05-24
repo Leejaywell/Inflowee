@@ -23,9 +23,32 @@ export type SourceBundle = {
 };
 
 const sourceBundleCache = new Map<string, Promise<SourceBundle[]> | SourceBundle[]>();
+const subscriptionDiscoveryPlanCache = new Map<
+  string,
+  Promise<SubscriptionDiscoveryPlan> | SubscriptionDiscoveryPlan
+>();
 
 export type RecommendSourceBundlesOptions = {
   bypassCache?: boolean;
+};
+
+export type PlannedDiscoveryCategory = {
+  id: string;
+  title: string;
+  description: string;
+};
+
+export type PlannedDiscoveryTag = {
+  id: string;
+  label: string;
+  categoryId: string;
+  weight: number;
+};
+
+export type SubscriptionDiscoveryPlan = {
+  categories: PlannedDiscoveryCategory[];
+  tags: PlannedDiscoveryTag[];
+  queries: string[];
 };
 
 export type BriefCandidate = {
@@ -167,6 +190,155 @@ export async function recommendSourceBundles(
 
   sourceBundleCache.set(prompt, pending);
   return pending;
+}
+
+function normalizePlanId(value: string) {
+  return value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
+function buildFallbackSubscriptionDiscoveryPlan(input: {
+  title: string;
+  prompt: string;
+  profile?: TaskProfile | null;
+}): SubscriptionDiscoveryPlan {
+  const keywords = input.profile?.keywords.length
+    ? input.profile.keywords
+    : input.prompt
+        .split(/[\s,，。.!?;；、]+/)
+        .map((part) => part.trim())
+        .filter((part) => part.length >= 2)
+        .slice(0, 6);
+  const queries = [
+    ...(input.profile?.suggestedQueries ?? []),
+    `${input.title} latest updates`,
+    `${input.prompt} news`,
+  ]
+    .map((query) => query.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return {
+    categories: [],
+    tags: keywords.slice(0, 10).map((keyword, index) => ({
+      id: `ai-${normalizePlanId(keyword) || index}`,
+      label: keyword,
+      categoryId: "all",
+      weight: 98 - index,
+    })),
+    queries,
+  };
+}
+
+export async function planSubscriptionDiscovery(input: {
+  title: string;
+  prompt: string;
+  profile?: TaskProfile | null;
+  bypassCache?: boolean;
+}): Promise<SubscriptionDiscoveryPlan> {
+  const cacheKey = JSON.stringify({
+    title: input.title,
+    prompt: input.prompt,
+    profile: input.profile ?? null,
+  });
+
+  if (!input.bypassCache) {
+    const cached = subscriptionDiscoveryPlanCache.get(cacheKey);
+    if (cached) {
+      return cached instanceof Promise ? cached : Promise.resolve(cached);
+    }
+  }
+
+  const pending = generateSubscriptionDiscoveryPlan(input)
+    .then((plan) => {
+      subscriptionDiscoveryPlanCache.set(cacheKey, plan);
+      return plan;
+    })
+    .catch((error) => {
+      subscriptionDiscoveryPlanCache.delete(cacheKey);
+      throw error;
+    });
+
+  subscriptionDiscoveryPlanCache.set(cacheKey, pending);
+  return pending;
+}
+
+async function generateSubscriptionDiscoveryPlan(input: {
+  title: string;
+  prompt: string;
+  profile?: TaskProfile | null;
+}): Promise<SubscriptionDiscoveryPlan> {
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (apiKey) {
+    try {
+      const systemPrompt = `You plan a personal subscription discovery surface.
+Given a monitoring goal, generate broad source-discovery tags and query phrases.
+Keep categories broad and compatible with these ids when possible: technology, finance, lifestyle, programming, design, games, reading, science, hiring, social, media, forums, blogs, audio-video, images, updates.
+Return strict JSON:
+{
+  "categories": [{"id":"technology","title":"科技","description":"Short description"}],
+  "tags": [{"id":"ai-tools","label":"AI 工具","categoryId":"technology","weight":95}],
+  "queries": ["AI coding tools product updates"]
+}`;
+      const responseText = await callOpenAIChatCompletion(
+        [
+          { role: "system", content: systemPrompt },
+          {
+            role: "user",
+            content: JSON.stringify({
+              title: input.title,
+              prompt: input.prompt,
+              profile: input.profile ?? null,
+            }),
+          },
+        ],
+        true,
+      );
+      const parsed = JSON.parse(responseText) as Partial<SubscriptionDiscoveryPlan>;
+
+      return {
+        categories: Array.isArray(parsed.categories)
+          ? parsed.categories
+              .filter((category) => category?.id && category?.title)
+              .slice(0, 8)
+              .map((category) => ({
+                id: normalizePlanId(String(category.id)),
+                title: String(category.title).slice(0, 24),
+                description: String(category.description ?? "").slice(0, 80),
+              }))
+          : [],
+        tags: Array.isArray(parsed.tags)
+          ? parsed.tags
+              .filter((tag) => tag?.label)
+              .slice(0, 24)
+              .map((tag, index) => ({
+                id: `ai-${normalizePlanId(String(tag.id || tag.label)) || index}`,
+                label: String(tag.label).slice(0, 28),
+                categoryId: normalizePlanId(String(tag.categoryId || "all")) || "all",
+                weight:
+                  typeof tag.weight === "number"
+                    ? Math.max(1, Math.min(100, tag.weight))
+                    : 90 - index,
+              }))
+          : [],
+        queries: Array.isArray(parsed.queries)
+          ? parsed.queries.map(String).filter(Boolean).slice(0, 8)
+          : [],
+      };
+    } catch (e) {
+      console.warn(
+        "Real OpenAI failed in planSubscriptionDiscovery, falling back to local planning",
+        e,
+      );
+    }
+  }
+
+  return buildFallbackSubscriptionDiscoveryPlan(input);
 }
 
 async function generateSourceBundles(prompt: string): Promise<SourceBundle[]> {

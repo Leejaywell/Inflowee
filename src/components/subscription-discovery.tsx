@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   previewRecommendedSources,
   subscribeDiscoverySources,
@@ -31,22 +33,35 @@ export function SubscriptionDiscovery({
   candidates,
   isZh,
 }: SubscriptionDiscoveryProps) {
+  const router = useRouter();
   const [categoryId, setCategoryId] = useState("all");
   const [batchIndex, setBatchIndex] = useState(0);
+  const [shuffleSeed, setShuffleSeed] = useState(0);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [preview, setPreview] = useState<SubscriptionPreviewResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [createdBriefCount, setCreatedBriefCount] = useState(0);
   const [isAdding, startAddTransition] = useTransition();
   const [isPreviewing, startPreviewTransition] = useTransition();
   const visibleTags = useMemo(
     () =>
       getDiscoveryTagBatch(
-        tags.filter((tag) => tag.categoryId === "all" || tag.categoryId === categoryId),
+        [...tags]
+          .filter(
+            (tag) => tag.categoryId === "all" || tag.categoryId === categoryId,
+          )
+          .sort((a, b) => {
+            const aScore =
+              Math.sin((a.weight + shuffleSeed + a.id.length) * 999) * 1000;
+            const bScore =
+              Math.sin((b.weight + shuffleSeed + b.id.length) * 999) * 1000;
+            return bScore - aScore || b.weight - a.weight;
+          }),
         batchIndex,
       ),
-    [batchIndex, categoryId, tags],
+    [batchIndex, categoryId, shuffleSeed, tags],
   );
   const visibleCandidates = useMemo(
     () =>
@@ -69,6 +84,7 @@ export function SubscriptionDiscovery({
     setPreview(null);
     setMessage(null);
     setError(null);
+    setCreatedBriefCount(0);
   };
 
   const toggleTag = (tagId: string) => {
@@ -81,6 +97,7 @@ export function SubscriptionDiscovery({
     setPreview(null);
     setMessage(null);
     setError(null);
+    setCreatedBriefCount(0);
   };
 
   const toggleCandidate = (candidateId: string) => {
@@ -92,6 +109,7 @@ export function SubscriptionDiscovery({
     setPreview(null);
     setMessage(null);
     setError(null);
+    setCreatedBriefCount(0);
   };
 
   const previewSelected = () => {
@@ -134,14 +152,19 @@ export function SubscriptionDiscovery({
     setError(null);
     startAddTransition(async () => {
       try {
-        const result = await subscribeDiscoverySources(taskId, selectedCandidateIds);
+        const result = await subscribeDiscoverySources(taskId, selectedCandidateIds, {
+          categoryId,
+          selectedTagIds,
+        });
         setMessage(
           isZh
-            ? `已添加 ${result.createdSourceIds.length} 个来源，跳过 ${result.skippedCandidateIds.length} 个。`
-            : `Added ${result.createdSourceIds.length} sources, skipped ${result.skippedCandidateIds.length}.`,
+            ? `已添加 ${result.createdSourceIds.length} 个来源，首次同步 ${result.syncedSourceCount} 个，生成 ${result.createdBriefCount} 份简报，跳过 ${result.skippedCandidateIds.length} 个。`
+            : `Added ${result.createdSourceIds.length} sources, synced ${result.syncedSourceCount}, created ${result.createdBriefCount} briefs, skipped ${result.skippedCandidateIds.length}.`,
         );
+        setCreatedBriefCount(result.createdBriefCount);
         setSelectedCandidateIds([]);
         setPreview(null);
+        router.refresh();
       } catch (err) {
         setError(
           err instanceof Error
@@ -205,6 +228,7 @@ export function SubscriptionDiscovery({
             type="button"
             onClick={() => {
               setBatchIndex((current) => current + 1);
+              setShuffleSeed(Date.now());
               setPreview(null);
             }}
             className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50"
@@ -329,9 +353,29 @@ export function SubscriptionDiscovery({
         </div>
       ) : null}
       {message ? (
-        <p className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          {message}
-        </p>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          <p>{message}</p>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/inbox"
+              className="inline-flex h-9 items-center rounded-xl bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-800"
+            >
+              {createdBriefCount > 0
+                ? isZh
+                  ? "查看首批简报"
+                  : "View briefs"
+                : isZh
+                  ? "打开简报箱"
+                  : "Open inbox"}
+            </Link>
+            <Link
+              href="/sources"
+              className="inline-flex h-9 items-center rounded-xl border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
+            >
+              {isZh ? "查看来源" : "View sources"}
+            </Link>
+          </div>
+        </div>
       ) : null}
       {error ? (
         <p className="mt-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">

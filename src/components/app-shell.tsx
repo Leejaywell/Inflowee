@@ -17,6 +17,7 @@ import {
 function getNavigationItems(labels: Dictionary["shell"]) {
   return [
     { href: "/", label: labels.home },
+    { href: "/discover", label: labels.discover },
     { href: "/sources", label: labels.sources },
     { href: "/inbox", label: labels.inbox },
     { href: "/settings", label: labels.settings },

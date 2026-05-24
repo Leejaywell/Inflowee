@@ -35,9 +35,9 @@ import {
   buildHotlistSourceUrl,
 } from "@/lib/hotlist-discovery";
 import {
-  getDiscoverySourceCandidates,
   type DiscoverySourceCandidate,
 } from "@/lib/discovery-catalog";
+import { buildTaskDiscoveryExperience } from "@/lib/discovery-runtime";
 import { createDiscoverySourcesForTask } from "@/lib/discovery-subscriptions";
 
 type ChatScope = "global" | "task" | "brief";
@@ -249,6 +249,7 @@ export async function subscribeRecommendedSources(
 export async function subscribeDiscoverySources(
   taskId: string,
   candidateIds: string[],
+  context: { categoryId?: string; selectedTagIds?: string[] } = {},
 ) {
   const store = defaultStore;
   const actor = await requireSessionActor();
@@ -264,17 +265,20 @@ export async function subscribeDiscoverySources(
   }
 
   const allowedIds = new Set(candidateIds);
-  const candidates: DiscoverySourceCandidate[] = getDiscoverySourceCandidates(
-    task.taskProfile ?? null,
-  ).filter((candidate) => allowedIds.has(candidate.id));
+  const discoveryExperience = await buildTaskDiscoveryExperience(store, task, context);
+  const candidates: DiscoverySourceCandidate[] =
+    discoveryExperience.candidates.filter((candidate) => allowedIds.has(candidate.id));
 
   if (candidates.length === 0) {
     throw new Error("Select at least one valid discovery source.");
   }
 
-  const result = await createDiscoverySourcesForTask(store, taskId, candidates);
+  const result = await createDiscoverySourcesForTask(store, taskId, candidates, {
+    syncImmediately: true,
+  });
 
   revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/discover");
   revalidatePath("/sources");
   revalidatePath("/inbox");
 

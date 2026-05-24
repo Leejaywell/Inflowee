@@ -1,6 +1,7 @@
 /// <reference types="vitest/globals" />
 
 import {
+  buildContextualDiscoveryCandidates,
   filterDiscoverySourceCandidates,
   getDiscoveryCategories,
   getDiscoverySourceCandidates,
@@ -103,5 +104,29 @@ describe("category tag subscription discovery catalog", () => {
     );
 
     expect(origins).toEqual(new Set(["preset", "ai", "discovery"]));
+  });
+
+  it("builds real radar source candidates for selected tags", () => {
+    const candidates = buildContextualDiscoveryCandidates({
+      profile: {
+        keywords: ["AI coding"],
+        suggestedQueries: ["AI coding tools updates"],
+      },
+      categoryId: "technology",
+      selectedTagIds: ["ai"],
+    });
+
+    expect(candidates).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceType: "SEARCH_DISCOVERY",
+          url: "radar://search-discovery",
+          configJson: expect.objectContaining({
+            providers: expect.arrayContaining(["bing", "hacker-news", "reddit"]),
+            queries: expect.arrayContaining(["AI"]),
+          }),
+        }),
+      ]),
+    );
   });
 });

@@ -29,11 +29,7 @@ import {
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import { listConfiguredDeliveryChannels } from "@/lib/delivery";
-import {
-  getDiscoveryCategories,
-  getDiscoverySourceCandidates,
-  getDiscoveryTags,
-} from "@/lib/discovery-catalog";
+import { buildTaskDiscoveryExperience } from "@/lib/discovery-runtime";
 
 export const dynamic = "force-dynamic";
 
@@ -124,15 +120,7 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     taskProfile: task.taskProfile ?? null,
     recommendedBundles,
   });
-  const discoveryCategories = getDiscoveryCategories();
-  const discoveryTags = [
-    ...new Map(
-      discoveryCategories
-        .flatMap((category) => getDiscoveryTags(category.id, task.taskProfile ?? null))
-        .map((tag) => [tag.id, tag] as const),
-    ).values(),
-  ];
-  const discoveryCandidates = getDiscoverySourceCandidates(task.taskProfile ?? null);
+  const discoveryExperience = await buildTaskDiscoveryExperience(defaultStore, task);
   const actorScopeId = getActorScopedChatScopeId(actor.id, taskId);
   const chatThread = await findChatThread(store, "task", actorScopeId);
   const chatMessages = chatThread
@@ -427,9 +415,9 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
           <SubscriptionDiscovery
             taskId={taskId}
-            categories={discoveryCategories}
-            tags={discoveryTags}
-            candidates={discoveryCandidates}
+            categories={discoveryExperience.categories}
+            tags={discoveryExperience.tags}
+            candidates={discoveryExperience.candidates}
             isZh={isZh}
           />
 
