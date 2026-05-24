@@ -5,7 +5,7 @@ import { submitChatMessage, clearChatThread } from "@/app/actions-chat";
 import { ChatMessageRecord } from "@/lib/store";
 
 type ChatConsoleProps = {
-  scopeType: "global" | "space" | "task" | "brief";
+  scopeType: "global" | "task" | "brief";
   scopeId: string;
   initialMessages: ChatMessageRecord[];
   title?: string;
@@ -17,7 +17,7 @@ export function ChatConsole({
   scopeId,
   initialMessages,
   title = "AI Contextual Assistant",
-  subtitle = "Grounded on active spaces, tasks, and briefs.",
+  subtitle = "Grounded on active monitoring goals and briefs.",
 }: ChatConsoleProps) {
   const [messages, setMessages] = useState<ChatMessageRecord[]>(initialMessages);
   const [inputValue, setInputValue] = useState("");
@@ -89,8 +89,7 @@ export function ChatConsole({
         <div>
           <h3 className="font-semibold text-stone-950 text-base">{title}</h3>
           <p className="text-xs text-stone-500 mt-0.5">
-            {subtitle} Empty task scopes can fall back to sibling space context,
-            then to bounded live fetch.
+            {subtitle} Empty task scopes can fall back to bounded live fetch.
           </p>
         </div>
         {messages.length > 0 && (

@@ -7,7 +7,8 @@ import {
   generateChatResponse,
   answerGroundedQuestion,
 } from "@/lib/ai";
-import { TaskRecord, ItemRecord, BriefRecord } from "@/lib/store";
+import { ItemRecord, BriefRecord } from "@/lib/store";
+import { makeBriefRecord, makeItemRecord, makeTaskRecord } from "./helpers/records";
 
 describe("Core AI Orchestration layer", () => {
   it("extracts task profiles from prompt text via intent mock", async () => {
@@ -28,7 +29,7 @@ describe("Core AI Orchestration layer", () => {
     const bundles = await recommendSourceBundles("I want to track funding deals of VC startups");
     
     expect(bundles).toHaveLength(2);
-    expect(bundles[0].title).toBe("Venture Capitals & Deal Flow");
+    expect(bundles[0].title).toBe("Official Deal Flow Sources");
     expect(bundles[0].sources[0].title).toBe("TechCrunch Startups");
   });
 
@@ -50,64 +51,37 @@ describe("Core AI Orchestration layer", () => {
   });
 
   it("clusters feed items by Jaccard title-similarity and generates synthesized brief candidates", async () => {
-    const mockTask: TaskRecord = {
-      id: "task-1",
-      spaceId: "space-1",
+    const mockTask = makeTaskRecord({
       title: "Monitor Devin releases",
-      taskType: "TOPIC",
       userPrompt: "Follow autonomous software developers",
-      relevanceLevel: 3,
-      summaryPreference: "balanced",
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
+    });
 
     const mockItems: ItemRecord[] = [
-      {
+      makeItemRecord({
         id: "item-1",
-        sourceId: "src-1",
         title: "Cognition announces Devin software assistant updates",
         canonicalUrl: "https://cognition.labs/blog/devin-updates-1",
         summary: "Cognition released major capabilities enhancements to the Devin system.",
         rawContent: "Cognition released major capabilities enhancements to the Devin system.",
-        origin: "cognition.labs",
-        language: "en",
         contentHash: "hash-1",
-        structuredFields: null,
-        publishedAt: new Date().toISOString(),
-        fetchedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      },
-      {
+      }),
+      makeItemRecord({
         id: "item-2",
-        sourceId: "src-1",
         title: "Cognition introduces updates to Devin autonomous software assistant",
         canonicalUrl: "https://cognition.labs/blog/devin-updates-2",
         summary: "Autonomous engineering assistants get refined SWE-bench capabilities.",
         rawContent: "Autonomous engineering assistants get refined SWE-bench capabilities.",
-        origin: "cognition.labs",
-        language: "en",
         contentHash: "hash-2",
-        structuredFields: null,
-        publishedAt: new Date().toISOString(),
-        fetchedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      },
-      {
+      }),
+      makeItemRecord({
         id: "item-3",
         sourceId: "src-2",
         title: "TechCrunch Series A funding results for SaaS",
         canonicalUrl: "https://techcrunch.com/saas-funding-news",
         summary: "SaaS startups are receiving massive investments this week.",
         rawContent: "SaaS startups are receiving massive investments this week.",
-        origin: "techcrunch.com",
-        language: "en",
         contentHash: "hash-3",
-        structuredFields: null,
-        publishedAt: new Date().toISOString(),
-        fetchedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      }
+      })
     ];
 
     const briefs = await generateBriefsFromItems(mockTask, mockItems);
@@ -140,37 +114,22 @@ describe("Core AI Orchestration layer", () => {
 
   it("produces grounded contextual chat responses citing relevant articles", async () => {
     const mockBriefs: BriefRecord[] = [
-      {
-        id: "brief-1",
-        taskId: "task-1",
+      makeBriefRecord({
         title: "Devin updates announced",
         summary: "Autonomous coding agent achieves SWE-bench progress.",
         whyItMatters: "Advancements redefine autocompletes.",
         sourceCitations: ["https://cognition.labs/blog/devin"],
-        relevanceScore: 0.8,
-        importanceScore: 0.9,
-        tags: ["agent"],
-        isRead: false,
-        createdAt: new Date().toISOString(),
-      }
+      })
     ];
 
     const mockItems: ItemRecord[] = [
-      {
-        id: "item-1",
-        sourceId: "src-1",
+      makeItemRecord({
         title: "Devin software helper post",
         canonicalUrl: "https://cognition.labs/blog/devin",
         summary: "Autonomy is scaling.",
         rawContent: "Autonomy is scaling.",
-        origin: "cognition.labs",
-        language: "en",
         contentHash: "hash-4",
-        structuredFields: null,
-        publishedAt: new Date().toISOString(),
-        fetchedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-      }
+      })
     ];
 
     const messages = [

@@ -8,7 +8,7 @@ import {
   SESSION_SECRET_ENV,
 } from "@/lib/auth-config";
 
-const PUBLIC_PATH_PREFIXES = ["/login", "/invite", "/_next", "/api", "/favicon.ico"];
+const PUBLIC_PATH_PREFIXES = ["/login", "/_next", "/api", "/favicon.ico"];
 
 function isPublicPath(pathname: string) {
   return PUBLIC_PATH_PREFIXES.some((prefix) => pathname.startsWith(prefix));

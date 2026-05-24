@@ -14,7 +14,6 @@ import {
 import {
   createItemRecord,
   createSourceRecord,
-  createSpaceRecord,
   createStore,
   createTaskRecord,
   listItemsBySource,
@@ -218,11 +217,8 @@ describe("parseFeedItems", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = await createSpaceRecord(store, {
-        name: "OpenAI",
-      });
       const taskId = await createTaskRecord(store, {
-        spaceId,
+        ownerId: "user-1",
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",
@@ -289,11 +285,8 @@ describe("parseFeedItems", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const spaceId = await createSpaceRecord(store, {
-        name: "OpenAI",
-      });
       const taskId = await createTaskRecord(store, {
-        spaceId,
+        ownerId: "user-1",
         title: "Monitor feed",
         taskType: "TOPIC",
         userPrompt: "Track RSS updates",

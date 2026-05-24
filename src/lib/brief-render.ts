@@ -58,7 +58,7 @@ export function renderBriefHtmlDigest(input: {
   <body>
     <main>
       <article>
-        <div class="eyebrow">${escapeHtml(brief.spaceName ?? "Unknown space")} / ${escapeHtml(brief.taskTitle ?? "Unknown task")}</div>
+        <div class="eyebrow">${escapeHtml(brief.taskTitle ?? "Unknown task")}</div>
         <h1>${escapeHtml(brief.title)}</h1>
         <p>${escapeHtml(brief.summary)}</p>
         <div class="meta">

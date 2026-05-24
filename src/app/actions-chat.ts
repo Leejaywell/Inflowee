@@ -3,7 +3,6 @@
 import { revalidatePath } from "next/cache";
 import {
   assertBriefAccess,
-  assertSpaceAccess,
   assertTaskAccess,
   getActorScopedChatScopeId,
   requireSessionActor,
@@ -22,8 +21,17 @@ import { answerGroundedQuestion } from "@/lib/ai";
 import { getGroundingForScope, type GroundingResult } from "@/lib/grounding";
 import { fetchLiveContext } from "@/lib/live-fetch";
 import { createSourceSchema } from "@/lib/validation";
+import {
+  previewSubscriptionSources,
+  syncSourceById,
+  type SourceCandidateInput,
+} from "@/lib/source-ingestion";
+import {
+  buildRadarSourceConfig,
+  buildRadarSourceUrl,
+} from "@/lib/radar-discovery";
 
-type ChatScope = "global" | "space" | "task" | "brief";
+type ChatScope = "global" | "task" | "brief";
 
 export async function submitChatMessage(
   scopeType: ChatScope,
@@ -37,23 +45,15 @@ export async function submitChatMessage(
   const store = defaultStore;
   const actor = await requireSessionActor();
 
-  if (scopeType === "space") {
-    await assertSpaceAccess(store, {
-      actorId: actor.id,
-      spaceId: scopeId,
-      minimumRole: "viewer",
-    });
-  } else if (scopeType === "task") {
+  if (scopeType === "task") {
     await assertTaskAccess(store, {
       actorId: actor.id,
       taskId: scopeId,
-      minimumRole: "viewer",
     });
   } else if (scopeType === "brief") {
     await assertBriefAccess(store, {
       actorId: actor.id,
       briefId: scopeId,
-      minimumRole: "viewer",
     });
   }
 
@@ -80,12 +80,8 @@ export async function submitChatMessage(
   let grounding: GroundingResult = { briefs: [], items: [] };
 
   try {
-    const fallbackSpaceId =
-      scopeType === "task" ? (await getTaskById(store, scopeId))?.spaceId : undefined;
     grounding = await getGroundingForScope(store, scopeType, scopeId, {
       actorId: actor.id,
-      fallbackSpaceId,
-      includeSiblingFallback: scopeType === "task",
     });
   } catch (e) {
     console.error("Error gathering grounding materials for chat:", e);
@@ -124,12 +120,7 @@ export async function submitChatMessage(
   if (scopeType === "brief") {
     revalidatePath(`/inbox/${scopeId}`);
   } else if (scopeType === "task") {
-    const task = await getTaskById(store, scopeId);
-    if (task) {
-      revalidatePath(`/spaces/${task.spaceId}/tasks/${scopeId}`);
-    }
-  } else if (scopeType === "space") {
-    revalidatePath(`/spaces/${scopeId}`);
+    revalidatePath(`/tasks/${scopeId}`);
   }
 
   return {
@@ -143,23 +134,15 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
   const store = defaultStore;
   const actor = await requireSessionActor();
 
-  if (scopeType === "space") {
-    await assertSpaceAccess(store, {
-      actorId: actor.id,
-      spaceId: scopeId,
-      minimumRole: "viewer",
-    });
-  } else if (scopeType === "task") {
+  if (scopeType === "task") {
     await assertTaskAccess(store, {
       actorId: actor.id,
       taskId: scopeId,
-      minimumRole: "viewer",
     });
   } else if (scopeType === "brief") {
     await assertBriefAccess(store, {
       actorId: actor.id,
       briefId: scopeId,
-      minimumRole: "viewer",
     });
   }
 
@@ -171,12 +154,7 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
   if (scopeType === "brief") {
     revalidatePath(`/inbox/${scopeId}`);
   } else if (scopeType === "task") {
-    const task = await getTaskById(store, scopeId);
-    if (task) {
-      revalidatePath(`/spaces/${task.spaceId}/tasks/${scopeId}`);
-    }
-  } else if (scopeType === "space") {
-    revalidatePath(`/spaces/${scopeId}`);
+    revalidatePath(`/tasks/${scopeId}`);
   }
 
   return { success: true };
@@ -184,25 +162,13 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
 
 export async function subscribeRecommendedSources(
   taskId: string,
-  sources: Array<{
-    title: string;
-    url: string;
-    sourceType:
-      | "RSS"
-      | "PAGE"
-      | "STRUCTURED"
-      | "UPDATE"
-      | "NEWSLETTER"
-      | "TELEGRAM_PUBLIC"
-      | "TELEGRAM_BOT";
-  }>,
+  sources: SourceCandidateInput[],
 ) {
   const store = defaultStore;
   const actor = await requireSessionActor();
   await assertTaskAccess(store, {
     actorId: actor.id,
     taskId,
-    minimumRole: "editor",
   });
   const parsedSources = sources.map((source, index) => ({
     index,
@@ -222,26 +188,95 @@ export async function subscribeRecommendedSources(
     );
   }
 
+  const createdSourceIds: string[] = [];
+  const task = await getTaskById(store, taskId);
+
+  if (!task) {
+    throw new Error("Task not found.");
+  }
+
   for (const { result } of parsedSources) {
     if (!result.success) {
       continue;
     }
 
-    await createSourceRecord(store, {
+    const isDiscovery =
+      result.data.sourceType === "SEARCH_DISCOVERY" ||
+      result.data.sourceType === "COMMUNITY_DISCOVERY" ||
+      result.data.sourceType === "SOCIAL_DISCOVERY";
+    const sourceId = await createSourceRecord(store, {
       taskId: result.data.taskId,
       sourceType: result.data.sourceType,
       title: result.data.title,
-      url: result.data.url,
+      url: isDiscovery
+        ? buildRadarSourceUrl(result.data.sourceType)
+        : result.data.url,
+      configJson: isDiscovery
+        ? buildRadarSourceConfig(task, result.data.sourceType)
+        : null,
     });
+    createdSourceIds.push(sourceId);
   }
 
-  const task = await getTaskById(store, taskId);
+  for (const sourceId of createdSourceIds) {
+    await syncSourceById(store, sourceId);
+  }
+
   if (task) {
-    revalidatePath(`/spaces/${task.spaceId}/tasks/${taskId}`);
+    revalidatePath(`/tasks/${taskId}`);
     revalidatePath("/sources");
+    revalidatePath("/inbox");
   }
 
   return { success: true };
+}
+
+export async function previewRecommendedSources(
+  taskId: string,
+  sources: SourceCandidateInput[],
+) {
+  const store = defaultStore;
+  const actor = await requireSessionActor();
+  await assertTaskAccess(store, {
+    actorId: actor.id,
+    taskId,
+  });
+
+  const parsedSources = sources.map((source, index) => ({
+    index,
+    result: createSourceSchema.safeParse({
+      taskId,
+      sourceType: source.sourceType,
+      title: source.title,
+      url: source.url,
+    }),
+  }));
+  const invalidSource = parsedSources.find(({ result }) => !result.success);
+
+  if (invalidSource && !invalidSource.result.success) {
+    const issue = invalidSource.result.error.issues[0]?.message ?? "Invalid source input.";
+    throw new Error(
+      `Recommended source ${invalidSource.index + 1} is invalid: ${issue}`,
+    );
+  }
+
+  return previewSubscriptionSources(
+    store,
+    taskId,
+    parsedSources
+      .filter(({ result }) => result.success)
+      .map(({ result }) => {
+        if (!result.success) {
+          throw new Error("Unexpected invalid source.");
+        }
+
+        return {
+          title: result.data.title,
+          url: result.data.url,
+          sourceType: result.data.sourceType,
+        };
+      }),
+  );
 }
 
 export async function updateTaskControlSettings(
@@ -253,7 +288,6 @@ export async function updateTaskControlSettings(
   await assertTaskAccess(defaultStore, {
     actorId: actor.id,
     taskId,
-    minimumRole: "editor",
   });
 
   await updateTaskControls(
@@ -265,7 +299,7 @@ export async function updateTaskControlSettings(
 
   const task = await getTaskById(defaultStore, taskId);
   if (task) {
-    revalidatePath(`/spaces/${task.spaceId}/tasks/${taskId}`);
+    revalidatePath(`/tasks/${taskId}`);
   }
 
   return { success: true };

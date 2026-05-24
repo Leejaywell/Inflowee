@@ -2,9 +2,13 @@
 
 import { useState, useTransition } from "react";
 import { refreshStoredTaskIntelligence } from "@/app/actions";
-import { subscribeRecommendedSources } from "@/app/actions-chat";
+import {
+  previewRecommendedSources,
+  subscribeRecommendedSources,
+} from "@/app/actions-chat";
 import { SourceBundle, SourceRecommendation, TaskProfile } from "@/lib/ai";
 import type { SourceType } from "@/lib/store";
+import type { SubscriptionPreviewResult } from "@/lib/source-ingestion";
 
 type RecommendationWizardProps = {
   taskId: string;
@@ -40,8 +44,11 @@ export function RecommendationWizard({
 
   const [isPending, startTransition] = useTransition();
   const [isRefreshing, startRefreshTransition] = useTransition();
+  const [isPreviewing, startPreviewTransition] = useTransition();
   const [success, setSuccess] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<SubscriptionPreviewResult | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
 
   const toggleSource = (src: SourceRecommendation) => {
     setSelectedMap((prev) => {
@@ -72,6 +79,26 @@ export function RecommendationWizard({
         setSelectedMap({});
       } catch (err) {
         console.error("Failed to subscribe sources:", err);
+      }
+    });
+  };
+
+  const handlePreview = () => {
+    const list = Object.values(selectedMap);
+    if (list.length === 0) return;
+
+    setPreview(null);
+    setPreviewError(null);
+    startPreviewTransition(async () => {
+      try {
+        const result = await previewRecommendedSources(taskId, list);
+        setPreview(result);
+      } catch (err) {
+        setPreviewError(
+          err instanceof Error
+            ? err.message
+            : "Unable to preview selected subscriptions.",
+        );
       }
     });
   };
@@ -165,9 +192,11 @@ export function RecommendationWizard({
       <div>
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-xl font-semibold text-stone-950">AI Recommendation Wizard</h2>
+            <h2 className="text-xl font-semibold text-stone-950">
+              Recommended subscriptions
+            </h2>
             <p className="text-xs text-stone-500 mt-1">
-              Select curated streams recommended specifically for this task query.
+              Choose source packages, preview likely briefs, then confirm.
             </p>
           </div>
           <button
@@ -192,7 +221,7 @@ export function RecommendationWizard({
           >
             <div>
               <span className="inline-flex rounded-full bg-[#0057ff]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#0057ff] uppercase">
-                Bundle recommendation
+                Subscription package
               </span>
               <h3 className="text-lg font-bold text-stone-950 mt-1.5">{bundle.title}</h3>
               <p className="text-xs text-stone-600 mt-0.5 leading-relaxed">
@@ -256,6 +285,113 @@ export function RecommendationWizard({
         ))}
       </div>
 
+      <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-stone-950">
+              First sync preview
+            </h3>
+            <p className="mt-1 text-xs text-stone-500">
+              Runs a light check without saving sources.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={handlePreview}
+            disabled={selectedCount === 0 || isPreviewing}
+            className="inline-flex h-10 items-center justify-center rounded-xl border border-stone-200 bg-white px-4 text-xs font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
+          >
+            {isPreviewing ? "Previewing..." : "Preview selected"}
+          </button>
+        </div>
+
+        {previewError ? (
+          <p className="mt-3 text-xs text-rose-600">{previewError}</p>
+        ) : null}
+
+        {preview ? (
+          <div className="mt-4 grid gap-4">
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              <div className="rounded-xl bg-white p-3">
+                <div className="text-lg font-semibold text-stone-950">
+                  {preview.sourceCount}
+                </div>
+                <div className="text-[10px] font-semibold uppercase text-stone-400">
+                  Sources checked
+                </div>
+              </div>
+              <div className="rounded-xl bg-white p-3">
+                <div className="text-lg font-semibold text-stone-950">
+                  {preview.candidateItemCount}
+                </div>
+                <div className="text-[10px] font-semibold uppercase text-stone-400">
+                  Items found
+                </div>
+              </div>
+              <div className="rounded-xl bg-white p-3">
+                <div className="text-lg font-semibold text-emerald-700">
+                  {preview.acceptedItemCount}
+                </div>
+                <div className="text-[10px] font-semibold uppercase text-stone-400">
+                  Brief-ready
+                </div>
+              </div>
+              <div className="rounded-xl bg-white p-3">
+                <div className="text-lg font-semibold text-rose-700">
+                  {preview.rejectedItemCount}
+                </div>
+                <div className="text-[10px] font-semibold uppercase text-stone-400">
+                  Filtered
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-2">
+              {preview.acceptedItems.slice(0, 3).map((item) => (
+                <div
+                  key={`${item.sourceTitle}:${item.canonicalUrl}`}
+                  className="rounded-xl border border-emerald-100 bg-white p-3"
+                >
+                  <div className="text-xs font-semibold text-stone-900">
+                    {item.title}
+                  </div>
+                  <div className="mt-1 text-[11px] text-emerald-700">
+                    Brief-ready · {Math.round((item.relevanceScore ?? 0) * 100)}% ·{" "}
+                    {item.relevanceReason}
+                  </div>
+                </div>
+              ))}
+              {preview.rejectedItems.slice(0, 3).map((item) => (
+                <div
+                  key={`${item.sourceTitle}:${item.canonicalUrl}`}
+                  className="rounded-xl border border-stone-100 bg-white p-3"
+                >
+                  <div className="text-xs font-semibold text-stone-700">
+                    {item.title}
+                  </div>
+                  <div className="mt-1 text-[11px] text-stone-500">
+                    Filtered · {item.qualityError ?? item.relevanceReason}
+                  </div>
+                </div>
+              ))}
+              {preview.sourceErrors.map((error) => (
+                <div
+                  key={`${error.sourceTitle}:${error.error}`}
+                  className="rounded-xl border border-amber-100 bg-white p-3 text-[11px] text-amber-700"
+                >
+                  {error.sourceTitle}: {error.error}
+                </div>
+              ))}
+            </div>
+
+            <div className="text-[11px] text-stone-500">
+              Recommended cadence: every {preview.recommendedSyncIntervalMinutes} minutes ·
+              notification level: {preview.recommendedNotificationLevel}
+            </div>
+          </div>
+        ) : null}
+      </div>
+
       {/* Subscribe Button */}
       <button
         onClick={handleSubscribe}
@@ -269,11 +405,11 @@ export function RecommendationWizard({
         {isPending ? (
           <>
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-stone-400 border-t-stone-850" />
-            Subscribing channels...
+            Confirming subscriptions...
           </>
         ) : (
           <>
-            Subscribe {selectedCount} Channel{selectedCount !== 1 ? "s" : ""}
+            Confirm {selectedCount} Subscription{selectedCount !== 1 ? "s" : ""}
           </>
         )}
       </button>

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { hasConfiguredOperatorLogin, hasConfiguredSessionAuth } from "@/lib/auth";
 import { getCronSecret } from "@/lib/cron-auth";
 import { getDatabaseUrl, getPrisma } from "@/lib/db";
+import { createStore } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
@@ -10,7 +11,7 @@ export async function GET() {
   const hasDatabaseUrl = Boolean(getDatabaseUrl());
   const health = {
     ok: true,
-    runtime: "prisma",
+    runtime: hasDatabaseUrl ? "prisma" : "sqlite",
     env: {
       databaseUrl: hasDatabaseUrl,
       inngestEventKey: Boolean(process.env.INNGEST_EVENT_KEY),
@@ -25,10 +26,11 @@ export async function GET() {
     },
   };
 
-  if (!hasDatabaseUrl) {
+  if (!hasDatabaseUrl && process.env.VERCEL) {
     return NextResponse.json(
       {
         ...health,
+        runtime: "prisma",
         ok: false,
         database: {
           ok: false,
@@ -37,6 +39,32 @@ export async function GET() {
       },
       { status: 503 },
     );
+  }
+
+  if (!hasDatabaseUrl) {
+    try {
+      createStore().database.prepare("SELECT 1 as value").get();
+
+      return NextResponse.json({
+        ...health,
+        database: {
+          ok: true,
+        },
+      });
+    } catch (error) {
+      return NextResponse.json(
+        {
+          ...health,
+          ok: false,
+          database: {
+            ok: false,
+            error:
+              error instanceof Error ? error.message : "SQLite probe failed.",
+          },
+        },
+        { status: 503 },
+      );
+    }
   }
 
   try {

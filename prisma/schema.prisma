@@ -7,50 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Space {
-  id          String   @id @default(uuid())
-  ownerId     String   @default("local-user")
-  name        String
-  description String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  tasks       Task[]
-  members     SpaceMember[]
-  invites     SpaceInvite[]
-
-  @@index([ownerId, createdAt])
-}
-
-model SpaceMember {
-  spaceId    String
-  userId     String
-  role       String
-  createdAt  DateTime @default(now())
-  space      Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  @@id([spaceId, userId])
-  @@index([userId, createdAt])
-}
-
-model SpaceInvite {
-  id         String    @id @default(uuid())
-  token      String    @unique
-  spaceId    String
-  role       String
-  createdBy  String
-  acceptedBy String?
-  acceptedAt DateTime?
-  revokedAt  DateTime?
-  createdAt  DateTime  @default(now())
-  space      Space     @relation(fields: [spaceId], references: [id], onDelete: Cascade)
-
-  @@index([spaceId, createdAt])
-  @@index([token])
-}
-
 model Task {
   id                    String                 @id @default(uuid())
-  spaceId               String
+  ownerId               String                 @default("local-user")
   title                 String
   taskType              String
   userPrompt            String
@@ -59,12 +18,11 @@ model Task {
   taskProfile           Json?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
-  space                 Space                  @relation(fields: [spaceId], references: [id], onDelete: Cascade)
   sources               Source[]
   briefs                Brief[]
   recommendationBundles RecommendationBundle[]
 
-  @@index([spaceId, createdAt])
+  @@index([ownerId, createdAt])
 }
 
 model Source {
@@ -73,6 +31,7 @@ model Source {
   sourceType          String
   title               String
   url                 String
+  configJson          Json?
   status              String    @default("idle")
   lastSyncedAt        DateTime?
   lastError           String?
@@ -99,6 +58,24 @@ model Item {
   language         String?
   contentHash      String
   structuredFields Json?
+  isReal           Boolean?
+  relevanceScore   Float?
+  relevanceReason  String?
+  keywordMentioned Boolean?
+  matchedTerms     Json?
+  qualityStatus    String    @default("pending")
+  qualityError     String?
+  viewCount        Int?
+  likeCount        Int?
+  commentCount     Int?
+  shareCount       Int?
+  replyCount       Int?
+  repostCount      Int?
+  sourceNativeScore Float?
+  authorName       String?
+  authorUsername   String?
+  authorFollowers  Int?
+  authorVerified   Boolean?
   publishedAt      DateTime?
   fetchedAt        DateTime
   createdAt        DateTime  @default(now())

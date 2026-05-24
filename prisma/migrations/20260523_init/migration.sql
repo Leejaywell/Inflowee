@@ -2,46 +2,9 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateTable
-CREATE TABLE "Space" (
-    "id" TEXT NOT NULL,
-    "ownerId" TEXT NOT NULL DEFAULT 'local-user',
-    "name" TEXT NOT NULL,
-    "description" TEXT,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    "updatedAt" TIMESTAMP(3) NOT NULL,
-
-    CONSTRAINT "Space_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
-CREATE TABLE "SpaceMember" (
-    "spaceId" TEXT NOT NULL,
-    "userId" TEXT NOT NULL,
-    "role" TEXT NOT NULL,
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "SpaceMember_pkey" PRIMARY KEY ("spaceId","userId")
-);
-
--- CreateTable
-CREATE TABLE "SpaceInvite" (
-    "id" TEXT NOT NULL,
-    "token" TEXT NOT NULL,
-    "spaceId" TEXT NOT NULL,
-    "role" TEXT NOT NULL,
-    "createdBy" TEXT NOT NULL,
-    "acceptedBy" TEXT,
-    "acceptedAt" TIMESTAMP(3),
-    "revokedAt" TIMESTAMP(3),
-    "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-
-    CONSTRAINT "SpaceInvite_pkey" PRIMARY KEY ("id")
-);
-
--- CreateTable
 CREATE TABLE "Task" (
     "id" TEXT NOT NULL,
-    "spaceId" TEXT NOT NULL,
+    "ownerId" TEXT NOT NULL DEFAULT 'local-user',
     "title" TEXT NOT NULL,
     "taskType" TEXT NOT NULL,
     "userPrompt" TEXT NOT NULL,
@@ -61,6 +24,7 @@ CREATE TABLE "Source" (
     "sourceType" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "url" TEXT NOT NULL,
+    "configJson" JSONB,
     "status" TEXT NOT NULL DEFAULT 'idle',
     "lastSyncedAt" TIMESTAMP(3),
     "lastError" TEXT,
@@ -84,6 +48,24 @@ CREATE TABLE "Item" (
     "language" TEXT,
     "contentHash" TEXT NOT NULL,
     "structuredFields" JSONB,
+    "isReal" BOOLEAN,
+    "relevanceScore" DOUBLE PRECISION,
+    "relevanceReason" TEXT,
+    "keywordMentioned" BOOLEAN,
+    "matchedTerms" JSONB,
+    "qualityStatus" TEXT NOT NULL DEFAULT 'pending',
+    "qualityError" TEXT,
+    "viewCount" INTEGER,
+    "likeCount" INTEGER,
+    "commentCount" INTEGER,
+    "shareCount" INTEGER,
+    "replyCount" INTEGER,
+    "repostCount" INTEGER,
+    "sourceNativeScore" DOUBLE PRECISION,
+    "authorName" TEXT,
+    "authorUsername" TEXT,
+    "authorFollowers" INTEGER,
+    "authorVerified" BOOLEAN,
     "publishedAt" TIMESTAMP(3),
     "fetchedAt" TIMESTAMP(3) NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -200,22 +182,7 @@ CREATE TABLE "ChatMessage" (
 );
 
 -- CreateIndex
-CREATE INDEX "Space_ownerId_createdAt_idx" ON "Space"("ownerId", "createdAt");
-
--- CreateIndex
-CREATE INDEX "SpaceMember_userId_createdAt_idx" ON "SpaceMember"("userId", "createdAt");
-
--- CreateIndex
-CREATE UNIQUE INDEX "SpaceInvite_token_key" ON "SpaceInvite"("token");
-
--- CreateIndex
-CREATE INDEX "SpaceInvite_spaceId_createdAt_idx" ON "SpaceInvite"("spaceId", "createdAt");
-
--- CreateIndex
-CREATE INDEX "SpaceInvite_token_idx" ON "SpaceInvite"("token");
-
--- CreateIndex
-CREATE INDEX "Task_spaceId_createdAt_idx" ON "Task"("spaceId", "createdAt");
+CREATE INDEX "Task_ownerId_createdAt_idx" ON "Task"("ownerId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "Source_taskId_createdAt_idx" ON "Source"("taskId", "createdAt");
@@ -249,15 +216,6 @@ CREATE UNIQUE INDEX "ChatThread_scopeType_scopeId_key" ON "ChatThread"("scopeTyp
 
 -- CreateIndex
 CREATE INDEX "ChatMessage_threadId_createdAt_idx" ON "ChatMessage"("threadId", "createdAt");
-
--- AddForeignKey
-ALTER TABLE "SpaceMember" ADD CONSTRAINT "SpaceMember_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "Space"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "SpaceInvite" ADD CONSTRAINT "SpaceInvite_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "Space"("id") ON DELETE CASCADE ON UPDATE CASCADE;
-
--- AddForeignKey
-ALTER TABLE "Task" ADD CONSTRAINT "Task_spaceId_fkey" FOREIGN KEY ("spaceId") REFERENCES "Space"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Source" ADD CONSTRAINT "Source_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;

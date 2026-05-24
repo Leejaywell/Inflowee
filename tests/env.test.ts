@@ -10,6 +10,7 @@ describe("env schema", () => {
   afterEach(() => {
     vi.resetModules();
     vi.unmock("next/headers");
+    vi.unstubAllEnvs();
   });
 
   it("accepts the cloud persistence contract", () => {
@@ -104,7 +105,25 @@ describe("env schema", () => {
     }
   });
 
-  it("allows the default prisma runtime to bootstrap with only DATABASE_URL", async () => {
+  it("uses sqlite for the default local runtime when DATABASE_URL is missing", async () => {
+    const previous = process.env.DATABASE_URL;
+    delete process.env.DATABASE_URL;
+
+    try {
+      const { createStore, defaultStore } = await import("@/lib/store");
+
+      expect(defaultStore.runtime).toBe("sqlite");
+      expect(createStore().runtime).toBe("sqlite");
+    } finally {
+      if (previous === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous;
+      }
+    }
+  });
+
+  it("allows the default prisma runtime to bootstrap with DATABASE_URL", async () => {
     const previous = {
       DATABASE_URL: process.env.DATABASE_URL,
       INNGEST_EVENT_KEY: process.env.INNGEST_EVENT_KEY,
@@ -314,9 +333,52 @@ describe("env schema", () => {
     }
   });
 
-  it("reports degraded health when DATABASE_URL is missing", async () => {
-    const previous = process.env.DATABASE_URL;
+  it("reports sqlite health when DATABASE_URL is missing in local development", async () => {
+    const previous = {
+      DATABASE_URL: process.env.DATABASE_URL,
+      VERCEL: process.env.VERCEL,
+    };
     delete process.env.DATABASE_URL;
+    delete process.env.VERCEL;
+
+    try {
+      const { GET } = await import("@/app/api/health/route");
+      const response = await GET();
+      const body = await response.json();
+
+      expect({ status: response.status, body }).toEqual(
+        expect.objectContaining({
+          status: 200,
+          body: expect.objectContaining({
+            ok: true,
+            runtime: "sqlite",
+            database: expect.objectContaining({
+              ok: true,
+            }),
+          }),
+        }),
+      );
+    } finally {
+      if (previous.DATABASE_URL === undefined) {
+        delete process.env.DATABASE_URL;
+      } else {
+        process.env.DATABASE_URL = previous.DATABASE_URL;
+      }
+      if (previous.VERCEL === undefined) {
+        delete process.env.VERCEL;
+      } else {
+        process.env.VERCEL = previous.VERCEL;
+      }
+    }
+  });
+
+  it("reports degraded health when Vercel DATABASE_URL is missing", async () => {
+    const previous = {
+      DATABASE_URL: process.env.DATABASE_URL,
+      VERCEL: process.env.VERCEL,
+    };
+    delete process.env.DATABASE_URL;
+    process.env.VERCEL = "1";
 
     try {
       const { GET } = await import("@/app/api/health/route");
@@ -334,10 +396,15 @@ describe("env schema", () => {
         }),
       );
     } finally {
-      if (previous === undefined) {
+      if (previous.DATABASE_URL === undefined) {
         delete process.env.DATABASE_URL;
       } else {
-        process.env.DATABASE_URL = previous;
+        process.env.DATABASE_URL = previous.DATABASE_URL;
+      }
+      if (previous.VERCEL === undefined) {
+        delete process.env.VERCEL;
+      } else {
+        process.env.VERCEL = previous.VERCEL;
       }
     }
   });

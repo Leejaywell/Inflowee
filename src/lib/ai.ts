@@ -173,8 +173,13 @@ async function generateSourceBundles(prompt: string): Promise<SourceBundle[]> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (apiKey) {
     try {
-      const systemPrompt = `You are Inflowee AI source recommendation engine. Recommend up to 2 high-quality source bundles (newsletters, RSS feeds, changelogs, web page URLs) relevant to the user's information tracking prompt.
+      const systemPrompt = `You are Inflowee AI source recommendation engine. Recommend up to 3 high-quality source bundles relevant to the user's information tracking prompt.
+Prefer these package types:
+- Official sources: blogs, changelogs, release notes, RSS, official pages
+- Community discussion: Hacker News, Product Hunt, Reddit-style discovery
+- Search discovery: radar search sources
 Each bundle can have 1 to 3 actual sources. Make sure the URLs look realistic (e.g. standard developer feeds or news feeds).
+For discovery package sources use a radar URL such as radar://search-discovery or radar://community-discovery.
 Respond in strict JSON format:
 {
   "bundles": [
@@ -211,7 +216,7 @@ Respond in strict JSON format:
   if (promptLower.includes("agent") || promptLower.includes("cursor") || promptLower.includes("devin") || promptLower.includes("code")) {
     return [
       {
-        title: "Frontier Coding Agents Bundle",
+        title: "Official Coding Agent Sources",
         description: "Direct tracking of autonomous developers and advanced code assistants.",
         rationale: "Directly follows the leading commercial systems (Devin, Cursor, Copilot) as they release changelogs and blogs.",
         sources: [
@@ -233,19 +238,19 @@ Respond in strict JSON format:
         ],
       },
       {
-        title: "AI Developer Tool Directories",
+        title: "Community Discussion Radar",
         description: "Community-curated lists of new coding agents and developer productivity software.",
         rationale: "Helps discover new niche open-source coding agents and tools as soon as they launch on platforms.",
         sources: [
           {
-            title: "Product Hunt AI Coding Tools",
-            url: "https://www.producthunt.com/topics/developer-tools",
-            sourceType: "PAGE",
+            title: "Hacker News coding agent discovery",
+            url: "radar://community-discovery",
+            sourceType: "COMMUNITY_DISCOVERY",
           },
           {
-            title: "Hacker News - Show HN",
-            url: "https://news.ycombinator.com/show",
-            sourceType: "PAGE",
+            title: "Search discovery for coding tools",
+            url: "radar://search-discovery",
+            sourceType: "SEARCH_DISCOVERY",
           }
         ],
       }
@@ -255,7 +260,7 @@ Respond in strict JSON format:
   if (promptLower.includes("funding") || promptLower.includes("invest") || promptLower.includes("yc") || promptLower.includes("venture") || promptLower.includes("startup")) {
     return [
       {
-        title: "Venture Capitals & Deal Flow",
+        title: "Official Deal Flow Sources",
         description: "Core tech finance publications capturing real-time funding announcements.",
         rationale: "Provides the highest volume of verified angel, seed, and VC investment round announcements.",
         sources: [
@@ -272,7 +277,7 @@ Respond in strict JSON format:
         ],
       },
       {
-        title: "Y Combinator Ecosystem",
+        title: "Startup Community Radar",
         description: "Direct announcements and launch catalogs from YC active cohorts.",
         rationale: "Allows monitoring the highest-quality early-stage tech ecosystem in Silicon Valley.",
         sources: [
@@ -282,9 +287,9 @@ Respond in strict JSON format:
             sourceType: "STRUCTURED",
           },
           {
-            title: "Hacker News - Top Stories",
-            url: "https://news.ycombinator.com/rss",
-            sourceType: "RSS",
+            title: "Hacker News startup discovery",
+            url: "radar://community-discovery",
+            sourceType: "COMMUNITY_DISCOVERY",
           }
         ],
       }
@@ -294,7 +299,7 @@ Respond in strict JSON format:
   // Default OpenAI / LLM updates
   return [
     {
-      title: "Frontier Foundation Lab Releases",
+      title: "Official Foundation Lab Releases",
       description: "Primary announcements from key companies scaling foundation model capabilities.",
       rationale: "Keeps you fully up-to-date with GPT-4, Claude 3.5, and Gemini API capabilities.",
       sources: [
@@ -314,7 +319,19 @@ Respond in strict JSON format:
           sourceType: "RSS",
         }
       ],
-    }
+    },
+    {
+      title: "Search Discovery Radar",
+      description: "Keyword search across public web and technical community surfaces.",
+      rationale: "Finds relevant model launches, benchmarks, and pricing changes outside official feeds.",
+      sources: [
+        {
+          title: "Foundation model search discovery",
+          url: "radar://search-discovery",
+          sourceType: "SEARCH_DISCOVERY",
+        }
+      ],
+    },
   ];
 }
 
@@ -497,7 +514,7 @@ ${JSON.stringify(items.map((i) => ({ title: i.title, summary: i.summary, url: i.
 
   if (queryLower.includes("devin") || queryLower.includes("cognition")) {
     const matchingUrl = allCitations.find((c) => c.includes("cognition") || c.includes("blog")) || "https://cognition.labs/blog/introducing-devin";
-    responseContent = `Based on the latest reports in this Space, **Cognition Labs** has announced significant updates regarding **Devin**, their autonomous software engineering agent.
+    responseContent = `Based on the latest reports in this monitoring goal, **Cognition Labs** has announced significant updates regarding **Devin**, their autonomous software engineering agent.
 
 ### Key Points Grounded in Feeds:
 * **Autonomy**: Devin operates inside a secure sandbox, writing, testing, and deploying full code bases.
@@ -588,6 +605,24 @@ export async function answerGroundedQuestion(input: {
     language: "en",
     contentHash: `live-${index}`,
     structuredFields: null,
+    isReal: true,
+    relevanceScore: null,
+    relevanceReason: null,
+    keywordMentioned: null,
+    matchedTerms: null,
+    qualityStatus: "accepted",
+    qualityError: null,
+    viewCount: null,
+    likeCount: null,
+    commentCount: null,
+    shareCount: null,
+    replyCount: null,
+    repostCount: null,
+    sourceNativeScore: null,
+    authorName: null,
+    authorUsername: null,
+    authorFollowers: null,
+    authorVerified: null,
     publishedAt: null,
     fetchedAt: new Date().toISOString(),
     createdAt: new Date().toISOString(),

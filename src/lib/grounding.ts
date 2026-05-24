@@ -1,7 +1,6 @@
 import {
   type BriefRecord,
   getBriefById,
-  listTasksBySpace,
   listBriefsFiltered,
   listItemsByBriefId,
   listItemsBySource,
@@ -10,7 +9,7 @@ import {
   type Store,
 } from "@/lib/store";
 
-export type GroundingScopeType = "brief" | "task" | "space";
+export type GroundingScopeType = "brief" | "task";
 
 export type GroundingResult = {
   briefs: BriefRecord[];
@@ -19,8 +18,6 @@ export type GroundingResult = {
 
 type GroundingOptions = {
   includeItems?: boolean;
-  fallbackSpaceId?: string;
-  includeSiblingFallback?: boolean;
   actorId?: string;
 };
 
@@ -103,17 +100,6 @@ export async function getGroundingForScope(
         )
       : [];
 
-    if (
-      briefs.length === 0 &&
-      items.length === 0 &&
-      options.includeSiblingFallback &&
-      options.fallbackSpaceId
-    ) {
-      return getGroundingForScope(store, "space", options.fallbackSpaceId, {
-        includeItems,
-      });
-    }
-
     return { briefs, items };
   }
 
@@ -138,29 +124,5 @@ export async function getGroundingForScope(
 
     return { briefs, items: dedupeAndSortItems(items) };
   }
-
-  const taskIds = (await listTasksBySpace(store, scopeId)).map((task) => task.id);
-
-  if (taskIds.length === 0) {
-    return { briefs: [], items: [] };
-  }
-
-  const taskIdSet = new Set(taskIds);
-  const briefs = (await listBriefsFiltered(store, { actorId: options.actorId })).filter((brief) =>
-    taskIdSet.has(brief.taskId),
-  );
-  if (!includeItems) {
-    return { briefs, items: [] };
-  }
-
-  const sourceGroups = await Promise.all(
-    taskIds.map((taskId) => listSourcesByTask(store, taskId)),
-  );
-  const items = (
-    await Promise.all(
-      sourceGroups.flat().map((source) => listItemsBySource(store, source.id)),
-    )
-  ).flat();
-
-  return { briefs, items: dedupeAndSortItems(items) };
+  return { briefs: [], items: [] };
 }

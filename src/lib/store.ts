@@ -1,22 +1,10 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdirSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname } from "node:path";
-import type { DatabaseSync } from "node:sqlite";
+import { dirname, join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { getDatabaseUrl, getPrisma, requireDatabaseUrl } from "./db.ts";
-
-const requireModule = createRequire(import.meta.url);
-
-let cachedDatabaseSyncCtor: typeof import("node:sqlite").DatabaseSync | null = null;
-
-function getDatabaseSyncCtor() {
-  cachedDatabaseSyncCtor ??=
-    requireModule("node:sqlite").DatabaseSync as typeof import("node:sqlite").DatabaseSync;
-
-  return cachedDatabaseSyncCtor;
-}
 
 export type TaskType = "TOPIC" | "QUESTION";
 export type SourceType =
@@ -26,7 +14,10 @@ export type SourceType =
   | "UPDATE"
   | "NEWSLETTER"
   | "TELEGRAM_PUBLIC"
-  | "TELEGRAM_BOT";
+  | "TELEGRAM_BOT"
+  | "SEARCH_DISCOVERY"
+  | "COMMUNITY_DISCOVERY"
+  | "SOCIAL_DISCOVERY";
 export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
 export type DeliveryStatus = "running" | "success" | "error";
@@ -58,18 +49,9 @@ function createUnavailablePrismaHandle(): PrismaClient {
   });
 }
 
-type SpaceRow = {
-  id: string;
-  owner_id: string;
-  name: string;
-  description: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
 type TaskRow = {
   id: string;
-  space_id: string;
+  owner_id: string;
   title: string;
   task_type: TaskType;
   user_prompt: string;
@@ -86,6 +68,7 @@ type SourceRow = {
   source_type: SourceType;
   title: string;
   url: string;
+  config_json: string | null;
   status: SourceStatus;
   last_synced_at: string | null;
   last_error: string | null;
@@ -125,25 +108,6 @@ type DeliveryLogRow = {
   finished_at: string | null;
 };
 
-type SpaceMemberRow = {
-  space_id: string;
-  user_id: string;
-  role: string;
-  created_at: string;
-};
-
-type SpaceInviteRow = {
-  id: string;
-  token: string;
-  space_id: string;
-  role: "viewer" | "editor";
-  created_by: string;
-  accepted_by: string | null;
-  accepted_at: string | null;
-  revoked_at: string | null;
-  created_at: string;
-};
-
 type ItemRow = {
   id: string;
   source_id: string;
@@ -155,6 +119,24 @@ type ItemRow = {
   language: string | null;
   content_hash: string;
   structured_fields: string | null;
+  is_real: number | null;
+  relevance_score: number | null;
+  relevance_reason: string | null;
+  keyword_mentioned: number | null;
+  matched_terms: string | null;
+  quality_status: string;
+  quality_error: string | null;
+  view_count: number | null;
+  like_count: number | null;
+  comment_count: number | null;
+  share_count: number | null;
+  reply_count: number | null;
+  repost_count: number | null;
+  source_native_score: number | null;
+  author_name: string | null;
+  author_username: string | null;
+  author_followers: number | null;
+  author_verified: number | null;
   published_at: string | null;
   fetched_at: string;
   created_at: string;
@@ -173,7 +155,6 @@ type BriefRow = {
   is_read: number;
   created_at: string;
   task_title?: string;
-  space_name?: string;
 };
 
 type RecommendationBundleRow = {
@@ -222,7 +203,7 @@ export type RecommendationBundle = {
 
 export type TaskRecord = {
   id: string;
-  spaceId: string;
+  ownerId: string;
   title: string;
   taskType: TaskType;
   userPrompt: string;
@@ -233,22 +214,13 @@ export type TaskRecord = {
   updatedAt: string;
 };
 
-export type SpaceRecord = {
-  id: string;
-  ownerId: string;
-  name: string;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-  tasks: TaskRecord[];
-};
-
 export type SourceRecord = {
   id: string;
   taskId: string;
   sourceType: SourceType;
   title: string;
   url: string;
+  configJson: Record<string, unknown> | null;
   status: SourceStatus;
   lastSyncedAt: string | null;
   lastError: string | null;
@@ -303,8 +275,6 @@ export type DeliveryLogRecord = {
   finishedAt: string | null;
 };
 
-export type SpaceRole = "viewer" | "editor" | "owner";
-
 export type SourceHealthSummary = {
   total: number;
   healthy: number;
@@ -324,25 +294,6 @@ export type DeliveryHealthSummary = {
   feishuConfigured: boolean;
 };
 
-export type SpaceMemberRecord = {
-  spaceId: string;
-  userId: string;
-  role: SpaceRole;
-  createdAt: string;
-};
-
-export type SpaceInviteRecord = {
-  id: string;
-  token: string;
-  spaceId: string;
-  role: Exclude<SpaceRole, "owner">;
-  createdBy: string;
-  acceptedBy: string | null;
-  acceptedAt: string | null;
-  revokedAt: string | null;
-  createdAt: string;
-};
-
 export type ItemRecord = {
   id: string;
   sourceId: string;
@@ -354,6 +305,24 @@ export type ItemRecord = {
   language: string | null;
   contentHash: string;
   structuredFields: Record<string, unknown> | null;
+  isReal: boolean | null;
+  relevanceScore: number | null;
+  relevanceReason: string | null;
+  keywordMentioned: boolean | null;
+  matchedTerms: string[] | null;
+  qualityStatus: "pending" | "accepted" | "rejected" | "error";
+  qualityError: string | null;
+  viewCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+  shareCount: number | null;
+  replyCount: number | null;
+  repostCount: number | null;
+  sourceNativeScore: number | null;
+  authorName: string | null;
+  authorUsername: string | null;
+  authorFollowers: number | null;
+  authorVerified: boolean | null;
   publishedAt: string | null;
   fetchedAt: string;
   createdAt: string;
@@ -372,12 +341,11 @@ export type BriefRecord = {
   isRead: boolean;
   createdAt: string;
   taskTitle?: string;
-  spaceName?: string;
 };
 
 export type ChatThreadRecord = {
   id: string;
-  scopeType: "global" | "space" | "task" | "brief";
+  scopeType: "global" | "task" | "brief";
   scopeId: string;
   createdAt: string;
 };
@@ -392,27 +360,24 @@ export type ChatMessageRecord = {
   createdAt: string;
 };
 
-type CreateSpaceInput = {
-  ownerId?: string;
-  name: string;
-  description?: string;
-};
-
 type CreateTaskInput = {
-  spaceId: string;
+  ownerId?: string;
   title: string;
   taskType: TaskType;
   userPrompt: string;
 };
 
 const sourceStatusConstraint = "CHECK(status IN ('idle', 'success', 'error'))";
+const sourceTypeSql =
+  "'RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT', 'SEARCH_DISCOVERY', 'COMMUNITY_DISCOVERY', 'SOCIAL_DISCOVERY'";
 const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
-    source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT')),
+    source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
+    config_json TEXT,
     status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
     last_synced_at TEXT,
     last_error TEXT,
@@ -431,6 +396,9 @@ function mapSource(row: SourceRow): SourceRecord {
     sourceType: row.source_type,
     title: row.title,
     url: row.url,
+    configJson: row.config_json
+      ? (JSON.parse(row.config_json) as Record<string, unknown>)
+      : null,
     status: row.status,
     lastSyncedAt: row.last_synced_at,
     lastError: row.last_error,
@@ -469,29 +437,6 @@ function mapDeliveryLog(row: DeliveryLogRow): DeliveryLogRecord {
   };
 }
 
-function mapSpaceMember(row: SpaceMemberRow): SpaceMemberRecord {
-  return {
-    spaceId: row.space_id,
-    userId: row.user_id,
-    role: row.role as SpaceRole,
-    createdAt: row.created_at,
-  };
-}
-
-function mapSpaceInvite(row: SpaceInviteRow): SpaceInviteRecord {
-  return {
-    id: row.id,
-    token: row.token,
-    spaceId: row.space_id,
-    role: row.role,
-    createdBy: row.created_by,
-    acceptedBy: row.accepted_by,
-    acceptedAt: row.accepted_at,
-    revokedAt: row.revoked_at,
-    createdAt: row.created_at,
-  };
-}
-
 function mapItem(row: ItemRow): ItemRecord {
   return {
     id: row.id,
@@ -506,6 +451,28 @@ function mapItem(row: ItemRow): ItemRecord {
     structuredFields: row.structured_fields
       ? (JSON.parse(row.structured_fields) as Record<string, unknown>)
       : null,
+    isReal: row.is_real === null ? null : Boolean(row.is_real),
+    relevanceScore: row.relevance_score,
+    relevanceReason: row.relevance_reason,
+    keywordMentioned:
+      row.keyword_mentioned === null ? null : Boolean(row.keyword_mentioned),
+    matchedTerms: row.matched_terms
+      ? (JSON.parse(row.matched_terms) as string[])
+      : null,
+    qualityStatus: row.quality_status as ItemRecord["qualityStatus"],
+    qualityError: row.quality_error,
+    viewCount: row.view_count,
+    likeCount: row.like_count,
+    commentCount: row.comment_count,
+    shareCount: row.share_count,
+    replyCount: row.reply_count,
+    repostCount: row.repost_count,
+    sourceNativeScore: row.source_native_score,
+    authorName: row.author_name,
+    authorUsername: row.author_username,
+    authorFollowers: row.author_followers,
+    authorVerified:
+      row.author_verified === null ? null : Boolean(row.author_verified),
     publishedAt: row.published_at,
     fetchedAt: row.fetched_at,
     createdAt: row.created_at,
@@ -526,7 +493,6 @@ function mapBrief(row: BriefRow): BriefRecord {
     isRead: Boolean(row.is_read),
     createdAt: row.created_at,
     taskTitle: row.task_title,
-    spaceName: row.space_name,
   };
 }
 
@@ -539,7 +505,7 @@ function mapRecommendationBundle(
 function mapChatThread(row: ChatThreadRow): ChatThreadRecord {
   return {
     id: row.id,
-    scopeType: row.scope_type as "global" | "space" | "task" | "brief",
+    scopeType: row.scope_type as "global" | "task" | "brief",
     scopeId: row.scope_id,
     createdAt: row.created_at,
   };
@@ -574,6 +540,8 @@ function migrateSourcesTable(database: DatabaseSync) {
   const needsNewsletterMigration = !sourcesTable.sql.includes("'NEWSLETTER'");
   const needsTelegramPublicMigration = !sourcesTable.sql.includes("'TELEGRAM_PUBLIC'");
   const needsTelegramBotMigration = !sourcesTable.sql.includes("'TELEGRAM_BOT'");
+  const needsDiscoveryMigration = !sourcesTable.sql.includes("'SEARCH_DISCOVERY'");
+  const needsConfigMigration = !sourcesTable.sql.includes("config_json");
   const needsScheduleMigration = !sourcesTable.sql.includes("sync_interval_minutes");
 
   if (
@@ -583,6 +551,8 @@ function migrateSourcesTable(database: DatabaseSync) {
     !needsNewsletterMigration &&
     !needsTelegramPublicMigration &&
     !needsTelegramBotMigration &&
+    !needsDiscoveryMigration &&
+    !needsConfigMigration &&
     !needsScheduleMigration
   ) {
     return;
@@ -595,9 +565,10 @@ function migrateSourcesTable(database: DatabaseSync) {
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
       task_id TEXT NOT NULL,
-      source_type TEXT NOT NULL CHECK(source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT')),
+      source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
+      config_json TEXT,
       status TEXT NOT NULL DEFAULT 'idle' CHECK(status IN ('idle', 'success', 'error')),
       last_synced_at TEXT,
       last_error TEXT,
@@ -614,6 +585,7 @@ function migrateSourcesTable(database: DatabaseSync) {
       source_type,
       title,
       url,
+      config_json,
       status,
       last_synced_at,
       last_error,
@@ -626,11 +598,12 @@ function migrateSourcesTable(database: DatabaseSync) {
       id,
       task_id,
       CASE
-        WHEN source_type IN ('RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT') THEN source_type
+        WHEN source_type IN (${sourceTypeSql}) THEN source_type
         ELSE 'PAGE'
       END,
       title,
       url,
+      NULL,
       CASE
         WHEN status IN ('idle', 'success', 'error') THEN status
         ELSE 'error'
@@ -667,12 +640,31 @@ function migrateSyncRunsTable(database: DatabaseSync) {
   `);
 }
 
+function hasColumn(database: DatabaseSync, tableName: string, columnName: string) {
+  return (
+    database
+      .prepare(`PRAGMA table_info(${tableName})`)
+      .all() as Array<{ name: string }>
+  ).some((column) => column.name === columnName);
+}
+
 function migrateDeliveryLogsTable(database: DatabaseSync) {
   const deliveryLogsTable = database
     .prepare(
       "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'delivery_logs'",
     )
     .get() as { sql: string } | undefined;
+
+  if (deliveryLogsTable && !hasColumn(database, "delivery_logs", "attempt_count")) {
+    database.exec("ALTER TABLE delivery_logs ADD COLUMN attempt_count INTEGER;");
+  }
+
+  if (
+    deliveryLogsTable &&
+    !hasColumn(database, "delivery_logs", "response_status")
+  ) {
+    database.exec("ALTER TABLE delivery_logs ADD COLUMN response_status INTEGER;");
+  }
 
   const needsDeliveryPayloadUpgrade =
     deliveryLogsTable && !deliveryLogsTable.sql.includes("'feishu'");
@@ -853,11 +845,66 @@ function migrateTasksTable(database: DatabaseSync) {
     )
     .get() as { sql: string } | undefined;
 
-  if (!tasksTable || tasksTable.sql.includes("task_profile")) {
+  if (!tasksTable) {
     return;
   }
 
-  database.exec("ALTER TABLE tasks ADD COLUMN task_profile TEXT;");
+  if (!tasksTable.sql.includes("owner_id")) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+
+      CREATE TABLE tasks_migrated (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'local-user',
+        title TEXT NOT NULL,
+        task_type TEXT NOT NULL CHECK(task_type IN ('TOPIC', 'QUESTION')),
+        user_prompt TEXT NOT NULL,
+        relevance_level INTEGER NOT NULL DEFAULT 3,
+        summary_preference TEXT NOT NULL DEFAULT 'balanced',
+        task_profile TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO tasks_migrated (
+        id,
+        owner_id,
+        title,
+        task_type,
+        user_prompt,
+        relevance_level,
+        summary_preference,
+        task_profile,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        'local-user',
+        title,
+        task_type,
+        user_prompt,
+        relevance_level,
+        summary_preference,
+        CASE WHEN instr(sql, 'task_profile') > 0 THEN task_profile ELSE NULL END,
+        created_at,
+        updated_at
+      FROM tasks
+      CROSS JOIN (SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks');
+
+      DROP TABLE tasks;
+      ALTER TABLE tasks_migrated RENAME TO tasks;
+
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
+    return;
+  }
+
+  if (!tasksTable.sql.includes("task_profile")) {
+    database.exec("ALTER TABLE tasks ADD COLUMN task_profile TEXT;");
+  }
 }
 
 function migrateItemsTable(database: DatabaseSync) {
@@ -867,7 +914,37 @@ function migrateItemsTable(database: DatabaseSync) {
     )
     .get() as { sql: string } | undefined;
 
-  if (!itemsTable || itemsTable.sql.includes("content_hash")) {
+  if (!itemsTable) {
+    return;
+  }
+
+  if (itemsTable.sql.includes("content_hash")) {
+    const qualityColumns: Array<[string, string]> = [
+      ["is_real", "INTEGER"],
+      ["relevance_score", "REAL"],
+      ["relevance_reason", "TEXT"],
+      ["keyword_mentioned", "INTEGER"],
+      ["matched_terms", "TEXT"],
+      ["quality_status", "TEXT NOT NULL DEFAULT 'pending'"],
+      ["quality_error", "TEXT"],
+      ["view_count", "INTEGER"],
+      ["like_count", "INTEGER"],
+      ["comment_count", "INTEGER"],
+      ["share_count", "INTEGER"],
+      ["reply_count", "INTEGER"],
+      ["repost_count", "INTEGER"],
+      ["source_native_score", "REAL"],
+      ["author_name", "TEXT"],
+      ["author_username", "TEXT"],
+      ["author_followers", "INTEGER"],
+      ["author_verified", "INTEGER"],
+    ];
+
+    for (const [column, definition] of qualityColumns) {
+      if (!itemsTable.sql.includes(column)) {
+        database.exec(`ALTER TABLE items ADD COLUMN ${column} ${definition};`);
+      }
+    }
     return;
   }
 
@@ -886,6 +963,24 @@ function migrateItemsTable(database: DatabaseSync) {
       language TEXT,
       content_hash TEXT NOT NULL,
       structured_fields TEXT,
+      is_real INTEGER,
+      relevance_score REAL,
+      relevance_reason TEXT,
+      keyword_mentioned INTEGER,
+      matched_terms TEXT,
+      quality_status TEXT NOT NULL DEFAULT 'pending',
+      quality_error TEXT,
+      view_count INTEGER,
+      like_count INTEGER,
+      comment_count INTEGER,
+      share_count INTEGER,
+      reply_count INTEGER,
+      repost_count INTEGER,
+      source_native_score REAL,
+      author_name TEXT,
+      author_username TEXT,
+      author_followers INTEGER,
+      author_verified INTEGER,
       published_at TEXT,
       fetched_at TEXT NOT NULL,
       created_at TEXT NOT NULL,
@@ -903,6 +998,24 @@ function migrateItemsTable(database: DatabaseSync) {
       language,
       content_hash,
       structured_fields,
+      is_real,
+      relevance_score,
+      relevance_reason,
+      keyword_mentioned,
+      matched_terms,
+      quality_status,
+      quality_error,
+      view_count,
+      like_count,
+      comment_count,
+      share_count,
+      reply_count,
+      repost_count,
+      source_native_score,
+      author_name,
+      author_username,
+      author_followers,
+      author_verified,
       published_at,
       fetched_at,
       created_at
@@ -917,6 +1030,24 @@ function migrateItemsTable(database: DatabaseSync) {
       NULL,
       NULL,
       canonical_url || char(10) || title || char(10) || coalesce(summary, ''),
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      'pending',
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
+      NULL,
       NULL,
       published_at,
       created_at,
@@ -947,80 +1078,6 @@ function migrateChatMessagesTable(database: DatabaseSync) {
   );
 }
 
-function migrateSpacesTable(database: DatabaseSync) {
-  const spacesTable = database
-    .prepare(
-      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'spaces'",
-    )
-    .get() as { sql: string } | undefined;
-
-  if (!spacesTable || spacesTable.sql.includes("owner_id")) {
-    return;
-  }
-
-  database.exec(`
-    PRAGMA foreign_keys = OFF;
-    BEGIN;
-
-    CREATE TABLE spaces_migrated (
-      id TEXT PRIMARY KEY,
-      owner_id TEXT NOT NULL DEFAULT 'local-user',
-      name TEXT NOT NULL,
-      description TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    INSERT INTO spaces_migrated (id, owner_id, name, description, created_at, updated_at)
-    SELECT id, 'local-user', name, description, created_at, updated_at
-    FROM spaces;
-
-    DROP TABLE spaces;
-    ALTER TABLE spaces_migrated RENAME TO spaces;
-
-    COMMIT;
-    PRAGMA foreign_keys = ON;
-  `);
-}
-
-function migrateSpaceMembersTable(database: DatabaseSync) {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS space_members (
-      space_id TEXT NOT NULL,
-      user_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      created_at TEXT NOT NULL,
-      PRIMARY KEY (space_id, user_id),
-      FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_space_members_user_created_at
-      ON space_members(user_id, created_at DESC);
-  `);
-}
-
-function migrateSpaceInvitesTable(database: DatabaseSync) {
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS space_invites (
-      id TEXT PRIMARY KEY,
-      token TEXT NOT NULL UNIQUE,
-      space_id TEXT NOT NULL,
-      role TEXT NOT NULL,
-      created_by TEXT NOT NULL,
-      accepted_by TEXT,
-      accepted_at TEXT,
-      revoked_at TEXT,
-      created_at TEXT NOT NULL,
-      FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_space_invites_space_created_at
-      ON space_invites(space_id, created_at DESC);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_space_invites_token
-      ON space_invites(token);
-  `);
-}
-
 function createPrismaStore(databaseUrl?: string): PrismaStore {
   if (!databaseUrl) {
     return {
@@ -1044,7 +1101,9 @@ function createPrismaStore(databaseUrl?: string): PrismaStore {
   };
 }
 
-export function createStore(): PrismaStore;
+const DEFAULT_SQLITE_PATH = join(process.cwd(), "data", "inflowee.sqlite");
+
+export function createStore(): Store;
 export function createStore(filename: string): SqliteStore;
 export function createStore(options: { databaseUrl: string }): PrismaStore;
 export function createStore(
@@ -1055,7 +1114,13 @@ export function createStore(
       },
 ): Store {
   if (filenameOrOptions === undefined) {
-    return createPrismaStore(getDatabaseUrl());
+    const databaseUrl = getDatabaseUrl();
+
+    if (databaseUrl) {
+      return createPrismaStore(databaseUrl);
+    }
+
+    return createStore(process.env.INFLOWEE_SQLITE_PATH ?? DEFAULT_SQLITE_PATH);
   }
 
   if (
@@ -1072,24 +1137,14 @@ export function createStore(
   const initializeDatabase = () => {
     mkdirSync(dirname(filename), { recursive: true });
 
-    const DatabaseSyncCtor = getDatabaseSyncCtor();
-    const nextDatabase = new DatabaseSyncCtor(filename);
+    const nextDatabase = new DatabaseSync(filename);
 
     nextDatabase.exec(`
       PRAGMA foreign_keys = ON;
 
-      CREATE TABLE IF NOT EXISTS spaces (
-        id TEXT PRIMARY KEY,
-        owner_id TEXT NOT NULL DEFAULT 'local-user',
-        name TEXT NOT NULL,
-        description TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
-        space_id TEXT NOT NULL,
+        owner_id TEXT NOT NULL DEFAULT 'local-user',
         title TEXT NOT NULL,
         task_type TEXT NOT NULL CHECK(task_type IN ('TOPIC', 'QUESTION')),
         user_prompt TEXT NOT NULL,
@@ -1097,30 +1152,7 @@ export function createStore(
         summary_preference TEXT NOT NULL DEFAULT 'balanced',
         task_profile TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL,
-        FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS space_members (
-        space_id TEXT NOT NULL,
-        user_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        created_at TEXT NOT NULL,
-        PRIMARY KEY (space_id, user_id),
-        FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS space_invites (
-        id TEXT PRIMARY KEY,
-        token TEXT NOT NULL UNIQUE,
-        space_id TEXT NOT NULL,
-        role TEXT NOT NULL,
-        created_by TEXT NOT NULL,
-        accepted_by TEXT,
-        accepted_at TEXT,
-        revoked_at TEXT,
-        created_at TEXT NOT NULL,
-        FOREIGN KEY(space_id) REFERENCES spaces(id) ON DELETE CASCADE
+        updated_at TEXT NOT NULL
       );
 
       ${sourceTableDefinition}
@@ -1136,6 +1168,24 @@ export function createStore(
         language TEXT,
         content_hash TEXT NOT NULL,
         structured_fields TEXT,
+        is_real INTEGER,
+        relevance_score REAL,
+        relevance_reason TEXT,
+        keyword_mentioned INTEGER,
+        matched_terms TEXT,
+        quality_status TEXT NOT NULL DEFAULT 'pending',
+        quality_error TEXT,
+        view_count INTEGER,
+        like_count INTEGER,
+        comment_count INTEGER,
+        share_count INTEGER,
+        reply_count INTEGER,
+        repost_count INTEGER,
+        source_native_score REAL,
+        author_name TEXT,
+        author_username TEXT,
+        author_followers INTEGER,
+        author_verified INTEGER,
         published_at TEXT,
         fetched_at TEXT NOT NULL,
         created_at TEXT NOT NULL,
@@ -1175,7 +1225,7 @@ export function createStore(
 
       CREATE TABLE IF NOT EXISTS chat_threads (
         id TEXT PRIMARY KEY,
-        scope_type TEXT NOT NULL CHECK(scope_type IN ('global', 'space', 'task', 'brief')),
+        scope_type TEXT NOT NULL CHECK(scope_type IN ('global', 'task', 'brief')),
         scope_id TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
@@ -1233,10 +1283,7 @@ export function createStore(
         FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
       );
 
-      CREATE INDEX IF NOT EXISTS idx_tasks_space_id ON tasks(space_id);
       CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
-      CREATE INDEX IF NOT EXISTS idx_space_invites_space_created_at ON space_invites(space_id, created_at DESC);
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_space_invites_token ON space_invites(token);
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
@@ -1248,9 +1295,6 @@ export function createStore(
     `);
 
     migrateSourcesTable(nextDatabase);
-    migrateSpacesTable(nextDatabase);
-    migrateSpaceMembersTable(nextDatabase);
-    migrateSpaceInvitesTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
     migrateBriefReadsTable(nextDatabase);
     migrateTasksTable(nextDatabase);
@@ -1258,11 +1302,9 @@ export function createStore(
     migrateChatMessagesTable(nextDatabase);
     migrateSyncRunsTable(nextDatabase);
     migrateDeliveryLogsTable(nextDatabase);
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_tasks_owner_created_at ON tasks(owner_id, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_next_sync_at ON sources(next_sync_at);");
-    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_space_members_user_created_at ON space_members(user_id, created_at DESC);");
-    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_space_invites_space_created_at ON space_invites(space_id, created_at DESC);");
-    nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_space_invites_token ON space_invites(token);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
@@ -1290,22 +1332,10 @@ export function getDefaultRuntimeStore(): Store {
   return createStore({ databaseUrl: requireDatabaseUrl() });
 }
 
-function mapSpace(row: SpaceRow, tasks: TaskRecord[]): SpaceRecord {
-  return {
-    id: row.id,
-    ownerId: row.owner_id,
-    name: row.name,
-    description: row.description,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    tasks,
-  };
-}
-
 function mapTask(row: TaskRow): TaskRecord {
   return {
     id: row.id,
-    spaceId: row.space_id,
+    ownerId: row.owner_id,
     title: row.title,
     taskType: row.task_type,
     userPrompt: row.user_prompt,
@@ -1319,7 +1349,7 @@ function mapTask(row: TaskRow): TaskRecord {
 
 function mapPrismaTask(task: {
   id: string;
-  spaceId: string;
+  ownerId: string;
   title: string;
   taskType: string;
   userPrompt: string;
@@ -1331,7 +1361,7 @@ function mapPrismaTask(task: {
 }): TaskRecord {
   return {
     id: task.id,
-    spaceId: task.spaceId,
+    ownerId: task.ownerId,
     title: task.title,
     taskType: task.taskType as TaskType,
     userPrompt: task.userPrompt,
@@ -1343,43 +1373,13 @@ function mapPrismaTask(task: {
   };
 }
 
-function mapPrismaSpace(space: {
-  id: string;
-  ownerId: string;
-  name: string;
-  description: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-  tasks?: Array<{
-    id: string;
-    spaceId: string;
-    title: string;
-    taskType: string;
-    userPrompt: string;
-    relevanceLevel: number;
-    summaryPreference: string;
-    taskProfile: unknown;
-    createdAt: Date;
-    updatedAt: Date;
-  }>;
-}): SpaceRecord {
-  return {
-    id: space.id,
-    ownerId: space.ownerId,
-    name: space.name,
-    description: space.description,
-    createdAt: space.createdAt.toISOString(),
-    updatedAt: space.updatedAt.toISOString(),
-    tasks: space.tasks?.map(mapPrismaTask) ?? [],
-  };
-}
-
 function mapPrismaSource(source: {
   id: string;
   taskId: string;
   sourceType: string;
   title: string;
   url: string;
+  configJson: unknown;
   status: string;
   lastSyncedAt: Date | null;
   lastError: string | null;
@@ -1394,6 +1394,7 @@ function mapPrismaSource(source: {
     sourceType: source.sourceType as SourceType,
     title: source.title,
     url: source.url,
+    configJson: (source.configJson as Record<string, unknown> | null) ?? null,
     status: source.status as SourceStatus,
     lastSyncedAt: source.lastSyncedAt?.toISOString() ?? null,
     lastError: source.lastError,
@@ -1415,6 +1416,24 @@ function mapPrismaItem(item: {
   language: string | null;
   contentHash: string;
   structuredFields: unknown;
+  isReal: boolean | null;
+  relevanceScore: number | null;
+  relevanceReason: string | null;
+  keywordMentioned: boolean | null;
+  matchedTerms: unknown;
+  qualityStatus: string;
+  qualityError: string | null;
+  viewCount: number | null;
+  likeCount: number | null;
+  commentCount: number | null;
+  shareCount: number | null;
+  replyCount: number | null;
+  repostCount: number | null;
+  sourceNativeScore: number | null;
+  authorName: string | null;
+  authorUsername: string | null;
+  authorFollowers: number | null;
+  authorVerified: boolean | null;
   publishedAt: Date | null;
   fetchedAt: Date;
   createdAt: Date;
@@ -1430,6 +1449,24 @@ function mapPrismaItem(item: {
     language: item.language,
     contentHash: item.contentHash,
     structuredFields: (item.structuredFields as Record<string, unknown> | null) ?? null,
+    isReal: item.isReal,
+    relevanceScore: item.relevanceScore,
+    relevanceReason: item.relevanceReason,
+    keywordMentioned: item.keywordMentioned,
+    matchedTerms: (item.matchedTerms as string[] | null) ?? null,
+    qualityStatus: item.qualityStatus as ItemRecord["qualityStatus"],
+    qualityError: item.qualityError,
+    viewCount: item.viewCount,
+    likeCount: item.likeCount,
+    commentCount: item.commentCount,
+    shareCount: item.shareCount,
+    replyCount: item.replyCount,
+    repostCount: item.repostCount,
+    sourceNativeScore: item.sourceNativeScore,
+    authorName: item.authorName,
+    authorUsername: item.authorUsername,
+    authorFollowers: item.authorFollowers,
+    authorVerified: item.authorVerified,
     publishedAt: item.publishedAt?.toISOString() ?? null,
     fetchedAt: item.fetchedAt.toISOString(),
     createdAt: item.createdAt.toISOString(),
@@ -1449,7 +1486,7 @@ function mapPrismaBrief(brief: {
   isRead: boolean;
   createdAt: Date;
   briefReads?: Array<{ actorId: string }>;
-  task?: { title: string; space?: { name: string } | null } | null;
+  task?: { title: string } | null;
 }): BriefRecord {
   return {
     id: brief.id,
@@ -1464,7 +1501,6 @@ function mapPrismaBrief(brief: {
     isRead: brief.briefReads ? brief.briefReads.length > 0 : brief.isRead,
     createdAt: brief.createdAt.toISOString(),
     taskTitle: brief.task?.title,
-    spaceName: brief.task?.space?.name,
   };
 }
 
@@ -1518,144 +1554,15 @@ function mapPrismaDeliveryLogRow(row: PrismaDeliveryLogRow): DeliveryLogRecord {
   };
 }
 
-function mapPrismaSpaceMember(member: {
-  spaceId: string;
-  userId: string;
-  role: string;
-  createdAt: Date;
-}): SpaceMemberRecord {
-  return {
-    spaceId: member.spaceId,
-    userId: member.userId,
-    role: member.role as SpaceRole,
-    createdAt: member.createdAt.toISOString(),
-  };
-}
-
-function mapPrismaSpaceInvite(invite: {
-  id: string;
-  token: string;
-  spaceId: string;
-  role: string;
-  createdBy: string;
-  acceptedBy: string | null;
-  acceptedAt: Date | null;
-  revokedAt: Date | null;
-  createdAt: Date;
-}): SpaceInviteRecord {
-  return {
-    id: invite.id,
-    token: invite.token,
-    spaceId: invite.spaceId,
-    role: invite.role as Exclude<SpaceRole, "owner">,
-    createdBy: invite.createdBy,
-    acceptedBy: invite.acceptedBy,
-    acceptedAt: invite.acceptedAt?.toISOString() ?? null,
-    revokedAt: invite.revokedAt?.toISOString() ?? null,
-    createdAt: invite.createdAt.toISOString(),
-  };
-}
-
-export async function listSpacesWithTasks(
+export async function listTasks(
   store: Store = defaultStore,
   filters: { ownerId?: string; actorId?: string } = {},
-): Promise<SpaceRecord[]> {
-  if (store.prisma) {
-    const spaces = await store.prisma.space.findMany({
-      where: filters.actorId
-        ? {
-            OR: [
-              { ownerId: filters.actorId },
-              { members: { some: { userId: filters.actorId } } },
-            ],
-          }
-        : filters.ownerId
-          ? { ownerId: filters.ownerId }
-          : undefined,
-      orderBy: { createdAt: "desc" },
-      include: {
-        tasks: {
-          orderBy: { createdAt: "desc" },
-        },
-      },
-    });
-
-    return spaces.map(mapPrismaSpace);
-  }
-
-  const spaces = (
-    filters.actorId
-      ? store.database
-          .prepare(
-            `SELECT DISTINCT spaces.*
-             FROM spaces
-             LEFT JOIN space_members
-               ON space_members.space_id = spaces.id
-              AND space_members.user_id = ?
-             WHERE spaces.owner_id = ?
-                OR space_members.user_id IS NOT NULL
-             ORDER BY spaces.created_at DESC`,
-          )
-          .all(filters.actorId, filters.actorId)
-      : filters.ownerId
-      ? store.database
-          .prepare(
-            "SELECT * FROM spaces WHERE owner_id = ? ORDER BY created_at DESC",
-          )
-          .all(filters.ownerId)
-      : store.database
-          .prepare("SELECT * FROM spaces ORDER BY created_at DESC")
-          .all()
-  ) as SpaceRow[];
-  const tasks = store.database
-    .prepare("SELECT * FROM tasks ORDER BY created_at DESC")
-    .all() as TaskRow[];
-
-  const tasksBySpace = new Map<string, TaskRecord[]>();
-
-  for (const task of tasks) {
-    const collection = tasksBySpace.get(task.space_id) ?? [];
-    collection.push(mapTask(task));
-    tasksBySpace.set(task.space_id, collection);
-  }
-
-  return spaces.map((space) => mapSpace(space, tasksBySpace.get(space.id) ?? []));
-}
-
-export async function getSpaceById(
-  store: Store,
-  spaceId: string,
-): Promise<SpaceRecord | null> {
-  if (store.prisma) {
-    const row = await store.prisma.space.findUnique({
-      where: { id: spaceId },
-    });
-
-    if (!row) {
-      return null;
-    }
-
-    return mapPrismaSpace(row);
-  }
-
-  const row = store.database
-    .prepare("SELECT * FROM spaces WHERE id = ? LIMIT 1")
-    .get(spaceId) as SpaceRow | undefined;
-
-  if (!row) {
-    return null;
-  }
-
-  return mapSpace(row, []);
-}
-
-export async function listTasksBySpace(
-  store: Store,
-  spaceId: string,
 ): Promise<TaskRecord[]> {
+  const ownerId = filters.actorId ?? filters.ownerId;
+
   if (store.prisma) {
     const rows = await store.prisma.task.findMany({
-      where: { spaceId },
+      where: ownerId ? { ownerId } : undefined,
       orderBy: { createdAt: "desc" },
     });
 
@@ -1663,321 +1570,23 @@ export async function listTasksBySpace(
   }
 
   const rows = store.database
-    .prepare("SELECT * FROM tasks WHERE space_id = ? ORDER BY created_at DESC")
-    .all(spaceId) as TaskRow[];
+    .prepare(
+      ownerId
+        ? "SELECT * FROM tasks WHERE owner_id = ? ORDER BY created_at DESC"
+        : "SELECT * FROM tasks ORDER BY created_at DESC",
+    )
+    .all(...(ownerId ? [ownerId] : [])) as TaskRow[];
 
   return rows.map(mapTask);
 }
 
-export async function addSpaceMember(
-  store: Store,
-  input: {
-    spaceId: string;
-    userId: string;
-    role: SpaceRole;
-  },
-): Promise<void> {
-  if (store.prisma) {
-    await store.prisma.spaceMember.upsert({
-      where: {
-        spaceId_userId: {
-          spaceId: input.spaceId,
-          userId: input.userId,
-        },
-      },
-      update: {
-        role: input.role,
-      },
-      create: {
-        spaceId: input.spaceId,
-        userId: input.userId,
-        role: input.role,
-      },
-    });
-    return;
-  }
-
-  const timestamp = new Date().toISOString();
-  store.database
-    .prepare(
-      `INSERT INTO space_members (space_id, user_id, role, created_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(space_id, user_id) DO UPDATE SET role = excluded.role`,
-    )
-    .run(input.spaceId, input.userId, input.role, timestamp);
-}
-
-export async function listSpaceMembers(
-  store: Store,
-  spaceId: string,
-): Promise<SpaceMemberRecord[]> {
-  if (store.prisma) {
-    const rows = await store.prisma.spaceMember.findMany({
-      where: { spaceId },
-      orderBy: { createdAt: "asc" },
-    });
-
-    return rows.map(mapPrismaSpaceMember);
-  }
-
-  const rows = store.database
-    .prepare(
-      `SELECT * FROM space_members
-       WHERE space_id = ?
-       ORDER BY created_at ASC`,
-    )
-    .all(spaceId) as SpaceMemberRow[];
-
-  return rows.map(mapSpaceMember);
-}
-
-export async function removeSpaceMember(
-  store: Store,
-  input: {
-    spaceId: string;
-    userId: string;
-  },
-): Promise<void> {
-  if (store.prisma) {
-    await store.prisma.spaceMember.deleteMany({
-      where: {
-        spaceId: input.spaceId,
-        userId: input.userId,
-      },
-    });
-    return;
-  }
-
-  store.database
-    .prepare(
-      `DELETE FROM space_members
-       WHERE space_id = ?
-         AND user_id = ?`,
-    )
-    .run(input.spaceId, input.userId);
-}
-
-export async function createSpaceInvite(
-  store: Store,
-  input: {
-    spaceId: string;
-    role: Exclude<SpaceRole, "owner">;
-    createdBy: string;
-  },
-): Promise<SpaceInviteRecord> {
-  const token = randomUUID();
-
-  if (store.prisma) {
-    const invite = await store.prisma.spaceInvite.create({
-      data: {
-        token,
-        spaceId: input.spaceId,
-        role: input.role,
-        createdBy: input.createdBy,
-      },
-    });
-
-    return mapPrismaSpaceInvite(invite);
-  }
-
-  const id = randomUUID();
-  const createdAt = new Date().toISOString();
-  store.database
-    .prepare(
-      `INSERT INTO space_invites (
-        id, token, space_id, role, created_by, accepted_by, accepted_at, revoked_at, created_at
-      ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?)`,
-    )
-    .run(id, token, input.spaceId, input.role, input.createdBy, createdAt);
-
-  return {
-    id,
-    token,
-    spaceId: input.spaceId,
-    role: input.role,
-    createdBy: input.createdBy,
-    acceptedBy: null,
-    acceptedAt: null,
-    revokedAt: null,
-    createdAt,
-  };
-}
-
-export async function listSpaceInvites(
-  store: Store,
-  spaceId: string,
-): Promise<SpaceInviteRecord[]> {
-  if (store.prisma) {
-    const invites = await store.prisma.spaceInvite.findMany({
-      where: { spaceId },
-      orderBy: { createdAt: "desc" },
-    });
-
-    return invites.map(mapPrismaSpaceInvite);
-  }
-
-  const rows = store.database
-    .prepare(
-      `SELECT * FROM space_invites
-       WHERE space_id = ?
-       ORDER BY created_at DESC`,
-    )
-    .all(spaceId) as SpaceInviteRow[];
-
-  return rows.map(mapSpaceInvite);
-}
-
-export async function getSpaceInviteByToken(
-  store: Store,
-  token: string,
-): Promise<SpaceInviteRecord | null> {
-  if (store.prisma) {
-    const invite = await store.prisma.spaceInvite.findUnique({
-      where: { token },
-    });
-
-    return invite ? mapPrismaSpaceInvite(invite) : null;
-  }
-
-  const row = store.database
-    .prepare(
-      `SELECT * FROM space_invites
-       WHERE token = ?
-       LIMIT 1`,
-    )
-    .get(token) as SpaceInviteRow | undefined;
-
-  return row ? mapSpaceInvite(row) : null;
-}
-
-export async function revokeSpaceInvite(
-  store: Store,
-  inviteId: string,
-): Promise<void> {
-  if (store.prisma) {
-    await store.prisma.spaceInvite.update({
-      where: { id: inviteId },
-      data: {
-        revokedAt: new Date(),
-      },
-    });
-    return;
-  }
-
-  store.database
-    .prepare(
-      `UPDATE space_invites
-       SET revoked_at = ?
-       WHERE id = ?`,
-    )
-    .run(new Date().toISOString(), inviteId);
-}
-
-export async function acceptSpaceInvite(
-  store: Store,
-  input: {
-    token: string;
-    actorId: string;
-  },
-): Promise<SpaceInviteRecord | null> {
-  const invite = await getSpaceInviteByToken(store, input.token);
-
-  if (!invite || invite.revokedAt || invite.acceptedAt) {
-    return null;
-  }
-
-  await addSpaceMember(store, {
-    spaceId: invite.spaceId,
-    userId: input.actorId,
-    role: invite.role,
-  });
-
-  if (store.prisma) {
-    const updated = await store.prisma.spaceInvite.update({
-      where: { id: invite.id },
-      data: {
-        acceptedBy: input.actorId,
-        acceptedAt: new Date(),
-      },
-    });
-
-    return mapPrismaSpaceInvite(updated);
-  }
-
-  const acceptedAt = new Date().toISOString();
-  store.database
-    .prepare(
-      `UPDATE space_invites
-       SET accepted_by = ?,
-           accepted_at = ?
-       WHERE id = ?`,
-    )
-    .run(input.actorId, acceptedAt, invite.id);
-
-  return {
-    ...invite,
-    acceptedBy: input.actorId,
-    acceptedAt,
-  };
-}
-
-export async function getSpaceMembership(
-  store: Store,
-  actorId: string,
-  spaceId: string,
-): Promise<SpaceMemberRecord | null> {
-  const space = await getSpaceById(store, spaceId);
-
-  if (!space) {
-    return null;
-  }
-
-  if (space.ownerId === actorId) {
-    return {
-      spaceId,
-      userId: actorId,
-      role: "owner",
-      createdAt: space.createdAt,
-    };
-  }
-
-  if (store.prisma) {
-    const member = await store.prisma.spaceMember.findUnique({
-      where: {
-        spaceId_userId: {
-          spaceId,
-          userId: actorId,
-        },
-      },
-    });
-
-    return member ? mapPrismaSpaceMember(member) : null;
-  }
-
-  const member = store.database
-    .prepare(
-      `SELECT * FROM space_members
-       WHERE space_id = ?
-         AND user_id = ?
-       LIMIT 1`,
-    )
-    .get(spaceId, actorId) as SpaceMemberRow | undefined;
-
-  return member ? mapSpaceMember(member) : null;
-}
-
-export async function getSpaceMembershipForTask(
+export async function hasTaskOwner(
   store: Store,
   actorId: string,
   taskId: string,
-): Promise<SpaceMemberRecord | null> {
+): Promise<boolean> {
   const task = await getTaskById(store, taskId);
-
-  if (!task) {
-    return null;
-  }
-
-  return getSpaceMembership(store, actorId, task.spaceId);
+  return task?.ownerId === actorId;
 }
 
 export async function getTaskByBriefId(
@@ -2006,62 +1615,13 @@ export async function getTaskByBriefId(
   return row ? mapTask(row) : null;
 }
 
-export async function getSpaceMembershipForBrief(
+export async function hasBriefOwner(
   store: Store,
   actorId: string,
   briefId: string,
-): Promise<SpaceMemberRecord | null> {
+): Promise<boolean> {
   const task = await getTaskByBriefId(store, briefId);
-
-  if (!task) {
-    return null;
-  }
-
-  return getSpaceMembership(store, actorId, task.spaceId);
-}
-
-export function createSpaceRecord(input: CreateSpaceInput): Promise<string>;
-export function createSpaceRecord(
-  store: Store,
-  input: CreateSpaceInput,
-): Promise<string>;
-export async function createSpaceRecord(
-  storeOrInput: Store | CreateSpaceInput,
-  maybeInput?: CreateSpaceInput,
-) {
-  const store = maybeInput ? (storeOrInput as Store) : defaultStore;
-  const input = maybeInput ?? (storeOrInput as CreateSpaceInput);
-
-  if (store.prisma) {
-    const space = await store.prisma.space.create({
-      data: {
-        ownerId: input.ownerId ?? "local-user",
-        name: input.name,
-        description: input.description ?? null,
-      },
-    });
-
-    return space.id;
-  }
-
-  const timestamp = new Date().toISOString();
-  const id = randomUUID();
-
-  store.database
-    .prepare(
-      `INSERT INTO spaces (id, owner_id, name, description, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      id,
-      input.ownerId ?? "local-user",
-      input.name,
-      input.description ?? null,
-      timestamp,
-      timestamp,
-    );
-
-  return id;
+  return task?.ownerId === actorId;
 }
 
 export function createTaskRecord(input: CreateTaskInput): Promise<string>;
@@ -2079,7 +1639,7 @@ export async function createTaskRecord(
   if (store.prisma) {
     const task = await store.prisma.task.create({
       data: {
-        spaceId: input.spaceId,
+        ownerId: input.ownerId ?? "local-user",
         title: input.title,
         taskType: input.taskType,
         userPrompt: input.userPrompt,
@@ -2098,7 +1658,7 @@ export async function createTaskRecord(
     .prepare(
       `INSERT INTO tasks (
         id,
-        space_id,
+        owner_id,
         title,
         task_type,
         user_prompt,
@@ -2110,7 +1670,7 @@ export async function createTaskRecord(
     )
     .run(
       id,
-      input.spaceId,
+      input.ownerId ?? "local-user",
       input.title,
       input.taskType,
       input.userPrompt,
@@ -2194,6 +1754,7 @@ export async function createSourceRecord(
     sourceType: SourceType;
     title: string;
     url: string;
+    configJson?: Record<string, unknown> | null;
   },
 ) {
   if (store.prisma) {
@@ -2203,6 +1764,8 @@ export async function createSourceRecord(
         sourceType: input.sourceType,
         title: input.title,
         url: input.url,
+        configJson:
+          (input.configJson as Prisma.InputJsonValue | undefined) ?? undefined,
         status: "idle",
         syncIntervalMinutes: 360,
         nextSyncAt: new Date(),
@@ -2224,12 +1787,13 @@ export async function createSourceRecord(
         source_type,
         title,
         url,
+        config_json,
         status,
         sync_interval_minutes,
         next_sync_at,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -2237,6 +1801,7 @@ export async function createSourceRecord(
       input.sourceType,
       input.title,
       input.url,
+      input.configJson ? JSON.stringify(input.configJson) : null,
       "idle",
       360,
       nextSyncAt,
@@ -2259,6 +1824,24 @@ export async function createItemRecordResult(
     language?: string | null;
     contentHash?: string;
     structuredFields?: Record<string, unknown> | null;
+    isReal?: boolean | null;
+    relevanceScore?: number | null;
+    relevanceReason?: string | null;
+    keywordMentioned?: boolean | null;
+    matchedTerms?: string[] | null;
+    qualityStatus?: ItemRecord["qualityStatus"];
+    qualityError?: string | null;
+    viewCount?: number | null;
+    likeCount?: number | null;
+    commentCount?: number | null;
+    shareCount?: number | null;
+    replyCount?: number | null;
+    repostCount?: number | null;
+    sourceNativeScore?: number | null;
+    authorName?: string | null;
+    authorUsername?: string | null;
+    authorFollowers?: number | null;
+    authorVerified?: boolean | null;
     publishedAt?: string | null;
     fetchedAt?: string;
   },
@@ -2287,6 +1870,26 @@ export async function createItemRecordResult(
           structuredFields:
             (input.structuredFields as Prisma.InputJsonValue | undefined) ??
             undefined,
+          isReal: input.isReal ?? null,
+          relevanceScore: input.relevanceScore ?? null,
+          relevanceReason: input.relevanceReason ?? null,
+          keywordMentioned: input.keywordMentioned ?? null,
+          matchedTerms:
+            (input.matchedTerms as Prisma.InputJsonValue | undefined) ??
+            undefined,
+          qualityStatus: input.qualityStatus ?? "pending",
+          qualityError: input.qualityError ?? null,
+          viewCount: input.viewCount ?? null,
+          likeCount: input.likeCount ?? null,
+          commentCount: input.commentCount ?? null,
+          shareCount: input.shareCount ?? null,
+          replyCount: input.replyCount ?? null,
+          repostCount: input.repostCount ?? null,
+          sourceNativeScore: input.sourceNativeScore ?? null,
+          authorName: input.authorName ?? null,
+          authorUsername: input.authorUsername ?? null,
+          authorFollowers: input.authorFollowers ?? null,
+          authorVerified: input.authorVerified ?? null,
           publishedAt: input.publishedAt ? new Date(input.publishedAt) : null,
           fetchedAt,
         },
@@ -2329,10 +1932,28 @@ export async function createItemRecordResult(
         language,
         content_hash,
         structured_fields,
+        is_real,
+        relevance_score,
+        relevance_reason,
+        keyword_mentioned,
+        matched_terms,
+        quality_status,
+        quality_error,
+        view_count,
+        like_count,
+        comment_count,
+        share_count,
+        reply_count,
+        repost_count,
+        source_native_score,
+        author_name,
+        author_username,
+        author_followers,
+        author_verified,
         published_at,
         fetched_at,
         created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -2345,6 +1966,30 @@ export async function createItemRecordResult(
       input.language ?? null,
       contentHash,
       input.structuredFields ? JSON.stringify(input.structuredFields) : null,
+      input.isReal === undefined || input.isReal === null
+        ? null
+        : Number(input.isReal),
+      input.relevanceScore ?? null,
+      input.relevanceReason ?? null,
+      input.keywordMentioned === undefined || input.keywordMentioned === null
+        ? null
+        : Number(input.keywordMentioned),
+      input.matchedTerms ? JSON.stringify(input.matchedTerms) : null,
+      input.qualityStatus ?? "pending",
+      input.qualityError ?? null,
+      input.viewCount ?? null,
+      input.likeCount ?? null,
+      input.commentCount ?? null,
+      input.shareCount ?? null,
+      input.replyCount ?? null,
+      input.repostCount ?? null,
+      input.sourceNativeScore ?? null,
+      input.authorName ?? null,
+      input.authorUsername ?? null,
+      input.authorFollowers ?? null,
+      input.authorVerified === undefined || input.authorVerified === null
+        ? null
+        : Number(input.authorVerified),
       input.publishedAt ?? null,
       fetchedAt,
       timestamp,
@@ -2365,6 +2010,24 @@ export async function createItemRecordResult(
     language: input.language ?? null,
     contentHash,
     structuredFields: input.structuredFields ?? null,
+    isReal: input.isReal ?? null,
+    relevanceScore: input.relevanceScore ?? null,
+    relevanceReason: input.relevanceReason ?? null,
+    keywordMentioned: input.keywordMentioned ?? null,
+    matchedTerms: input.matchedTerms ?? null,
+    qualityStatus: input.qualityStatus ?? "pending",
+    qualityError: input.qualityError ?? null,
+    viewCount: input.viewCount ?? null,
+    likeCount: input.likeCount ?? null,
+    commentCount: input.commentCount ?? null,
+    shareCount: input.shareCount ?? null,
+    replyCount: input.replyCount ?? null,
+    repostCount: input.repostCount ?? null,
+    sourceNativeScore: input.sourceNativeScore ?? null,
+    authorName: input.authorName ?? null,
+    authorUsername: input.authorUsername ?? null,
+    authorFollowers: input.authorFollowers ?? null,
+    authorVerified: input.authorVerified ?? null,
     publishedAt: input.publishedAt ?? null,
     fetchedAt,
     createdAt: timestamp,
@@ -2383,6 +2046,24 @@ export async function createItemRecord(
     language?: string | null;
     contentHash?: string;
     structuredFields?: Record<string, unknown> | null;
+    isReal?: boolean | null;
+    relevanceScore?: number | null;
+    relevanceReason?: string | null;
+    keywordMentioned?: boolean | null;
+    matchedTerms?: string[] | null;
+    qualityStatus?: ItemRecord["qualityStatus"];
+    qualityError?: string | null;
+    viewCount?: number | null;
+    likeCount?: number | null;
+    commentCount?: number | null;
+    shareCount?: number | null;
+    replyCount?: number | null;
+    repostCount?: number | null;
+    sourceNativeScore?: number | null;
+    authorName?: string | null;
+    authorUsername?: string | null;
+    authorFollowers?: number | null;
+    authorVerified?: boolean | null;
     publishedAt?: string | null;
     fetchedAt?: string;
   },
@@ -2594,13 +2275,7 @@ export async function listBriefs(
         { relevanceScore: "desc" },
         { createdAt: "desc" },
       ],
-      include: {
-        task: {
-          include: {
-            space: true,
-          },
-        },
-      },
+      include: { task: true },
     });
 
     return rows.map(mapPrismaBrief);
@@ -2610,11 +2285,9 @@ export async function listBriefs(
     .prepare(
       `SELECT
          briefs.*,
-         tasks.title AS task_title,
-         spaces.name AS space_name
+         tasks.title AS task_title
        FROM briefs
        JOIN tasks ON briefs.task_id = tasks.id
-       JOIN spaces ON tasks.space_id = spaces.id
        ORDER BY briefs.importance_score DESC, briefs.relevance_score DESC, briefs.created_at DESC`,
     )
     .all() as BriefRow[];
@@ -3175,12 +2848,7 @@ export async function listRecentDeliveryLogs(
           FROM "DeliveryLog" dl
           JOIN "Brief" b ON b."id" = dl."briefId"
           JOIN "Task" t ON t."id" = b."taskId"
-          JOIN "Space" s ON s."id" = t."spaceId"
-          LEFT JOIN "SpaceMember" sm
-            ON sm."spaceId" = s."id"
-           AND sm."userId" = ${filters.actorId}
-          WHERE s."ownerId" = ${filters.actorId}
-             OR sm."userId" IS NOT NULL
+          WHERE t."ownerId" = ${filters.actorId}
           ORDER BY dl."startedAt" DESC
           LIMIT ${limit}
         `
@@ -3212,16 +2880,11 @@ export async function listRecentDeliveryLogs(
              FROM delivery_logs
              JOIN briefs ON briefs.id = delivery_logs.brief_id
              JOIN tasks ON tasks.id = briefs.task_id
-             JOIN spaces ON spaces.id = tasks.space_id
-             LEFT JOIN space_members
-               ON space_members.space_id = spaces.id
-              AND space_members.user_id = ?
-             WHERE spaces.owner_id = ?
-                OR space_members.user_id IS NOT NULL
+             WHERE tasks.owner_id = ?
              ORDER BY delivery_logs.started_at DESC
              LIMIT ?`,
           )
-          .all(filters.actorId, filters.actorId, limit)
+          .all(filters.actorId, limit)
       : store.database
           .prepare(
             `SELECT * FROM delivery_logs
@@ -3245,12 +2908,7 @@ export async function listRecentSyncRuns(
         ? {
             source: {
               task: {
-                space: {
-                  OR: [
-                    { ownerId: filters.actorId },
-                    { members: { some: { userId: filters.actorId } } },
-                  ],
-                },
+                ownerId: filters.actorId,
               },
             },
           }
@@ -3270,16 +2928,11 @@ export async function listRecentSyncRuns(
              FROM sync_runs
              JOIN sources ON sources.id = sync_runs.source_id
              JOIN tasks ON tasks.id = sources.task_id
-             JOIN spaces ON spaces.id = tasks.space_id
-             LEFT JOIN space_members
-               ON space_members.space_id = spaces.id
-              AND space_members.user_id = ?
-             WHERE spaces.owner_id = ?
-                OR space_members.user_id IS NOT NULL
+             WHERE tasks.owner_id = ?
              ORDER BY sync_runs.started_at DESC
              LIMIT ?`,
           )
-          .all(filters.actorId, filters.actorId, limit)
+          .all(filters.actorId, limit)
       : store.database
           .prepare(
             `SELECT * FROM sync_runs
@@ -3371,12 +3024,7 @@ export async function listSources(
       where: filters.actorId
         ? {
             task: {
-              space: {
-                OR: [
-                  { ownerId: filters.actorId },
-                  { members: { some: { userId: filters.actorId } } },
-                ],
-              },
+              ownerId: filters.actorId,
             },
           }
         : undefined,
@@ -3393,15 +3041,10 @@ export async function listSources(
             `SELECT DISTINCT sources.*
              FROM sources
              JOIN tasks ON tasks.id = sources.task_id
-             JOIN spaces ON spaces.id = tasks.space_id
-             LEFT JOIN space_members
-               ON space_members.space_id = spaces.id
-              AND space_members.user_id = ?
-             WHERE spaces.owner_id = ?
-                OR space_members.user_id IS NOT NULL
+             WHERE tasks.owner_id = ?
              ORDER BY sources.created_at DESC`,
           )
-          .all(filters.actorId, filters.actorId)
+          .all(filters.actorId)
       : store.database
           .prepare("SELECT * FROM sources ORDER BY created_at DESC")
           .all()
@@ -3427,11 +3070,7 @@ export async function getBriefById(
               },
             }
           : {}),
-        task: {
-          include: {
-            space: true,
-          },
-        },
+        task: true,
       },
     });
 
@@ -3456,11 +3095,9 @@ export async function getBriefById(
              : "briefs.is_read"
          } AS is_read,
          briefs.created_at,
-         tasks.title AS task_title,
-         spaces.name AS space_name
+         tasks.title AS task_title
        FROM briefs
        JOIN tasks ON briefs.task_id = tasks.id
-       JOIN spaces ON tasks.space_id = spaces.id
        ${
          options.actorId
            ? "LEFT JOIN brief_reads ON brief_reads.brief_id = briefs.id AND brief_reads.actor_id = ?"
@@ -3607,12 +3244,7 @@ export async function countUnreadBriefs(
         ...(filters.actorId
           ? {
               task: {
-                space: {
-                  OR: [
-                    { ownerId: filters.actorId },
-                    { members: { some: { userId: filters.actorId } } },
-                  ],
-                },
+                ownerId: filters.actorId,
               },
             }
           : {}),
@@ -3627,17 +3259,13 @@ export async function countUnreadBriefs(
             `SELECT COUNT(*) AS count
              FROM briefs
              JOIN tasks ON briefs.task_id = tasks.id
-             JOIN spaces ON tasks.space_id = spaces.id
-             LEFT JOIN space_members
-               ON space_members.space_id = spaces.id
-              AND space_members.user_id = ?
              LEFT JOIN brief_reads
                ON brief_reads.brief_id = briefs.id
               AND brief_reads.actor_id = ?
              WHERE brief_reads.actor_id IS NULL
-               AND (spaces.owner_id = ? OR space_members.user_id IS NOT NULL)`,
+               AND tasks.owner_id = ?`,
           )
-          .get(filters.actorId, filters.actorId, filters.actorId)
+          .get(filters.actorId, filters.actorId)
       : store.database
           .prepare("SELECT COUNT(*) AS count FROM briefs WHERE is_read = 0")
           .get()
@@ -3662,12 +3290,7 @@ export async function listBriefsFiltered(
         ...(filters.actorId
           ? {
               task: {
-                space: {
-                  OR: [
-                    { ownerId: filters.actorId },
-                    { members: { some: { userId: filters.actorId } } },
-                  ],
-                },
+                ownerId: filters.actorId,
               },
             }
           : {}),
@@ -3686,11 +3309,7 @@ export async function listBriefsFiltered(
               },
             }
           : {}),
-        task: {
-          include: {
-            space: true,
-          },
-        },
+        task: true,
       },
     });
 
@@ -3710,7 +3329,7 @@ export async function listBriefsFiltered(
     );
   }
   if (filters.actorId) {
-    conditions.push("(spaces.owner_id = ? OR space_members.user_id IS NOT NULL)");
+    conditions.push("tasks.owner_id = ?");
     params.push(filters.actorId);
   }
 
@@ -3734,14 +3353,9 @@ export async function listBriefsFiltered(
              : "briefs.is_read"
          } AS is_read,
          briefs.created_at,
-         tasks.title AS task_title,
-         spaces.name AS space_name
+         tasks.title AS task_title
        FROM briefs
        JOIN tasks ON briefs.task_id = tasks.id
-       JOIN spaces ON tasks.space_id = spaces.id
-       LEFT JOIN space_members
-         ON space_members.space_id = spaces.id
-        AND space_members.user_id = ?
        ${
          filters.actorId
            ? "LEFT JOIN brief_reads ON brief_reads.brief_id = briefs.id AND brief_reads.actor_id = ?"
@@ -3751,7 +3365,7 @@ export async function listBriefsFiltered(
        ORDER BY briefs.importance_score DESC, briefs.relevance_score DESC, briefs.created_at DESC`,
     )
     .all(
-      ...(filters.actorId ? [filters.actorId, filters.actorId, ...params] : ["", ...params]),
+      ...(filters.actorId ? [filters.actorId, ...params] : params),
     ) as BriefRow[];
 
   return rows.map(mapBrief);
@@ -3799,20 +3413,6 @@ export async function deleteTask(
   }
 
   store.database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
-}
-
-export async function deleteSpace(
-  store: Store,
-  spaceId: string,
-): Promise<void> {
-  if (store.prisma) {
-    await store.prisma.space.delete({
-      where: { id: spaceId },
-    });
-    return;
-  }
-
-  store.database.prepare("DELETE FROM spaces WHERE id = ?").run(spaceId);
 }
 
 // --- AI Task Intent, Profiles, Controls & Grounded Chat thread store helpers ---
@@ -3997,7 +3597,7 @@ export async function updateTaskControls(
 
 export async function getOrCreateChatThread(
   store: Store,
-  scopeType: "global" | "space" | "task" | "brief",
+  scopeType: "global" | "task" | "brief",
   scopeId: string,
 ): Promise<ChatThreadRecord> {
   if (store.prisma) {
@@ -4077,7 +3677,7 @@ export async function getOrCreateChatThread(
 
 export async function findChatThread(
   store: Store,
-  scopeType: "global" | "space" | "task" | "brief",
+  scopeType: "global" | "task" | "brief",
   scopeId: string,
 ): Promise<ChatThreadRecord | null> {
   if (store.prisma) {

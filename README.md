@@ -1,27 +1,27 @@
 ## Getting Started
 
-Start a local Postgres database and export `DATABASE_URL`, then run the development server:
+Local development uses SQLite by default. Run the development server:
 
 ```bash
-export DATABASE_URL="postgresql://postgres:postgres@127.0.0.1:5432/inflowee"
 pnpm prisma generate
 pnpm dev
 ```
 
-The runtime store no longer falls back to a local SQLite database. `DATABASE_URL` is required for `pnpm dev`, `pnpm db:reset`, and `pnpm db:seed`.
+The default SQLite database lives at `data/inflowee.sqlite`. Set
+`INFLOWEE_SQLITE_PATH` to use a different local file.
+
+Set `DATABASE_URL` only when you explicitly want local development to use
+Postgres instead of SQLite.
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
 ## Local verification
 
-1. Export `DATABASE_URL`
-2. Reset the local database with `pnpm db:reset`
-3. Seed verification data with `pnpm db:seed`
-4. Start the app with `pnpm dev`
-5. Open `/` and confirm the seeded space and task render
-6. Open `/sources` and confirm the seeded RSS source renders
-7. Open `/inbox` and confirm a brief appears
-8. Open `/inbox/<briefId>/html` and confirm the HTML digest renders
+1. Start the app with `pnpm dev`
+2. Open `/` and create a monitoring goal
+3. Open `/sources` and add a source for that goal
+4. Open `/inbox` after syncing and confirm a brief appears
+5. Open `/inbox/<briefId>/html` and confirm the HTML digest renders
 
 ## Deployment
 

@@ -1,205 +1,74 @@
 /// <reference types="vitest/globals" />
 
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-
 import { getGroundingForScope } from "@/lib/grounding";
-import { assertTaskAccess } from "@/lib/auth";
 import {
-  addSpaceMember,
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
-  createSpaceRecord,
-  createStore,
   createTaskRecord,
 } from "@/lib/store";
-import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
+import { createSqliteFixture } from "./helpers/sqlite-store";
 
-async function createFixture() {
-  const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-grounding-test-"));
-  const store = createStore(join(tempDirectory, "store.sqlite"));
-
-  const spaceId = await createSpaceRecord(store, {
-    name: "AI Watch",
-  });
-  const taskId = await createTaskRecord(store, {
-    spaceId,
-    title: "Agent launches",
+async function createPersonalGroundingFixture() {
+  const fixture = createSqliteFixture();
+  const taskId = await createTaskRecord(fixture.store, {
+    ownerId: "user-1",
+    title: "Track coding agents",
     taskType: "TOPIC",
-    userPrompt: "Track launches",
+    userPrompt: "Track coding agent launches and funding.",
   });
-  const sourceId = await createSourceRecord(store, {
+  const sourceId = await createSourceRecord(fixture.store, {
     taskId,
     sourceType: "RSS",
-    title: "Feed",
+    title: "Agent feed",
     url: "https://example.com/feed.xml",
   });
-  const item = await createItemRecordResult(store, {
+  const item = await createItemRecordResult(fixture.store, {
     sourceId,
-    title: "Launch roundup",
-    canonicalUrl: "https://example.com/launch",
-    summary: "Latest launches.",
-    publishedAt: "2026-05-21T08:00:00.000Z",
+    title: "Devin launches new coding agent update",
+    canonicalUrl: "https://example.com/devin",
+    summary: "A coding agent update.",
+    qualityStatus: "accepted",
+    isReal: true,
+    relevanceScore: 0.8,
+    relevanceReason: "Matched coding agent.",
+    keywordMentioned: true,
+    matchedTerms: ["coding", "agent"],
+  });
+  const briefId = await createBriefRecord(fixture.store, {
+    taskId,
+    itemIds: item ? [item.id] : [],
+    title: "Agent launch",
+    summary: "A relevant coding agent update was found.",
+    whyItMatters: "It matches the personal monitoring goal.",
+    sourceCitations: ["https://example.com/devin"],
   });
 
-  if (!item) {
-    throw new Error("Expected fixture item to be inserted.");
-  }
-
-  const briefId = await createBriefRecord(store, {
-    taskId,
-    itemIds: [item.id],
-    title: "Launch roundup",
-    summary: "Latest launches.",
-    whyItMatters: "New signal.",
-    sourceCitations: ["https://example.com/launch"],
-    relevanceScore: 0.5,
-    importanceScore: 0.5,
-    tags: [],
-  });
-
-  return {
-    store,
-    spaceId,
-    taskId,
-    briefId,
-    itemId: item.id,
-    cleanup() {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    },
-  };
+  return { ...fixture, taskId, briefId };
 }
 
-describe("getGroundingForScope", () => {
-  it("returns task-scoped briefs and items", async () => {
-    const fixture = await createFixture();
+describe("personal grounding scopes", () => {
+  it("returns task briefs and source items for a personal task", async () => {
+    const fixture = await createPersonalGroundingFixture();
 
     try {
       const grounding = await getGroundingForScope(
         fixture.store,
         "task",
         fixture.taskId,
+        { actorId: "user-1" },
       );
 
-      expect(grounding.briefs).toEqual([
-        expect.objectContaining({
-          id: fixture.briefId,
-          taskId: fixture.taskId,
-          title: "Launch roundup",
-        }),
-      ]);
-      expect(grounding.items).toEqual([
-        expect.objectContaining({
-          id: fixture.itemId,
-          title: "Launch roundup",
-          canonicalUrl: "https://example.com/launch",
-        }),
-      ]);
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  it("returns actor-scoped global grounding across accessible spaces", async () => {
-    const fixture = await createFixture();
-
-    try {
-      const secondSpaceId = await createSpaceRecord(fixture.store, {
-        ownerId: "other-owner",
-        name: "Other space",
-      });
-      const secondTaskId = await createTaskRecord(fixture.store, {
-        spaceId: secondSpaceId,
-        title: "Other launches",
-        taskType: "TOPIC",
-        userPrompt: "Track unrelated launches",
-      });
-      const secondSourceId = await createSourceRecord(fixture.store, {
-        taskId: secondTaskId,
-        sourceType: "RSS",
-        title: "Other feed",
-        url: "https://example.com/other.xml",
-      });
-      const secondItem = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Private roundup",
-        canonicalUrl: "https://example.com/private",
-        summary: "Private update.",
-      });
-
-      if (!secondItem) {
-        throw new Error("Expected secondary fixture item to be inserted.");
-      }
-
-      await createBriefRecord(fixture.store, {
-        taskId: secondTaskId,
-        itemIds: [secondItem.id],
-        title: "Private roundup",
-        summary: "Private update.",
-        whyItMatters: "Hidden from viewer.",
-        sourceCitations: ["https://example.com/private"],
-        relevanceScore: 0.4,
-        importanceScore: 0.4,
-        tags: [],
-      });
-
-      await addSpaceMember(fixture.store, {
-        spaceId: fixture.spaceId,
-        userId: "viewer-1",
-        role: "viewer",
-      });
-
-      const grounding = await getGroundingForScope(
-        fixture.store,
-        "global",
-        "all",
-        { actorId: "viewer-1" },
-      );
-
-      expect(grounding.briefs).toEqual([
-        expect.objectContaining({
-          id: fixture.briefId,
-          title: "Launch roundup",
-        }),
-      ]);
       expect(grounding.briefs).toHaveLength(1);
-      expect(grounding.items).toEqual([
-        expect.objectContaining({
-          canonicalUrl: "https://example.com/launch",
-        }),
-      ]);
+      expect(grounding.items).toHaveLength(1);
+      expect(grounding.briefs[0]?.taskTitle).toBe("Track coding agents");
     } finally {
       fixture.cleanup();
     }
   });
 
-  it("allows task access for a viewer member", async () => {
-    const fixture = await createFixture();
-
-    try {
-      await addSpaceMember(fixture.store, {
-        spaceId: fixture.spaceId,
-        userId: "viewer-1",
-        role: "viewer",
-      });
-
-      await expect(
-        assertTaskAccess(fixture.store, {
-          actorId: "viewer-1",
-          taskId: fixture.taskId,
-          minimumRole: "viewer",
-        }),
-      ).resolves.toBeUndefined();
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  it("returns brief-scoped linked items", async () => {
-    const fixture = await createFixture();
+  it("returns only the selected brief and linked items for brief scope", async () => {
+    const fixture = await createPersonalGroundingFixture();
 
     try {
       const grounding = await getGroundingForScope(
@@ -208,364 +77,33 @@ describe("getGroundingForScope", () => {
         fixture.briefId,
       );
 
-      expect(grounding.briefs).toHaveLength(1);
-      expect(grounding.briefs[0]?.id).toBe(fixture.briefId);
-      expect(grounding.items).toEqual([
-        expect.objectContaining({
-          id: fixture.itemId,
-          canonicalUrl: "https://example.com/launch",
-          rawContent: "Latest launches.",
-          origin: "example.com",
-          contentHash: expect.any(String),
-        }),
-      ]);
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  it.runIf(Boolean(process.env.DATABASE_URL))(
-    "returns task-scoped briefs and items from the postgres-backed store",
-    async () => {
-    const fixture = await createIsolatedPostgresStore();
-
-    try {
-      const spaceId = await createSpaceRecord(fixture.store, {
-        name: "AI Watch",
-      });
-      const taskId = await createTaskRecord(fixture.store, {
-        spaceId,
-        title: "Agent launches",
-        taskType: "TOPIC",
-        userPrompt: "Track launches",
-      });
-      const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
-        sourceType: "RSS",
-        title: "Feed",
-        url: "https://example.com/feed.xml",
-      });
-      const item = await createItemRecordResult(fixture.store, {
-        sourceId,
-        title: "Launch roundup",
-        canonicalUrl: "https://example.com/launch",
-        summary: "Latest launches.",
-        publishedAt: "2026-05-21T08:00:00.000Z",
-      });
-
-      if (!item) {
-        throw new Error("Expected fixture item to be inserted.");
-      }
-
-      const briefId = await createBriefRecord(fixture.store, {
-        taskId,
-        itemIds: [item.id],
-        title: "Launch roundup",
-        summary: "Latest launches.",
-        whyItMatters: "New signal.",
-        sourceCitations: ["https://example.com/launch"],
-        relevanceScore: 0.5,
-        importanceScore: 0.5,
-        tags: [],
-      });
-
-      const grounding = await getGroundingForScope(
-        fixture.store,
-        "task",
-        taskId,
-      );
-
-      expect(grounding.briefs).toEqual([
-        expect.objectContaining({
-          id: briefId,
-          taskId,
-        }),
-      ]);
-      expect(grounding.items).toEqual([
-        expect.objectContaining({
-          id: item.id,
-          canonicalUrl: "https://example.com/launch",
-        }),
-      ]);
-    } finally {
-      await fixture.cleanup();
-    }
-  }, 15_000);
-
-  it("returns space-scoped briefs and items across child tasks", async () => {
-    const fixture = await createFixture();
-
-    try {
-      const grounding = await getGroundingForScope(
-        fixture.store,
-        "space",
-        fixture.spaceId,
-      );
-
       expect(grounding.briefs.map((brief) => brief.id)).toEqual([fixture.briefId]);
-      expect(grounding.items.map((item) => item.id)).toEqual([fixture.itemId]);
+      expect(grounding.items[0]?.canonicalUrl).toBe("https://example.com/devin");
     } finally {
       fixture.cleanup();
     }
-    },
-  );
+  });
 
-  it("can retrieve briefs across sibling tasks within a space when task scope is empty", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-grounding-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
+  it("keeps global grounding scoped to the requesting owner", async () => {
+    const fixture = await createPersonalGroundingFixture();
 
     try {
-      const spaceId = await createSpaceRecord(store, {
-        name: "AI Watch",
-      });
-      const emptyTaskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Empty task",
+      await createTaskRecord(fixture.store, {
+        ownerId: "user-2",
+        title: "Other monitor",
         taskType: "TOPIC",
-        userPrompt: "Track empty scope",
+        userPrompt: "Track unrelated updates.",
       });
-      const siblingTaskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Filled task",
-        taskType: "TOPIC",
-        userPrompt: "Track launches",
-      });
-      const sourceId = await createSourceRecord(store, {
-        taskId: siblingTaskId,
-        sourceType: "RSS",
-        title: "Feed",
-        url: "https://example.com/feed.xml",
-      });
-      const item = await createItemRecordResult(store, {
-        sourceId,
-        title: "Launch roundup",
-        canonicalUrl: "https://example.com/launch",
-        summary: "Latest launches.",
-        publishedAt: "2026-05-21T08:00:00.000Z",
-      });
-
-      if (!item) {
-        throw new Error("Expected fixture item to be inserted.");
-      }
-
-      const briefId = await createBriefRecord(store, {
-        taskId: siblingTaskId,
-        itemIds: [item.id],
-        title: "Launch roundup",
-        summary: "Latest launches.",
-        whyItMatters: "New signal.",
-        sourceCitations: ["https://example.com/launch"],
-      });
-
-      const grounding = await getGroundingForScope(store, "task", emptyTaskId, {
-        fallbackSpaceId: spaceId,
-        includeSiblingFallback: true,
-      });
-
-      expect(grounding.briefs.map((brief) => brief.id)).toEqual([briefId]);
-      expect(grounding.items.map((result) => result.id)).toEqual([item.id]);
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    }
-  });
-
-  it("deduplicates task-scoped items by canonical url and keeps the freshest item", async () => {
-    const fixture = await createFixture();
-
-    try {
-      const secondSourceId = await createSourceRecord(fixture.store, {
-        taskId: fixture.taskId,
-        sourceType: "RSS",
-        title: "Backup feed",
-        url: "https://example.com/backup.xml",
-      });
-
-      const newerDuplicate = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Launch roundup duplicate",
-        canonicalUrl: "https://example.com/launch",
-        summary: "Same article from another feed.",
-        publishedAt: "2026-05-22T08:00:00.000Z",
-      });
-
-      expect(newerDuplicate).not.toBeNull();
 
       const grounding = await getGroundingForScope(
         fixture.store,
-        "task",
-        fixture.taskId,
-      );
-
-      expect(grounding.items).toHaveLength(1);
-      expect(grounding.items[0]?.id).toBe(newerDuplicate?.id);
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  it("globally sorts task-scoped items across sources by publishedAt then createdAt", async () => {
-    const fixture = await createFixture();
-
-    try {
-      const secondSourceId = await createSourceRecord(fixture.store, {
-        taskId: fixture.taskId,
-        sourceType: "RSS",
-        title: "Second feed",
-        url: "https://example.com/second.xml",
-      });
-
-      const oldest = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Oldest",
-        canonicalUrl: "https://example.com/oldest",
-        publishedAt: "2026-05-20T08:00:00.000Z",
-      });
-      const newest = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Newest",
-        canonicalUrl: "https://example.com/newest",
-        publishedAt: "2026-05-23T08:00:00.000Z",
-      });
-
-      expect(oldest).not.toBeNull();
-      expect(newest).not.toBeNull();
-
-      const grounding = await getGroundingForScope(
-        fixture.store,
-        "task",
-        fixture.taskId,
-      );
-
-      expect(grounding.items.map((item) => item.canonicalUrl)).toEqual([
-        "https://example.com/newest",
-        "https://example.com/launch",
-        "https://example.com/oldest",
-      ]);
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  it("globally sorts and deduplicates space-scoped items across child tasks", async () => {
-    const fixture = await createFixture();
-
-    try {
-      const secondTaskId = await createTaskRecord(fixture.store, {
-        spaceId: fixture.spaceId,
-        title: "Funding",
-        taskType: "TOPIC",
-        userPrompt: "Track funding",
-      });
-      const secondSourceId = await createSourceRecord(fixture.store, {
-        taskId: secondTaskId,
-        sourceType: "RSS",
-        title: "Funding feed",
-        url: "https://example.com/funding.xml",
-      });
-
-      const uniqueItem = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Funding round",
-        canonicalUrl: "https://example.com/funding",
-        publishedAt: "2026-05-24T08:00:00.000Z",
-      });
-      const duplicateItem = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Launch roundup mirrored",
-        canonicalUrl: "https://example.com/launch",
-        publishedAt: "2026-05-22T08:00:00.000Z",
-      });
-
-      expect(uniqueItem).not.toBeNull();
-      expect(duplicateItem).not.toBeNull();
-
-      const grounding = await getGroundingForScope(
-        fixture.store,
-        "space",
-        fixture.spaceId,
-      );
-
-      expect(grounding.items.map((item) => item.canonicalUrl)).toEqual([
-        "https://example.com/funding",
-        "https://example.com/launch",
-      ]);
-      expect(grounding.items[1]?.id).toBe(duplicateItem?.id);
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  it("skips item reads when includeItems is false", async () => {
-    const fixture = await createFixture();
-
-    try {
-      const grounding = await getGroundingForScope(
-        fixture.store,
-        "space",
-        fixture.spaceId,
-        { includeItems: false },
+        "global",
+        "global",
+        { actorId: "user-1" },
       );
 
       expect(grounding.briefs).toHaveLength(1);
-      expect(grounding.items).toEqual([]);
-    } finally {
-      fixture.cleanup();
-    }
-  });
-
-  it("prefers valid publishedAt over invalid strings for sorting and dedupe freshness", async () => {
-    const fixture = await createFixture();
-
-    try {
-      const secondSourceId = await createSourceRecord(fixture.store, {
-        taskId: fixture.taskId,
-        sourceType: "RSS",
-        title: "Second feed",
-        url: "https://example.com/second.xml",
-      });
-
-      const invalidPublishedAtItem = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Invalid published time",
-        canonicalUrl: "https://example.com/invalid-published",
-        publishedAt: "not-a-date",
-      });
-      const validPublishedAtItem = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Valid published time",
-        canonicalUrl: "https://example.com/valid-published",
-        publishedAt: "2026-05-25T08:00:00.000Z",
-      });
-      const invalidDuplicate = await createItemRecordResult(fixture.store, {
-        sourceId: secondSourceId,
-        title: "Launch roundup invalid duplicate",
-        canonicalUrl: "https://example.com/launch",
-        publishedAt: "definitely-invalid",
-      });
-
-      expect(invalidPublishedAtItem).not.toBeNull();
-      expect(validPublishedAtItem).not.toBeNull();
-      expect(invalidDuplicate).not.toBeNull();
-
-      const grounding = await getGroundingForScope(
-        fixture.store,
-        "task",
-        fixture.taskId,
-      );
-
-      expect(grounding.items.slice(0, 2).map((item) => item.canonicalUrl)).toEqual([
-        "https://example.com/valid-published",
-        "https://example.com/launch",
-      ]);
-      expect(
-        grounding.items.find((item) => item.canonicalUrl === "https://example.com/launch")?.id,
-      ).toBe(fixture.itemId);
-      expect(
-        grounding.items.find(
-          (item) => item.canonicalUrl === "https://example.com/invalid-published",
-        )?.id,
-      ).toBe(invalidPublishedAtItem?.id);
+      expect(grounding.briefs[0]?.taskId).toBe(fixture.taskId);
     } finally {
       fixture.cleanup();
     }

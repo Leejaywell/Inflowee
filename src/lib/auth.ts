@@ -4,11 +4,9 @@ import { cookies, headers } from "next/headers";
 
 import {
   defaultStore,
-  getSpaceMembership,
-  getSpaceMembershipForBrief,
-  getSpaceMembershipForTask,
+  hasBriefOwner,
   getTaskBySourceId,
-  type SpaceRole,
+  hasTaskOwner,
   type Store,
 } from "./store";
 import {
@@ -30,28 +28,22 @@ export type SessionUser = {
 
 export type SessionActor = SessionUser;
 
-type SpaceAccessInput = {
-  actorId: string;
-  spaceId: string;
-  minimumRole: SpaceRole;
-};
-
 type TaskAccessInput = {
   actorId: string;
   taskId: string;
-  minimumRole: SpaceRole;
+  minimumRole?: "viewer" | "editor" | "owner";
 };
 
 type SourceAccessInput = {
   actorId: string;
   sourceId: string;
-  minimumRole: SpaceRole;
+  minimumRole?: "viewer" | "editor" | "owner";
 };
 
 type BriefAccessInput = {
   actorId: string;
   briefId: string;
-  minimumRole: SpaceRole;
+  minimumRole?: "viewer" | "editor" | "owner";
 };
 
 function getFallbackSessionUser(): SessionUser | null {
@@ -118,6 +110,26 @@ function encodeActorSessionCookieValue(actor: SessionActor, secret: string) {
     }),
     "utf8",
   ).toString("base64url");
+}
+
+export function createSessionCookieValue(actor: SessionActor) {
+  const secret = process.env[SESSION_SECRET_ENV];
+
+  if (!secret) {
+    throw new Error("Session auth is not configured.");
+  }
+
+  return encodeActorSessionCookieValue(actor, secret);
+}
+
+export function getSessionCookieOptions() {
+  return {
+    httpOnly: true,
+    sameSite: "lax" as const,
+    secure: process.env.NODE_ENV === "production",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 30,
+  };
 }
 
 function decodeActorSessionCookieValue(value: string, secret: string):
@@ -200,16 +212,6 @@ async function getValidatedRequestActor():
   }
 }
 
-function roleSatisfies(role: SpaceRole, minimumRole: SpaceRole) {
-  const rank: Record<SpaceRole, number> = {
-    viewer: 0,
-    editor: 1,
-    owner: 2,
-  };
-
-  return rank[role] >= rank[minimumRole];
-}
-
 export async function getSessionUser(): Promise<SessionUser | null> {
   const secret = process.env[SESSION_SECRET_ENV];
 
@@ -258,31 +260,16 @@ export async function setSessionActorCookie(actor: SessionActor) {
   }
 
   const cookieStore = await cookies();
-  cookieStore.set(SESSION_COOKIE_NAME, encodeActorSessionCookieValue(actor, secret), {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
-    maxAge: 60 * 60 * 24 * 30,
-  });
+  cookieStore.set(
+    SESSION_COOKIE_NAME,
+    encodeActorSessionCookieValue(actor, secret),
+    getSessionCookieOptions(),
+  );
 }
 
 export async function clearSessionActorCookie() {
   const cookieStore = await cookies();
   cookieStore.delete(SESSION_COOKIE_NAME);
-}
-
-export async function createInvitedSessionActor(email: string): Promise<SessionActor> {
-  const normalizedEmail = email.trim().toLowerCase();
-
-  if (!normalizedEmail || !normalizedEmail.includes("@")) {
-    throw new Error("Invite email is required.");
-  }
-
-  return {
-    id: normalizedEmail,
-    email: normalizedEmail,
-  };
 }
 
 export async function createOperatorSessionActor(input: {
@@ -314,26 +301,6 @@ export function getActorScopedChatScopeId(actorId: string, scopeId: string) {
   return `${scopeId}:actor:${actorId}`;
 }
 
-export async function assertSpaceAccess(
-  input: SpaceAccessInput,
-): Promise<void>;
-export async function assertSpaceAccess(
-  store: Store,
-  input: SpaceAccessInput,
-): Promise<void>;
-export async function assertSpaceAccess(
-  storeOrInput: Store | SpaceAccessInput,
-  maybeInput?: SpaceAccessInput,
-): Promise<void> {
-  const store = maybeInput ? (storeOrInput as Store) : defaultStore;
-  const input = maybeInput ?? (storeOrInput as SpaceAccessInput);
-  const membership = await getSpaceMembership(store, input.actorId, input.spaceId);
-
-  if (!membership || !roleSatisfies(membership.role, input.minimumRole)) {
-    throw new Error("Forbidden");
-  }
-}
-
 export async function assertTaskAccess(input: TaskAccessInput): Promise<void>;
 export async function assertTaskAccess(
   store: Store,
@@ -345,9 +312,8 @@ export async function assertTaskAccess(
 ): Promise<void> {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
   const input = maybeInput ?? (storeOrInput as TaskAccessInput);
-  const membership = await getSpaceMembershipForTask(store, input.actorId, input.taskId);
 
-  if (!membership || !roleSatisfies(membership.role, input.minimumRole)) {
+  if (!(await hasTaskOwner(store, input.actorId, input.taskId))) {
     throw new Error("Forbidden");
   }
 }
@@ -374,7 +340,6 @@ export async function assertSourceAccess(
   await assertTaskAccess(store, {
     actorId: input.actorId,
     taskId: task.id,
-    minimumRole: input.minimumRole,
   });
 }
 
@@ -389,9 +354,8 @@ export async function assertBriefAccess(
 ): Promise<void> {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
   const input = maybeInput ?? (storeOrInput as BriefAccessInput);
-  const membership = await getSpaceMembershipForBrief(store, input.actorId, input.briefId);
 
-  if (!membership || !roleSatisfies(membership.role, input.minimumRole)) {
+  if (!(await hasBriefOwner(store, input.actorId, input.briefId))) {
     throw new Error("Forbidden");
   }
 }

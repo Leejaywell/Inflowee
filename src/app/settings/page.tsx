@@ -5,7 +5,7 @@ import {
   saveTelegramDelivery,
   saveWebhookEndpoint,
 } from "@/app/actions";
-import { requireOperatorSessionActor } from "@/lib/auth";
+import { requireSessionActor } from "@/lib/auth";
 import { buildDeliveryPayload } from "@/lib/delivery";
 import {
   defaultStore,
@@ -28,7 +28,7 @@ type SettingsPageProps = {
 export default async function SettingsPage({
   searchParams,
 }: SettingsPageProps) {
-  const actor = await requireOperatorSessionActor();
+  const actor = await requireSessionActor();
   const [webhookSettings, slackSettings, telegramSettings, telegramSourceSettings, feishuSettings, recentLogs, deliveryHealth, params] = await Promise.all([
     getWebhookSettings(defaultStore),
     getSlackSettings(defaultStore),

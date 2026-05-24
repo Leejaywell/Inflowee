@@ -81,14 +81,14 @@ export function BriefCard({ brief }: { brief: BriefRecord }) {
           </span>
         </div>
 
-        {brief.spaceName && brief.taskTitle && (
+        {brief.taskTitle && (
           <span
             style={{
               fontSize: 13,
               color: "#78716c",
             }}
           >
-            {brief.spaceName} / {brief.taskTitle}
+            {brief.taskTitle}
           </span>
         )}
       </div>

@@ -14,7 +14,7 @@ import {
   listRecentSyncRunsBySource,
   listRecentSyncRuns,
   listSources,
-  listSpacesWithTasks,
+  listTasks,
   type SyncRunRecord,
   type SourceRecord,
   type SourceStatus,
@@ -48,8 +48,8 @@ type SourceWithRuns = SourceRecord & {
 
 export default async function SourcesPage({ searchParams }: SourcesPageProps) {
   const actor = await requireSessionActor();
-  const [spaces, sources, healthSummary, recentRuns, params] = await Promise.all([
-    listSpacesWithTasks(defaultStore, { actorId: actor.id }),
+  const [tasksRaw, sources, healthSummary, recentRuns, params] = await Promise.all([
+    listTasks(defaultStore, { actorId: actor.id }),
     listSources(defaultStore, { actorId: actor.id }),
     getSourceHealthSummary(defaultStore, { actorId: actor.id }),
     listRecentSyncRuns(defaultStore, 12, { actorId: actor.id }),
@@ -68,13 +68,10 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
     sourcesByTask.set(source.taskId, taskSources);
   }
 
-  const tasks = spaces.flatMap((space) =>
-    space.tasks.map((task) => ({
-      ...task,
-      spaceName: space.name,
-      sources: sourcesByTask.get(task.id) ?? [],
-    })),
-  );
+  const tasks = tasksRaw.map((task) => ({
+    ...task,
+    sources: sourcesByTask.get(task.id) ?? [],
+  }));
   const created = params?.created;
   const error = params?.error;
   const synced = params?.synced;
@@ -277,7 +274,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               </option>
               {tasks.map((task) => (
                 <option key={task.id} value={task.id}>
-                  {task.spaceName} / {task.title}
+                  {task.title}
                 </option>
               ))}
             </select>
@@ -345,7 +342,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               </option>
               {tasks.map((task) => (
                 <option key={task.id} value={task.id}>
-                  {task.spaceName} / {task.title}
+                  {task.title}
                 </option>
               ))}
             </select>
@@ -439,7 +436,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div className="space-y-1">
                       <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-                        {task.spaceName}
+                        Monitoring goal
                       </p>
                       <h3 className="text-lg font-semibold text-stone-950">
                         {task.title}

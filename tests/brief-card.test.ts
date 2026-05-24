@@ -2,11 +2,10 @@
 
 import { BriefCard } from "@/lib/brief-card";
 import type { BriefRecord } from "@/lib/store";
+import { makeBriefRecord } from "./helpers/records";
 
 describe("BriefCard", () => {
-  const baseBrief: BriefRecord = {
-    id: "brief-1",
-    taskId: "task-1",
+  const baseBrief: BriefRecord = makeBriefRecord({
     title: "Launch roundup",
     summary: "Latest launches and product updates from the AI coding agent space.",
     whyItMatters: "New signal captured from subscribed RSS sources.",
@@ -14,11 +13,8 @@ describe("BriefCard", () => {
     relevanceScore: 0.5,
     importanceScore: 0.5,
     tags: [],
-    isRead: false,
-    createdAt: "2026-05-21T08:00:00.000Z",
     taskTitle: "Agent launches",
-    spaceName: "AI Watch",
-  };
+  });
 
   it("returns a valid React element with expected content", () => {
     const element = BriefCard({ brief: baseBrief });
@@ -28,7 +24,7 @@ describe("BriefCard", () => {
 
     const rendered = JSON.stringify(element);
     expect(rendered).toContain("Launch roundup");
-    expect(rendered).toContain("AI Watch");
+    expect(rendered).toContain("Agent launches");
     expect(rendered).toContain("Inflowee");
     expect(rendered).toContain("Why it matters");
     // Source count is rendered as children array [1, " source", ""]

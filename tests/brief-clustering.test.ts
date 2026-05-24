@@ -2,23 +2,17 @@
 
 import { clusterItemsForBriefs } from "@/lib/brief-clustering";
 import type { ItemRecord } from "@/lib/store";
+import { makeItemRecord } from "./helpers/records";
 
 function makeItem(id: string, title: string, canonicalUrl: string): ItemRecord {
-  return {
+  return makeItemRecord({
     id,
-    sourceId: "source-1",
     title,
     canonicalUrl,
     summary: null,
     rawContent: title,
-    origin: "example.com",
-    language: "en",
     contentHash: `hash-${id}`,
-    structuredFields: null,
-    publishedAt: "2026-05-22T00:00:00.000Z",
-    fetchedAt: "2026-05-22T00:00:00.000Z",
-    createdAt: "2026-05-22T00:00:00.000Z",
-  };
+  });
 }
 
 describe("clusterItemsForBriefs", () => {

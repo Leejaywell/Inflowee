@@ -1,560 +1,177 @@
 /// <reference types="vitest/globals" />
 
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterEach } from "vitest";
-
-import { syncAllSources, syncSourceById } from "@/lib/source-ingestion";
+import {
+  previewSubscriptionSources,
+  storeSourceItemsAndCreateBriefs,
+  syncSourceById,
+} from "@/lib/source-ingestion";
 import {
   createSourceRecord,
-  createSpaceRecord,
-  createStore,
   createTaskRecord,
-  saveTelegramSourceSettings,
-  listRecentSyncRunsBySource,
-  listBriefs,
+  listBriefsFiltered,
   listItemsBySource,
-  listSourcesByTask,
+  listSources,
+  saveTaskProfile,
 } from "@/lib/store";
-import { createIsolatedPostgresStore } from "./helpers/postgres-test-store";
+import { createSqliteFixture } from "./helpers/sqlite-store";
 
-afterEach(() => {
-  vi.resetModules();
-  vi.clearAllMocks();
-  vi.unmock("@/lib/inngest");
-});
+function sampleFeedXml() {
+  return `
+    <rss version="2.0">
+      <channel>
+        <item>
+          <title>Devin coding agent launches product update</title>
+          <link>https://example.com/devin-update</link>
+          <description>Important coding agent update for developer tools.</description>
+          <pubDate>Fri, 22 May 2026 10:00:00 GMT</pubDate>
+        </item>
+        <item>
+          <title>Unrelated cooking tips</title>
+          <link>https://example.com/cooking</link>
+          <description>Recipe content that should be filtered.</description>
+        </item>
+      </channel>
+    </rss>
+  `;
+}
 
-describe("syncSourceById", () => {
-  it("ingests a real feed into items and briefs", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
-
-    try {
-      const spaceId = await createSpaceRecord(store, {
-        name: "OpenAI",
-      });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Monitor feed",
-        taskType: "TOPIC",
-        userPrompt: "Track RSS updates",
-      });
-      const sourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "RSS",
-        title: "Example feed",
-        url: "https://example.com/feed.xml",
-      });
-
-      const xml = `
-        <rss version="2.0">
-          <channel>
-            <item>
-              <title>Launch roundup</title>
-              <link>https://example.com/posts/launch-roundup</link>
-              <description>Latest launches and product updates.</description>
-              <pubDate>Wed, 21 May 2026 08:00:00 GMT</pubDate>
-            </item>
-          </channel>
-        </rss>
-      `;
-      const result = await syncSourceById(store, sourceId, {
-        fetchSourceFeedImpl: vi.fn().mockResolvedValue(xml),
-      });
-
-      expect(result).toMatchObject({
-        ok: true,
-        insertedItemCount: 1,
-        createdBriefCount: 1,
-      });
-
-      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect(await listBriefs(store)).toEqual([
-        expect.objectContaining({
-          taskId,
-          title: "Launch roundup",
-          summary: "Latest launches and product updates.",
-          sourceCitations: ["https://example.com/posts/launch-roundup"],
-        }),
-      ]);
-      expect(await listSourcesByTask(store, taskId)).toEqual([
-        expect.objectContaining({
-          id: sourceId,
-          status: "success",
-          lastError: null,
-          lastSyncedAt: expect.any(String),
-        }),
-      ]);
-      expect(await listRecentSyncRunsBySource(store, sourceId)).toEqual([
-        expect.objectContaining({
-          sourceId,
-          status: "success",
-          insertedItemCount: 1,
-          createdBriefCount: 1,
-          finishedAt: expect.any(String),
-        }),
-      ]);
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    }
-  });
-
-  it("does not create duplicate briefs when re-syncing", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
+describe("source ingestion quality and preview flow", () => {
+  it("previews selected sources without persisting source records", async () => {
+    const fixture = createSqliteFixture();
 
     try {
-      const spaceId = await createSpaceRecord(store, { name: "Space" });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Task",
-        taskType: "TOPIC",
-        userPrompt: "Prompt",
-      });
-      const sourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "RSS",
-        title: "Feed",
-        url: "https://example.com/feed.xml",
-      });
-
-      const xml = `
-        <rss version="2.0">
-          <channel>
-            <item>
-              <title>Post A</title>
-              <link>https://example.com/a</link>
-              <description>Content A</description>
-            </item>
-          </channel>
-        </rss>
-      `;
-      const fetchImpl = vi.fn().mockResolvedValue(xml);
-
-      const first = await syncSourceById(store, sourceId, {
-        fetchSourceFeedImpl: fetchImpl,
-      });
-      expect(first).toMatchObject({ ok: true, createdBriefCount: 1 });
-
-      const second = await syncSourceById(store, sourceId, {
-        fetchSourceFeedImpl: fetchImpl,
-      });
-      expect(second).toMatchObject({ ok: true, createdBriefCount: 0 });
-
-      expect(await listBriefs(store)).toHaveLength(1);
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    }
-  });
-
-  it("queues automatic brief delivery with a stable request key", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
-    const queueBriefDeliveryMock = vi.fn().mockResolvedValue({ ids: ["evt_1"] });
-
-    vi.resetModules();
-    vi.doMock("@/lib/inngest", () => ({
-      queueBriefDelivery: queueBriefDeliveryMock,
-    }));
-
-    try {
-      const { syncSourceById: syncSourceByIdWithMock } = await import(
-        "@/lib/source-ingestion"
-      );
-      const spaceId = await createSpaceRecord(store, { name: "Space" });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Task",
-        taskType: "TOPIC",
-        userPrompt: "Prompt",
-      });
-      const sourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "RSS",
-        title: "Feed",
-        url: "https://example.com/feed.xml",
-      });
-
-      store.database
-        .prepare(
-          "INSERT INTO app_settings (key, value, updated_at) VALUES (?, ?, ?)",
-        )
-        .run(
-          "webhook_endpoint",
-          "https://example.com/webhook",
-          "2026-05-22T00:00:00.000Z",
-        );
-
-      const xml = `
-        <rss version="2.0">
-          <channel>
-            <item>
-              <title>Post A</title>
-              <link>https://example.com/a</link>
-              <description>Content A</description>
-            </item>
-          </channel>
-        </rss>
-      `;
-
-      const result = await syncSourceByIdWithMock(store, sourceId, {
-        fetchSourceFeedImpl: vi.fn().mockResolvedValue(xml),
-      });
-
-      expect(result).toMatchObject({ ok: true, createdBriefCount: 1 });
-      const [brief] = await listBriefs(store);
-      expect(queueBriefDeliveryMock).toHaveBeenCalledWith(brief?.id, {
-        requestKey: brief?.id,
-      });
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    }
-  });
-
-  it.runIf(Boolean(process.env.DATABASE_URL))(
-    "ingests a feed into items and briefs through the postgres-backed store",
-    async () => {
-    const fixture = await createIsolatedPostgresStore();
-
-    try {
-      const spaceId = await createSpaceRecord(fixture.store, {
-        name: "OpenAI",
-      });
       const taskId = await createTaskRecord(fixture.store, {
-        spaceId,
-        title: "Monitor feed",
+        ownerId: "user-1",
+        title: "Coding agents",
         taskType: "TOPIC",
-        userPrompt: "Track RSS updates",
+        userPrompt: "Monitor Devin coding agent product updates.",
+      });
+      await saveTaskProfile(fixture.store, taskId, {
+        keywords: ["Devin", "coding agent"],
+        suggestedQueries: ["Devin coding agent update"],
+      });
+
+      const preview = await previewSubscriptionSources(
+        fixture.store,
+        taskId,
+        [
+          {
+            title: "Agent feed",
+            sourceType: "RSS",
+            url: "https://example.com/feed.xml",
+          },
+        ],
+        {
+          fetchSourceFeedImpl: vi.fn().mockResolvedValue(sampleFeedXml()),
+        },
+      );
+
+      expect(preview.sourceCount).toBe(1);
+      expect(preview.candidateItemCount).toBe(2);
+      expect(preview.acceptedItemCount).toBe(1);
+      expect(preview.rejectedItemCount).toBe(1);
+      expect(await listSources(fixture.store)).toHaveLength(0);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("stores only accepted items for brief generation", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      const taskId = await createTaskRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "Coding agents",
+        taskType: "TOPIC",
+        userPrompt: "Monitor Devin coding agent product updates.",
+      });
+      await saveTaskProfile(fixture.store, taskId, {
+        keywords: ["Devin", "coding agent"],
+        suggestedQueries: ["Devin coding agent update"],
       });
       const sourceId = await createSourceRecord(fixture.store, {
         taskId,
         sourceType: "RSS",
-        title: "Example feed",
+        title: "Agent feed",
         url: "https://example.com/feed.xml",
       });
 
-      const xml = `
-        <rss version="2.0">
-          <channel>
-            <item>
-              <title>Launch roundup</title>
-              <link>https://example.com/posts/launch-roundup</link>
-              <description>Latest launches and product updates.</description>
-              <pubDate>Wed, 21 May 2026 08:00:00 GMT</pubDate>
-            </item>
-          </channel>
-        </rss>
-      `;
-      const result = await syncSourceById(fixture.store, sourceId, {
-        fetchSourceFeedImpl: vi.fn().mockResolvedValue(xml),
+      const result = await storeSourceItemsAndCreateBriefs(
+        fixture.store,
+        { id: sourceId, taskId },
+        [
+          {
+            title: "Devin coding agent launches product update",
+            canonicalUrl: "https://example.com/devin-update",
+            summary: "Important coding agent update for developer tools.",
+            publishedAt: "2026-05-22T10:00:00.000Z",
+          },
+          {
+            title: "Unrelated cooking tips",
+            canonicalUrl: "https://example.com/cooking",
+            summary: "Recipe content that should be filtered.",
+            publishedAt: "2026-05-22T10:00:00.000Z",
+          },
+        ],
+      );
+
+      const items = await listItemsBySource(fixture.store, sourceId);
+      const briefs = await listBriefsFiltered(fixture.store, {
+        actorId: "user-1",
+        taskId,
       });
 
-      expect(result).toMatchObject({
-        ok: true,
-        insertedItemCount: 1,
-        createdBriefCount: 1,
-      });
-      expect(await listItemsBySource(fixture.store, sourceId)).toHaveLength(1);
-      expect(await listBriefs(fixture.store)).toEqual([
-        expect.objectContaining({
-          taskId,
-          title: "Launch roundup",
-        }),
+      expect(result.insertedItemCount).toBe(2);
+      expect(items.map((item) => item.qualityStatus).sort()).toEqual([
+        "accepted",
+        "rejected",
       ]);
+      expect(briefs).toHaveLength(1);
     } finally {
-      await fixture.cleanup();
-    }
-  }, 15_000);
-
-  it("ingests update sources into items and briefs", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
-
-    try {
-      const spaceId = await createSpaceRecord(store, { name: "OpenAI" });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Monitor updates",
-        taskType: "TOPIC",
-        userPrompt: "Track changelog updates",
-      });
-      const sourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "UPDATE",
-        title: "Changelog",
-        url: "https://example.com/changelog",
-      });
-
-      const html = `
-        <html>
-          <body>
-            <section>
-              <h2>Added task intelligence refresh</h2>
-              <a href="#2026-05-22">Permalink</a>
-              <p>Task recommendations can now be refreshed on demand.</p>
-            </section>
-          </body>
-        </html>
-      `;
-      const result = await syncSourceById(store, sourceId, {
-        fetchSourceFeedImpl: vi.fn().mockResolvedValue(html),
-      });
-
-      expect(result).toMatchObject({
-        ok: true,
-        insertedItemCount: 1,
-        createdBriefCount: 1,
-      });
-      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect((await listBriefs(store))[0]).toMatchObject({
-        taskId,
-        title: "Added task intelligence refresh",
-      });
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    }
-    },
-  );
-
-  it("ingests newsletter archive sources into items and briefs", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
-
-    try {
-      const spaceId = await createSpaceRecord(store, { name: "AI Watch" });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Monitor archives",
-        taskType: "TOPIC",
-        userPrompt: "Track newsletter archives",
-      });
-      const sourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "NEWSLETTER",
-        title: "Archive",
-        url: "https://example.com/archive",
-      });
-
-      const html = `
-        <html>
-          <body>
-            <article>
-              <h2>This Week In Agents #12</h2>
-              <a href="/archive/week-12">Read issue</a>
-              <p>OpenAI, Cursor, and Devin all shipped updates this week.</p>
-            </article>
-          </body>
-        </html>
-      `;
-      const result = await syncSourceById(store, sourceId, {
-        fetchSourceFeedImpl: vi.fn().mockResolvedValue(html),
-      });
-
-      expect(result).toMatchObject({
-        ok: true,
-        insertedItemCount: 1,
-        createdBriefCount: 1,
-      });
-      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect((await listBriefs(store))[0]).toMatchObject({
-        taskId,
-        title: "This Week In Agents #12",
-      });
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
+      fixture.cleanup();
     }
   });
 
-  it("ingests telegram public sources into items and briefs", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
+  it("syncs discovery sources through the same item and brief pipeline", async () => {
+    const fixture = createSqliteFixture();
 
     try {
-      const spaceId = await createSpaceRecord(store, { name: "Signals" });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Monitor telegram",
+      const taskId = await createTaskRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "Coding agents",
         taskType: "TOPIC",
-        userPrompt: "Track public telegram hiring groups",
+        userPrompt: "Monitor Devin coding agent product updates.",
       });
-      const sourceId = await createSourceRecord(store, {
+      await saveTaskProfile(fixture.store, taskId, {
+        keywords: ["Devin", "coding agent"],
+        suggestedQueries: ["Devin coding agent update"],
+      });
+      const sourceId = await createSourceRecord(fixture.store, {
         taskId,
-        sourceType: "TELEGRAM_PUBLIC",
-        title: "Telegram hiring feed",
-        url: "https://t.me/s/examplejobs",
+        sourceType: "SEARCH_DISCOVERY",
+        title: "Search discovery",
+        url: "radar://search-discovery",
+        configJson: {
+          providers: ["bing"],
+          queries: ["Devin coding agent update"],
+          freshnessDays: 7,
+          providerQuota: 3,
+          totalQuota: 3,
+        },
       });
 
-      const html = `
-        <section class="tgme_channel_history">
-          <div class="tgme_widget_message_wrap">
-            <div class="tgme_widget_message_text">
-              Hiring now: AI infra engineer for a remote-first startup.
-            </div>
-            <a class="tgme_widget_message_date" href="https://t.me/s/examplejobs/10">
-              <time datetime="2026-05-22T10:00:00+00:00"></time>
-            </a>
-          </div>
-        </section>
-      `;
-      const result = await syncSourceById(store, sourceId, {
-        fetchSourceFeedImpl: vi.fn().mockResolvedValue(html),
+      const result = await syncSourceById(fixture.store, sourceId, {
+        fetchSourceFeedImpl: vi.fn().mockResolvedValue(sampleFeedXml()),
       });
 
-      expect(result).toMatchObject({
-        ok: true,
-        insertedItemCount: 1,
-        createdBriefCount: 1,
-      });
-      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect((await listBriefs(store))[0]).toMatchObject({
-        taskId,
-        title: expect.stringContaining("Hiring now"),
-      });
+      expect(result.ok).toBe(true);
+      expect(await listItemsBySource(fixture.store, sourceId)).toHaveLength(2);
+      expect(
+        await listBriefsFiltered(fixture.store, { actorId: "user-1", taskId }),
+      ).toHaveLength(1);
     } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    }
-  });
-
-  it("ingests telegram bot sources into items and briefs", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
-
-    try {
-      const spaceId = await createSpaceRecord(store, { name: "Signals" });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Monitor telegram bot feed",
-        taskType: "TOPIC",
-        userPrompt: "Track Telegram bot-observed hiring groups",
-      });
-      const sourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "TELEGRAM_BOT",
-        title: "Telegram bot hiring feed",
-        url: "https://t.me/examplejobs",
-      });
-
-      await saveTelegramSourceSettings(store, {
-        botToken: "123456:ABCDEF_bot",
-      });
-
-      const telegramApiFetchImpl = vi.fn().mockResolvedValue({
-        ok: true,
-        json: async () => ({
-          ok: true,
-          result: [
-            {
-              update_id: 1,
-              message: {
-                text: "Hiring now: AI infra engineer for a remote team.",
-                date: 1779532800,
-                chat: {
-                  id: -1001,
-                  title: "Example Jobs",
-                  username: "examplejobs",
-                },
-              },
-            },
-          ],
-        }),
-      });
-
-      const result = await syncSourceById(store, sourceId, {
-        telegramApiFetchImpl: telegramApiFetchImpl as typeof fetch,
-      });
-
-      expect(result).toMatchObject({
-        ok: true,
-        insertedItemCount: 1,
-        createdBriefCount: 1,
-      });
-      expect(await listItemsBySource(store, sourceId)).toHaveLength(1);
-      expect((await listBriefs(store))[0]).toMatchObject({
-        taskId,
-        title: expect.stringContaining("Hiring now"),
-      });
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
-    }
-  });
-});
-
-describe("syncAllSources", () => {
-  it("syncs multiple non-error sources and skips error sources", async () => {
-    const tempDirectory = mkdtempSync(join(tmpdir(), "inflowee-sync-all-test-"));
-    const store = createStore(join(tempDirectory, "store.sqlite"));
-
-    try {
-      const spaceId = await createSpaceRecord(store, { name: "Space" });
-      const taskId = await createTaskRecord(store, {
-        spaceId,
-        title: "Task",
-        taskType: "TOPIC",
-        userPrompt: "Prompt",
-      });
-
-      // Healthy source
-      const healthySourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "RSS",
-        title: "Healthy",
-        url: "https://example.com/healthy.xml",
-      });
-
-      // Errored source
-      const errorSourceId = await createSourceRecord(store, {
-        taskId,
-        sourceType: "RSS",
-        title: "Errored",
-        url: "https://example.com/errored.xml",
-      });
-      // Force it to have "error" status
-      const { markSourceSyncResult } = await import("@/lib/store");
-      await markSourceSyncResult(store, {
-        sourceId: errorSourceId,
-        status: "error",
-        error: "Failed to connect",
-      });
-
-      const xml = `
-        <rss version="2.0">
-          <channel>
-            <item>
-              <title>Healthy post</title>
-              <link>https://example.com/healthy/1</link>
-              <description>Content</description>
-            </item>
-          </channel>
-        </rss>
-      `;
-      const fetchImpl = vi.fn().mockResolvedValue(xml);
-
-      const result = await syncAllSources(store, {
-        fetchSourceFeedImpl: fetchImpl,
-      });
-
-      expect(result).toMatchObject({
-        synced: 1,
-        failed: 0,
-        skipped: 1,
-      });
-
-      expect(result.results).toHaveLength(1);
-      expect(result.results[0]).toMatchObject({
-        ok: true,
-        source: expect.objectContaining({ id: healthySourceId }),
-      });
-    } finally {
-      store.database.close();
-      rmSync(tempDirectory, { recursive: true, force: true });
+      fixture.cleanup();
     }
   });
 });

@@ -9,8 +9,25 @@ Set these environment variables in the deployment target:
 - `INNGEST_SIGNING_KEY`
 - `CRON_SECRET`
 - `INFLOWEE_SESSION_SECRET`
-- `INFLOWEE_OPERATOR_EMAIL`
-- `INFLOWEE_OPERATOR_LOGIN_CODE`
+
+Configure at least one browser login method:
+
+- Operator code login: `INFLOWEE_OPERATOR_EMAIL`, `INFLOWEE_OPERATOR_LOGIN_CODE`
+- Google OAuth: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- GitHub OAuth: `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`
+
+OAuth callback URLs must match the deployment origin:
+
+- Google: `https://<deployment-url>/api/auth/google/callback`
+- GitHub: `https://<deployment-url>/api/auth/github/callback`
+
+For local OAuth testing, register these additional callback URLs:
+
+- Google: `http://localhost:3000/api/auth/google/callback`
+- GitHub: `http://localhost:3000/api/auth/github/callback`
+
+WeChat OAuth is intentionally hidden from the login UI until its credentials and
+product requirements are ready.
 
 `INNGEST_BASE_URL` is optional and is only needed when pointing a local app at a
 local Inngest dev server.
@@ -57,8 +74,8 @@ curl https://<deployment-url>/api/health
 
 ## Smoke Tests
 
-1. Create at least one space and one task in the deployed app.
-2. Open `/sources` for that task and create a source.
+1. Create at least one monitoring goal in the deployed app.
+2. Open `/sources` for that goal and create a source.
 3. Trigger one sync and confirm a sync run appears.
 4. Open `/inbox` and confirm a brief renders.
 5. Open `/settings`, save one `https://` webhook endpoint, and confirm the Slack payload preview still renders.

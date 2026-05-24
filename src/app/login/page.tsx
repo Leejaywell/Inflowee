@@ -5,6 +5,9 @@ import {
   getSessionUser,
   hasConfiguredOperatorLogin,
 } from "@/lib/auth";
+import { getDictionary } from "@/lib/i18n";
+import { getRequestLocale } from "@/lib/i18n-server";
+import { getConfiguredOAuthProviders } from "@/lib/oauth";
 
 type LoginPageProps = {
   searchParams?: Promise<{
@@ -15,10 +18,16 @@ type LoginPageProps = {
 };
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
-  const actor = await getSessionUser().catch(() => null);
+  const [actor, locale] = await Promise.all([
+    getSessionUser().catch(() => null),
+    getRequestLocale(),
+  ]);
+  const t = getDictionary(locale).login;
   const params = await searchParams;
   const error = params?.error;
   const next = params?.next?.startsWith("/") ? params.next : "/";
+  const oauthProviders = getConfiguredOAuthProviders();
+  const hasOAuthProvider = oauthProviders.some((provider) => provider.configured);
 
   if (actor) {
     redirect(next);
@@ -26,22 +35,22 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
 
   return (
     <div className="mx-auto grid w-full max-w-3xl gap-6">
-      <section className="grid gap-4 rounded-[28px] border border-stone-900/10 bg-white/80 p-8 shadow-[0_24px_80px_rgba(33,24,9,0.08)] backdrop-blur">
-        <span className="inline-flex w-fit rounded-full bg-stone-950 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-white">
-          Sign in
+      <section className="grid gap-5 rounded-[var(--app-radius)] border border-[color:var(--app-border)] bg-[var(--app-surface)] p-8">
+        <span className="inline-flex w-fit rounded-full bg-[var(--app-accent)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.12em] text-[var(--app-accent-ink)]">
+          {t.badge}
         </span>
         <div className="space-y-2">
-          <h1 className="text-4xl font-semibold tracking-tight text-stone-950 sm:text-5xl">
-            Open the workspace
+          <h1 className="text-4xl font-semibold tracking-tight text-[var(--app-ink)] sm:text-5xl">
+            {t.title}
           </h1>
-          <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-            Operator access uses a signed session cookie. Team members can join through invite links and receive their own session after acceptance.
+          <p className="max-w-2xl text-base leading-7 text-[var(--app-muted)] sm:text-lg">
+            {t.description}
           </p>
         </div>
 
         {params?.signedOut ? (
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 text-sm text-emerald-700">
-            Session cleared.
+            {t.signedOut}
           </div>
         ) : null}
 
@@ -51,36 +60,78 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           </div>
         ) : null}
 
+        <div className="grid gap-3 rounded-[var(--app-radius)] border border-[color:var(--app-border)] bg-[var(--app-surface-alt)] p-6">
+          <div>
+            <h2 className="text-sm font-semibold text-[var(--app-ink)]">
+              {t.accountTitle}
+            </h2>
+            <p className="mt-1 text-xs text-[var(--app-muted)]">
+              {t.accountDescription}
+            </p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-3">
+            {oauthProviders.map((provider) =>
+              provider.configured ? (
+                <a
+                  key={provider.provider}
+                  href={`/api/auth/${provider.provider}/start?next=${encodeURIComponent(next)}`}
+                  className="inline-flex h-11 items-center justify-center rounded-[calc(var(--app-radius)-6px)] border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 text-sm font-semibold text-[var(--app-ink)] transition hover:border-[color:var(--app-accent)] hover:bg-[var(--app-surface)]"
+                >
+                  {provider.label}
+                </a>
+              ) : (
+                <button
+                  key={provider.provider}
+                  type="button"
+                  disabled
+                  className="inline-flex h-11 cursor-not-allowed items-center justify-center rounded-[calc(var(--app-radius)-6px)] border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 text-sm font-semibold text-[var(--app-muted)] opacity-65"
+                  title={`${provider.label} OAuth credentials are not configured.`}
+                >
+                  {provider.label}
+                </button>
+              ),
+            )}
+          </div>
+          {!hasOAuthProvider ? (
+            <p className="text-xs text-amber-700">
+              {t.configureOAuth}
+            </p>
+          ) : null}
+        </div>
+
         {hasConfiguredOperatorLogin() ? (
-          <form action={signInAction} className="grid gap-4 rounded-[24px] border border-stone-200 bg-stone-50 p-6">
+          <form
+            action={signInAction}
+            className="grid gap-4 rounded-[var(--app-radius)] border border-[color:var(--app-border)] bg-[var(--app-surface-alt)] p-6"
+          >
             <input type="hidden" name="redirectTo" value={next} />
             <label className="grid gap-2 text-sm">
-              <span className="font-medium text-stone-700">Operator email</span>
+              <span className="font-medium text-[var(--app-ink)]">{t.operatorEmail}</span>
               <input
                 name="email"
                 type="email"
                 required
                 placeholder="owner@example.com"
-                className="h-12 rounded-2xl border border-stone-200 bg-white px-4 outline-none transition focus:border-stone-400"
+                className="h-12 rounded-[calc(var(--app-radius)-4px)] border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 outline-none transition focus:border-[color:var(--app-accent)]"
               />
             </label>
             <label className="grid gap-2 text-sm">
-              <span className="font-medium text-stone-700">Access code</span>
+              <span className="font-medium text-[var(--app-ink)]">{t.accessCode}</span>
               <input
                 name="loginCode"
                 type="password"
                 required
                 placeholder="Configured via INFLOWEE_OPERATOR_LOGIN_CODE"
-                className="h-12 rounded-2xl border border-stone-200 bg-white px-4 outline-none transition focus:border-stone-400"
+                className="h-12 rounded-[calc(var(--app-radius)-4px)] border border-[color:var(--app-border)] bg-[var(--app-surface)] px-4 outline-none transition focus:border-[color:var(--app-accent)]"
               />
             </label>
-            <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
-              Sign in
+            <button className="inline-flex h-12 items-center justify-center rounded-[calc(var(--app-radius)-4px)] bg-[var(--app-accent)] px-4 text-sm font-semibold text-[var(--app-accent-ink)] transition opacity-95 hover:opacity-100">
+              {t.signIn}
             </button>
           </form>
         ) : (
-          <div className="rounded-[24px] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
-            Operator login is not configured yet. Set <code>INFLOWEE_SESSION_SECRET</code>, <code>INFLOWEE_OPERATOR_EMAIL</code>, and <code>INFLOWEE_OPERATOR_LOGIN_CODE</code> before using browser-based authentication.
+          <div className="rounded-[var(--app-radius)] border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-800">
+            {t.codeLoginMissing}
           </div>
         )}
       </section>

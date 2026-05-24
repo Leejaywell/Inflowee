@@ -1,17 +1,6 @@
 import { z } from "zod";
 
-export const createSpaceSchema = z.object({
-  name: z.string().trim().min(2, "Space name must be at least 2 characters."),
-  description: z
-    .string()
-    .trim()
-    .max(240, "Description must be 240 characters or fewer.")
-    .optional()
-    .transform((value) => value || undefined),
-});
-
 export const createTaskSchema = z.object({
-  spaceId: z.string().trim().min(1, "Select a space."),
   title: z.string().trim().min(2, "Task title must be at least 2 characters."),
   taskType: z.enum(["TOPIC", "QUESTION"]),
   userPrompt: z
@@ -31,6 +20,9 @@ export const createSourceSchema = z.object({
     "NEWSLETTER",
     "TELEGRAM_PUBLIC",
     "TELEGRAM_BOT",
+    "SEARCH_DISCOVERY",
+    "COMMUNITY_DISCOVERY",
+    "SOCIAL_DISCOVERY",
   ]),
   title: z
     .string()
@@ -43,14 +35,31 @@ export const createSourceSchema = z.object({
       try {
         const url = new URL(value);
 
-        return url.protocol === "http:" || url.protocol === "https:";
+        return (
+          url.protocol === "http:" ||
+          url.protocol === "https:" ||
+          url.protocol === "radar:"
+        );
       } catch {
         return false;
       }
-    }, "Enter a valid http or https URL."),
+    }, "Enter a valid http, https, or radar URL."),
 }).superRefine((value, context) => {
   try {
     const url = new URL(value.url);
+
+    if (
+      (value.sourceType === "SEARCH_DISCOVERY" ||
+        value.sourceType === "COMMUNITY_DISCOVERY" ||
+        value.sourceType === "SOCIAL_DISCOVERY") &&
+      url.protocol !== "radar:"
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["url"],
+        message: "Discovery sources must use a radar URL.",
+      });
+    }
 
     if (value.sourceType === "NEWSLETTER" && url.protocol !== "https:") {
       context.addIssue({
@@ -155,9 +164,3 @@ export const feishuWebhookEndpointSchema = z
       return false;
     }
   }, "Feishu webhooks must use open.feishu.cn or open.larksuite.com.");
-
-export const spaceMemberSchema = z.object({
-  spaceId: z.string().trim().min(1, "Select a space."),
-  userId: z.string().trim().min(2, "Enter a user ID."),
-  role: z.enum(["viewer", "editor"]),
-});

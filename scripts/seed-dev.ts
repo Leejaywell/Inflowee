@@ -2,10 +2,9 @@ import {
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
-  createSpaceRecord,
   createTaskRecord,
-  getDefaultRuntimeStore,
-  listSpacesWithTasks,
+  createStore,
+  listTasks,
   markBriefRead,
   markSourceSyncResult,
 } from "../src/lib/store.ts";
@@ -14,21 +13,14 @@ import { loadDevEnv } from "./load-dev-env.ts";
 loadDevEnv();
 
 async function main() {
-  const store = getDefaultRuntimeStore();
+  const store = createStore();
 
-  if ((await listSpacesWithTasks(store)).length > 0) {
+  if ((await listTasks(store)).length > 0) {
     console.log("Database already has data. Skip seeding.");
     process.exit(0);
   }
 
-  const spaceAiId = await createSpaceRecord(store, {
-    name: "AI Frontier Monitoring",
-    description:
-      "Tracking research breakthroughs, model releases, and API updates across top labs.",
-  });
-
   const taskModelsId = await createTaskRecord(store, {
-    spaceId: spaceAiId,
     title: "Frontier Model Launches",
     taskType: "TOPIC",
     userPrompt:
@@ -50,7 +42,6 @@ async function main() {
   });
 
   const taskOpenSourceAiId = await createTaskRecord(store, {
-    spaceId: spaceAiId,
     title: "Open Source AI & Research",
     taskType: "TOPIC",
     userPrompt:
@@ -71,14 +62,7 @@ async function main() {
     url: "https://ai.meta.com/blog",
   });
 
-  const spaceTechId = await createSpaceRecord(store, {
-    name: "Tech Ecosystems & Startups",
-    description:
-      "Tracking developer sentiment, venture capital flows, and startup launches.",
-  });
-
   const taskTrendsId = await createTaskRecord(store, {
-    spaceId: spaceTechId,
     title: "Venture Trends & Dev Sentiment",
     taskType: "TOPIC",
     userPrompt:
@@ -100,7 +84,6 @@ async function main() {
   });
 
   const taskLaunchesId = await createTaskRecord(store, {
-    spaceId: spaceTechId,
     title: "Product Launches & Tools",
     taskType: "TOPIC",
     userPrompt:
@@ -230,7 +213,7 @@ async function main() {
   }
 
   console.log(
-    "Seeded premium, multi-scoped verification spaces, tasks, and grounded briefs successfully.",
+    "Seeded personal monitoring goals, sources, and grounded briefs successfully.",
   );
 }
 
