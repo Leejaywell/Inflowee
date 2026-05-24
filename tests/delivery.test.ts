@@ -14,6 +14,7 @@ import {
   listRecentDeliveryLogsByContent,
   saveDingTalkSettings,
   saveDefaultDeliveryChannels,
+  saveDeliveryTemplate,
   saveNtfySettings,
   saveWeComSettings,
   updateTaskDeliveryChannels,
@@ -228,6 +229,46 @@ describe("delivery payloads", () => {
           status: "success",
         }),
       ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("applies the global delivery template to text deliveries", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
+      await saveDeliveryTemplate(
+        fixture.store,
+        "[{{contentType}}] {{title}}\n{{summary}}",
+      );
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("ok", { status: 200 }),
+      );
+
+      const result = await deliverTextToChannel(
+        fixture.store,
+        "ntfy",
+        {
+          id: "report-1",
+          title: "Weekly report",
+          body: "Report body",
+          contentType: "report",
+        },
+        { fetchImpl },
+      );
+
+      expect(result.status).toBe("success");
+      expect(fetchImpl).toHaveBeenCalledWith(
+        "https://ntfy.sh/inflowee",
+        expect.objectContaining({
+          body: JSON.stringify({
+            title: "Weekly report",
+            message: "[report] Weekly report\nReport body",
+          }),
+        }),
+      );
     } finally {
       fixture.cleanup();
     }

@@ -38,6 +38,7 @@ import {
   markBriefUnread,
   saveBarkSettings,
   saveDefaultDeliveryChannels,
+  saveDeliveryTemplate,
   saveDingTalkSettings,
   saveEmailSettings,
   saveFeishuSettings,
@@ -554,6 +555,20 @@ export async function saveDefaultDeliveryChannelsAction(formData: FormData) {
 
   revalidatePath("/settings");
   redirect("/settings?updated=default-delivery-channels");
+}
+
+export async function saveDeliveryTemplateAction(formData: FormData) {
+  await requireSessionActor();
+  const template = getString(formData, "template");
+
+  if (template.length > 2_000) {
+    redirect("/settings?error=Delivery%20template%20is%20too%20long.");
+  }
+
+  await saveDeliveryTemplate(defaultStore, template);
+
+  revalidatePath("/settings");
+  redirect("/settings?updated=delivery-template");
 }
 
 export async function saveWebhookEndpoint(formData: FormData) {

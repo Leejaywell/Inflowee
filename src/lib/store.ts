@@ -298,6 +298,11 @@ export type DefaultDeliveryChannelsRecord = {
   updatedAt: string | null;
 };
 
+export type DeliveryTemplateRecord = {
+  template: string | null;
+  updatedAt: string | null;
+};
+
 export type DeliveryPayloadType =
   | "html"
   | "slack"
@@ -2992,6 +2997,21 @@ export async function getDefaultDeliveryChannels(
       updatedAt: row.updatedAt,
     };
   }
+}
+
+export async function saveDeliveryTemplate(store: Store, template: string) {
+  await saveAppSetting(store, "delivery_template", template.trim());
+}
+
+export async function getDeliveryTemplate(
+  store: Store,
+): Promise<DeliveryTemplateRecord> {
+  const row = await getAppSetting(store, "delivery_template");
+
+  return {
+    template: row.value,
+    updatedAt: row.updatedAt,
+  };
 }
 
 export async function hasProcessedDeliveryRequest(

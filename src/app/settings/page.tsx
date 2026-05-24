@@ -8,6 +8,7 @@ import {
   saveTelegramSourceBot,
   saveTelegramDelivery,
   saveDefaultDeliveryChannelsAction,
+  saveDeliveryTemplateAction,
   testDeliveryChannelAction,
   saveWeComEndpoint,
   saveWebhookEndpoint,
@@ -21,6 +22,7 @@ import {
   defaultStore,
   getBarkSettings,
   getDeliveryHealthSummary,
+  getDeliveryTemplate,
   getDefaultDeliveryChannels,
   getDingTalkSettings,
   getEmailSettings,
@@ -58,6 +60,7 @@ export default async function SettingsPage({
     deliveryHealth,
     deliveryChannels,
     defaultDeliveryChannels,
+    deliveryTemplate,
     params,
   ] = await Promise.all([
     getWebhookSettings(defaultStore),
@@ -70,6 +73,7 @@ export default async function SettingsPage({
     getDeliveryHealthSummary(defaultStore, { actorId: actor.id }),
     listConfiguredDeliveryChannels(defaultStore),
     getDefaultDeliveryChannels(defaultStore),
+    getDeliveryTemplate(defaultStore),
     searchParams,
   ]);
   const error = params?.error;
@@ -481,6 +485,10 @@ export default async function SettingsPage({
                     ? isZh
                       ? "默认投递通道已保存。"
                       : "Default delivery channels saved."
+                  : updated === "delivery-template"
+                    ? isZh
+                      ? "投递模板已保存。"
+                      : "Delivery template saved."
                 : t.updateApplied}
         </section>
       )}
@@ -541,6 +549,44 @@ export default async function SettingsPage({
           <button className="h-11 justify-self-start rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
             {isZh ? "保存默认通道" : "Save default channels"}
           </button>
+        </form>
+      </section>
+
+      <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+        <div className="mb-4 border-b border-stone-100 pb-4">
+          <h2 className="text-xl font-semibold">
+            {isZh ? "投递模板" : "Delivery template"}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-stone-500">
+            {isZh
+              ? "自定义推送正文，可使用 {{title}}、{{summary}}、{{contentType}}。留空则使用默认正文。"
+              : "Customize delivery body text with {{title}}, {{summary}}, and {{contentType}}. Leave empty to use the default body."}
+          </p>
+        </div>
+        <form action={saveDeliveryTemplateAction} className="grid gap-4">
+          <textarea
+            name="template"
+            defaultValue={deliveryTemplate.template ?? ""}
+            rows={5}
+            maxLength={2000}
+            placeholder={
+              isZh
+                ? "{{title}}\n\n{{summary}}\n\n类型：{{contentType}}"
+                : "{{title}}\n\n{{summary}}\n\nType: {{contentType}}"
+            }
+            className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 outline-none transition focus:border-stone-400 focus:bg-white"
+          />
+          <div className="flex flex-wrap items-center gap-3">
+            <button className="h-11 rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
+              {isZh ? "保存模板" : "Save template"}
+            </button>
+            {deliveryTemplate.updatedAt ? (
+              <p className="text-xs text-stone-400">
+                {isZh ? "更新于" : "Updated"}{" "}
+                {new Date(deliveryTemplate.updatedAt).toLocaleString()}
+              </p>
+            ) : null}
+          </div>
         </form>
       </section>
 

@@ -69,6 +69,14 @@ function getReportTags(content: Record<string, unknown>) {
     .filter((tag): tag is { tag: string; count: number } => Boolean(tag));
 }
 
+function formatDelta(value: number) {
+  if (value > 0) {
+    return `+${value}`;
+  }
+
+  return String(value);
+}
+
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { taskId } = await params;
   const store = defaultStore;
@@ -120,11 +128,38 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const currentWindow = task.scheduleProfile?.windows[0];
   const isZh = locale === "zh";
   const latestReport = reports[0];
+  const previousReport = reports[1];
   const latestReportTags = latestReport ? getReportTags(latestReport.content) : [];
   const maxTagCount = Math.max(
     1,
     ...latestReportTags.map((tag) => tag.count),
   );
+  const reportComparison =
+    latestReport && previousReport
+      ? [
+          {
+            label: isZh ? "简报变化" : "Brief delta",
+            value: formatDelta(
+              getReportMetric(latestReport.content, "briefCount") -
+                getReportMetric(previousReport.content, "briefCount"),
+            ),
+          },
+          {
+            label: isZh ? "内容变化" : "Item delta",
+            value: formatDelta(
+              getReportMetric(latestReport.content, "itemCount") -
+                getReportMetric(previousReport.content, "itemCount"),
+            ),
+          },
+          {
+            label: isZh ? "引用变化" : "Citation delta",
+            value: formatDelta(
+              latestReport.sourceCitations.length -
+                previousReport.sourceCitations.length,
+            ),
+          },
+        ]
+      : [];
 
   return (
     <div className="grid gap-6">
@@ -532,6 +567,29 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
                             <span className="text-right text-stone-500">
                               {tag.count}
                             </span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {reportComparison.length > 0 ? (
+                      <div className="mt-4 grid gap-2 border-t border-stone-200 pt-4 sm:grid-cols-3">
+                        {reportComparison.map((metric) => (
+                          <div key={metric.label} className="rounded-xl bg-white p-3">
+                            <div
+                              className={`text-lg font-semibold ${
+                                metric.value.startsWith("+")
+                                  ? "text-emerald-700"
+                                  : metric.value.startsWith("-")
+                                    ? "text-rose-700"
+                                    : "text-stone-700"
+                              }`}
+                            >
+                              {metric.value}
+                            </div>
+                            <div className="text-[10px] font-semibold uppercase text-stone-400">
+                              {metric.label}
+                            </div>
                           </div>
                         ))}
                       </div>

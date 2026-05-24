@@ -4,6 +4,7 @@ import {
   createDeliveryLog,
   getBarkSettings,
   getDefaultDeliveryChannels,
+  getDeliveryTemplate,
   getDingTalkSettings,
   getEmailSettings,
   getFeishuSettings,
@@ -113,6 +114,7 @@ type DeliveryAdapter = {
     };
     html: string;
     store: Store;
+    contentType?: "brief" | "report" | "message";
   }): Promise<DeliveryPayloadUnion[]>;
   missingConfigurationMessage: string;
 };
@@ -155,6 +157,21 @@ function getDeliveryRetryDelayMs(attempt: number) {
 
 function isEmailPayload(payload: DeliveryPayloadUnion): payload is EmailDeliveryPayload {
   return "subject" in payload && "text" in payload;
+}
+
+function renderTemplate(
+  template: string,
+  input: {
+    title: string;
+    summary: string;
+    contentType?: "brief" | "report" | "message";
+  },
+) {
+  return template
+    .replaceAll("{{title}}", input.title)
+    .replaceAll("{{summary}}", input.summary)
+    .replaceAll("{{contentType}}", input.contentType ?? "brief")
+    .trim();
 }
 
 async function deliverEmailSmtp(
@@ -219,6 +236,24 @@ export function splitDeliveryText(
   }
 
   return batches;
+}
+
+export async function renderDeliveryBody(
+  store: Store,
+  input: {
+    title: string;
+    summary: string;
+    contentType?: "brief" | "report" | "message";
+  },
+) {
+  const settings = await getDeliveryTemplate(store);
+
+  if (!settings.template) {
+    return input.summary;
+  }
+
+  const rendered = renderTemplate(settings.template, input);
+  return rendered || input.summary;
 }
 
 export async function buildDeliveryPayload(input: {
@@ -490,8 +525,14 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getSlackSettings(store)).endpoint;
     },
-    async buildPayloads({ brief }) {
-      return [await buildDeliveryPayload({ channel: "slack", brief })];
+    async buildPayloads({ brief, store, contentType }) {
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      return [
+        await buildDeliveryPayload({
+          channel: "slack",
+          brief: { ...brief, summary },
+        }),
+      ];
     },
     missingConfigurationMessage: "Configure a Slack webhook endpoint first.",
   },
@@ -513,12 +554,13 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
         ? `https://api.telegram.org/bot${settings.botToken}/sendMessage`
         : null;
     },
-    async buildPayloads({ brief, store }) {
+    async buildPayloads({ brief, store, contentType }) {
       const settings = await getTelegramSettings(store);
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
       return [
         await buildDeliveryPayload({
           channel: "telegram",
-          brief,
+          brief: { ...brief, summary },
           chatId: settings.chatId ?? "",
         }),
       ];
@@ -540,8 +582,14 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getFeishuSettings(store)).endpoint;
     },
-    async buildPayloads({ brief }) {
-      return [await buildDeliveryPayload({ channel: "feishu", brief })];
+    async buildPayloads({ brief, store, contentType }) {
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      return [
+        await buildDeliveryPayload({
+          channel: "feishu",
+          brief: { ...brief, summary },
+        }),
+      ];
     },
     missingConfigurationMessage: "Configure a Feishu webhook endpoint first.",
   },
@@ -560,8 +608,9 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getNtfySettings(store)).endpoint;
     },
-    async buildPayloads({ brief }) {
-      return splitDeliveryText(brief.summary, 4_000).map((message) => ({
+    async buildPayloads({ brief, store, contentType }) {
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      return splitDeliveryText(summary, 4_000).map((message) => ({
         title: brief.title,
         message,
       }));
@@ -583,8 +632,14 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getDingTalkSettings(store)).endpoint;
     },
-    async buildPayloads({ brief }) {
-      return [await buildDeliveryPayload({ channel: "dingtalk", brief })];
+    async buildPayloads({ brief, store, contentType }) {
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      return [
+        await buildDeliveryPayload({
+          channel: "dingtalk",
+          brief: { ...brief, summary },
+        }),
+      ];
     },
     missingConfigurationMessage: "Configure a DingTalk webhook endpoint first.",
   },
@@ -603,8 +658,14 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getWeComSettings(store)).endpoint;
     },
-    async buildPayloads({ brief }) {
-      return [await buildDeliveryPayload({ channel: "wecom", brief })];
+    async buildPayloads({ brief, store, contentType }) {
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      return [
+        await buildDeliveryPayload({
+          channel: "wecom",
+          brief: { ...brief, summary },
+        }),
+      ];
     },
     missingConfigurationMessage: "Configure a WeCom webhook endpoint first.",
   },
@@ -623,8 +684,9 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getBarkSettings(store)).endpoint;
     },
-    async buildPayloads({ brief }) {
-      return splitDeliveryText(brief.summary, 4_000).map((body) => ({
+    async buildPayloads({ brief, store, contentType }) {
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      return splitDeliveryText(summary, 4_000).map((body) => ({
         title: brief.title,
         body,
       }));
@@ -646,8 +708,15 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getEmailSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, html }) {
-      return [await buildDeliveryPayload({ channel: "email", brief, html })];
+    async buildPayloads({ brief, html, store, contentType }) {
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      return [
+        await buildDeliveryPayload({
+          channel: "email",
+          brief: { ...brief, summary },
+          html,
+        }),
+      ];
     },
     missingConfigurationMessage: "Configure an email SMTP relay endpoint first.",
   },
@@ -790,6 +859,7 @@ export async function deliverStoredBriefToChannel(
     },
     html,
     store,
+    contentType: "brief",
   });
   const logId = await createDeliveryLog(store, {
     briefId,
@@ -885,6 +955,7 @@ export async function deliverTextToChannel(
     },
     html: input.body,
     store,
+    contentType: input.contentType ?? "message",
   });
   const logId = await createDeliveryLog(store, {
     contentType: input.contentType ?? "message",
