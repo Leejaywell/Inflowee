@@ -37,6 +37,7 @@ export type DiscoverySourceCandidate = {
   tagIds: string[];
   origin: DiscoverySourceOrigin;
   subscriberCount?: number;
+  recentSubscriberGrowth?: number;
   heatScore?: number;
   relevanceScore?: number;
   trendLabels: string[];
@@ -45,6 +46,7 @@ export type DiscoverySourceCandidate = {
 
 export type DiscoverySourceStats = {
   subscriberCountByUrl: Map<string, number>;
+  recentSubscriberGrowthByUrl: Map<string, number>;
   heatScoreByUrl: Map<string, number>;
 };
 
@@ -401,15 +403,22 @@ export function mapSourcePresetsToDiscoveryCandidates(
           : 0;
     const urlKey = normalizeUrlKey(preset.url);
     const subscriberCount = context.stats?.subscriberCountByUrl.get(urlKey) ?? 0;
+    const recentSubscriberGrowth =
+      context.stats?.recentSubscriberGrowthByUrl.get(urlKey) ?? 0;
     const statHeat = context.stats?.heatScoreByUrl.get(urlKey) ?? 0;
     const heatScore = Math.min(
       100,
-      45 + sourceTypeHeat + relevanceBoost * 12 + Math.min(20, statHeat),
+      45 +
+        sourceTypeHeat +
+        relevanceBoost * 12 +
+        Math.min(20, statHeat) +
+        recentSubscriberGrowth * 5,
     );
     const relevanceScore = Math.min(1, 0.35 + relevanceBoost * 0.18);
     const trendLabels = [
       ...(heatScore >= 70 ? ["高热度"] : []),
       ...(subscriberCount > 0 ? ["已有用户订阅"] : []),
+      ...(recentSubscriberGrowth > 0 ? ["订阅量上升"] : []),
       ...(relevanceScore >= 0.7 ? ["与目标相关"] : []),
       ...(preset.sourceType === "RSS" || preset.sourceType === "UPDATE"
         ? ["官方源"]
@@ -427,6 +436,7 @@ export function mapSourcePresetsToDiscoveryCandidates(
       tagIds,
       origin: "preset",
       subscriberCount: subscriberCount || undefined,
+      recentSubscriberGrowth: recentSubscriberGrowth || undefined,
       heatScore,
       relevanceScore,
       trendLabels,

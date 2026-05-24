@@ -57,6 +57,7 @@ describe("task discovery runtime", () => {
           expect.objectContaining({
             id: "preset:openai-blog",
             subscriberCount: 1,
+            recentSubscriberGrowth: 1,
           }),
           expect.objectContaining({
             sourceType: "SEARCH_DISCOVERY",

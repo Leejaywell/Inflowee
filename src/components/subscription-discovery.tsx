@@ -317,6 +317,12 @@ export function SubscriptionDiscovery({
                         {isZh ? "订阅" : "subs"}
                       </span>
                     ) : null}
+                    {candidate.recentSubscriberGrowth ? (
+                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700">
+                        +{candidate.recentSubscriberGrowth.toLocaleString()}{" "}
+                        {isZh ? "近 7 天" : "7d"}
+                      </span>
+                    ) : null}
                     {candidate.heatScore ? (
                       <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-semibold text-orange-700">
                         {isZh ? "热度" : "Heat"} {candidate.heatScore}

@@ -31,11 +31,19 @@ export async function buildDiscoverySourceStats(
 ): Promise<DiscoverySourceStats> {
   const sources = await listSources(store);
   const subscriberCountByUrl = new Map<string, number>();
+  const recentSubscriberGrowthByUrl = new Map<string, number>();
   const heatScoreByUrl = new Map<string, number>();
+  const recentThreshold = Date.now() - 1000 * 60 * 60 * 24 * 7;
 
   for (const source of sources) {
     const urlKey = normalizeUrlKey(source.url);
     subscriberCountByUrl.set(urlKey, (subscriberCountByUrl.get(urlKey) ?? 0) + 1);
+    if (new Date(source.createdAt).getTime() >= recentThreshold) {
+      recentSubscriberGrowthByUrl.set(
+        urlKey,
+        (recentSubscriberGrowthByUrl.get(urlKey) ?? 0) + 1,
+      );
+    }
 
     const items = await listItemsBySource(store, source.id);
     const acceptedItems = items.filter((item) => item.qualityStatus === "accepted");
@@ -67,6 +75,7 @@ export async function buildDiscoverySourceStats(
 
   return {
     subscriberCountByUrl,
+    recentSubscriberGrowthByUrl,
     heatScoreByUrl,
   };
 }
