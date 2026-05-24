@@ -1,5 +1,7 @@
 import { syncSourceById, type SyncSourceResult } from "@/lib/source-ingestion";
+import { shouldCollectForSchedule } from "@/lib/task-schedule";
 import {
+  getTaskById,
   listDueSources,
   listSources,
   scheduleNextSourceSync,
@@ -31,11 +33,20 @@ export async function syncDueSources(
   const now = options?.now ?? new Date().toISOString();
   const dueSources = await listDueSources(store, now);
   const syncImpl = options?.syncSourceByIdImpl ?? syncSourceById;
+  const scheduledAt = new Date(now);
   const results: SyncSourceResult[] = [];
   let synced = 0;
   let failed = 0;
+  let skippedBySchedule = 0;
 
   for (const source of dueSources) {
+    const task = await getTaskById(store, source.taskId);
+
+    if (!shouldCollectForSchedule(task?.scheduleProfile, scheduledAt)) {
+      skippedBySchedule++;
+      continue;
+    }
+
     let result: SyncSourceResult;
 
     try {
@@ -66,7 +77,9 @@ export async function syncDueSources(
   return {
     synced,
     failed,
-    skipped: Math.max(0, (await listSources(store)).length - dueSources.length),
+    skipped:
+      skippedBySchedule +
+      Math.max(0, (await listSources(store)).length - dueSources.length),
     results,
   };
 }

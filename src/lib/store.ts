@@ -5,6 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { getDatabaseUrl, getPrisma, requireDatabaseUrl } from "./db.ts";
+import type { TaskScheduleProfile } from "./task-schedule";
 
 export type TaskType = "TOPIC" | "QUESTION";
 export type ReportMode = "current" | "daily" | "incremental";
@@ -60,6 +61,7 @@ type TaskRow = {
   relevance_level: number;
   summary_preference: string;
   task_profile: string | null;
+  schedule_profile: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -229,6 +231,7 @@ export type TaskRecord = {
   relevanceLevel: number;
   summaryPreference: string;
   taskProfile?: TaskProfile | null;
+  scheduleProfile?: TaskScheduleProfile | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -920,6 +923,7 @@ function migrateTasksTable(database: DatabaseSync) {
         relevance_level INTEGER NOT NULL DEFAULT 3,
         summary_preference TEXT NOT NULL DEFAULT 'balanced',
         task_profile TEXT,
+        schedule_profile TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -933,6 +937,7 @@ function migrateTasksTable(database: DatabaseSync) {
         relevance_level,
         summary_preference,
         task_profile,
+        schedule_profile,
         created_at,
         updated_at
       )
@@ -945,6 +950,7 @@ function migrateTasksTable(database: DatabaseSync) {
         relevance_level,
         summary_preference,
         CASE WHEN instr(sql, 'task_profile') > 0 THEN task_profile ELSE NULL END,
+        CASE WHEN instr(sql, 'schedule_profile') > 0 THEN schedule_profile ELSE NULL END,
         created_at,
         updated_at
       FROM tasks
@@ -961,6 +967,10 @@ function migrateTasksTable(database: DatabaseSync) {
 
   if (!tasksTable.sql.includes("task_profile")) {
     database.exec("ALTER TABLE tasks ADD COLUMN task_profile TEXT;");
+  }
+
+  if (!tasksTable.sql.includes("schedule_profile")) {
+    database.exec("ALTER TABLE tasks ADD COLUMN schedule_profile TEXT;");
   }
 }
 
@@ -1208,6 +1218,7 @@ export function createStore(
         relevance_level INTEGER NOT NULL DEFAULT 3,
         summary_preference TEXT NOT NULL DEFAULT 'balanced',
         task_profile TEXT,
+        schedule_profile TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -1418,6 +1429,9 @@ function mapTask(row: TaskRow): TaskRecord {
     relevanceLevel: row.relevance_level,
     summaryPreference: row.summary_preference,
     taskProfile: row.task_profile ? JSON.parse(row.task_profile) : null,
+    scheduleProfile: row.schedule_profile
+      ? (JSON.parse(row.schedule_profile) as TaskScheduleProfile)
+      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1432,6 +1446,7 @@ function mapPrismaTask(task: {
   relevanceLevel: number;
   summaryPreference: string;
   taskProfile: unknown;
+  scheduleProfile: unknown;
   createdAt: Date;
   updatedAt: Date;
 }): TaskRecord {
@@ -1444,6 +1459,8 @@ function mapPrismaTask(task: {
     relevanceLevel: task.relevanceLevel,
     summaryPreference: task.summaryPreference,
     taskProfile: (task.taskProfile as TaskProfile | null) ?? null,
+    scheduleProfile:
+      (task.scheduleProfile as TaskScheduleProfile | null) ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };
@@ -1774,9 +1791,10 @@ export async function createTaskRecord(
         user_prompt,
         relevance_level,
         summary_preference,
+        schedule_profile,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -1786,6 +1804,7 @@ export async function createTaskRecord(
       input.userPrompt,
       3,
       "balanced",
+      null,
       timestamp,
       timestamp,
     );
@@ -3712,6 +3731,32 @@ export async function saveTaskProfile(
   store.database
     .prepare("UPDATE tasks SET task_profile = ?, updated_at = ? WHERE id = ?")
     .run(JSON.stringify(profile), timestamp, taskId);
+}
+
+export async function updateTaskScheduleProfile(
+  store: Store,
+  taskId: string,
+  profile: TaskScheduleProfile | null,
+): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.task.update({
+      where: { id: taskId },
+      data: {
+        scheduleProfile: profile
+          ? (profile as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
+      },
+    });
+
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare(
+      "UPDATE tasks SET schedule_profile = ?, updated_at = ? WHERE id = ?",
+    )
+    .run(profile ? JSON.stringify(profile) : null, timestamp, taskId);
 }
 
 export async function replaceRecommendationBundles(

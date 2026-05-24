@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { generateReportAction } from "@/app/actions";
+import {
+  generateReportAction,
+  saveTaskSchedulePresetAction,
+} from "@/app/actions";
 import { TaskControls } from "@/components/task-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
 import { ChatConsole } from "@/components/chat-console";
@@ -68,6 +71,8 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const chatMessages = chatThread
     ? await listChatMessages(store, chatThread.id)
     : [];
+  const schedulePreset = task.scheduleProfile?.preset ?? "always_on";
+  const scheduleTimezone = task.scheduleProfile?.timezone ?? "Asia/Shanghai";
 
   return (
     <div className="grid gap-6">
@@ -110,6 +115,47 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             initialRelevanceLevel={task.relevanceLevel}
             initialSummaryPreference={task.summaryPreference}
           />
+
+          <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+            <div className="mb-4 border-b border-stone-100 pb-4">
+              <h2 className="text-lg font-semibold text-stone-950">
+                Schedule profile
+              </h2>
+              <p className="mt-1 text-sm text-stone-500">
+                Control when this monitoring goal collects sources.
+              </p>
+            </div>
+            <form
+              action={saveTaskSchedulePresetAction}
+              className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]"
+            >
+              <input name="taskId" type="hidden" value={taskId} />
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                Preset
+                <select
+                  name="preset"
+                  defaultValue={schedulePreset}
+                  className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
+                >
+                  <option value="always_on">Always on</option>
+                  <option value="morning_evening">Morning and evening</option>
+                  <option value="office_hours">Office hours</option>
+                  <option value="nightly_summary">Nightly summary</option>
+                </select>
+              </label>
+              <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                Timezone
+                <input
+                  name="timezone"
+                  defaultValue={scheduleTimezone}
+                  className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
+                />
+              </label>
+              <button className="h-11 self-end rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
+                Save
+              </button>
+            </form>
+          </section>
 
           <RecommendationWizard
             key={recommendationStateKey}

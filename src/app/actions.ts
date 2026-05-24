@@ -37,10 +37,16 @@ import {
   saveTelegramSourceSettings,
   saveWebhookSettings,
   setSourceSchedule,
+  updateTaskScheduleProfile,
 } from "@/lib/store";
 import { syncSourceById } from "@/lib/source-ingestion";
 import { getSourcePresetById } from "@/lib/source-presets";
 import { generateTaskReport } from "@/lib/reports";
+import {
+  buildSchedulePreset,
+  validateScheduleProfile,
+  type TaskSchedulePreset,
+} from "@/lib/task-schedule";
 import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import { LOCALE_COOKIE_NAME, normalizeLocale } from "@/lib/i18n";
 import {
@@ -417,6 +423,37 @@ export async function generateReportAction(formData: FormData) {
 
   await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
   await generateTaskReport(defaultStore, taskId, { mode });
+
+  revalidatePath(`/tasks/${taskId}`);
+  redirect(`/tasks/${taskId}`);
+}
+
+export async function saveTaskSchedulePresetAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const taskId = getString(formData, "taskId");
+  const preset = getString(formData, "preset") as TaskSchedulePreset;
+  const timezone = getString(formData, "timezone") || "Asia/Shanghai";
+  const allowedPresets: TaskSchedulePreset[] = [
+    "always_on",
+    "morning_evening",
+    "office_hours",
+    "nightly_summary",
+  ];
+
+  if (!allowedPresets.includes(preset)) {
+    redirect(`/tasks/${taskId}?error=Invalid%20schedule%20preset.`);
+  }
+
+  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
+
+  const profile = buildSchedulePreset(preset, timezone);
+  const errors = validateScheduleProfile(profile);
+
+  if (errors.length > 0) {
+    redirect(`/tasks/${taskId}?error=${encodeURIComponent(errors[0])}`);
+  }
+
+  await updateTaskScheduleProfile(defaultStore, taskId, profile);
 
   revalidatePath(`/tasks/${taskId}`);
   redirect(`/tasks/${taskId}`);

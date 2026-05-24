@@ -16,6 +16,7 @@ model Task {
   relevanceLevel        Int                    @default(3)
   summaryPreference     String                 @default("balanced")
   taskProfile           Json?
+  scheduleProfile       Json?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   sources               Source[]

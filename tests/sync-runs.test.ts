@@ -8,7 +8,10 @@ import {
   listRecentSyncRuns,
   listRecentSyncRunsBySource,
   markSourceSyncResult,
+  updateTaskScheduleProfile,
 } from "@/lib/store";
+import { syncDueSources } from "@/lib/sync-runs";
+import { buildSchedulePreset } from "@/lib/task-schedule";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
 describe("sync run tracking", () => {
@@ -52,6 +55,46 @@ describe("sync run tracking", () => {
       expect(await listRecentSyncRunsBySource(fixture.store, sourceId)).toEqual([
         expect.objectContaining({ id: runId, status: "success" }),
       ]);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("skips due sources outside their task schedule window", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      const taskId = await createTaskRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "Track agents",
+        taskType: "TOPIC",
+        userPrompt: "Track coding agents.",
+      });
+      await updateTaskScheduleProfile(
+        fixture.store,
+        taskId,
+        buildSchedulePreset("office_hours", "Asia/Shanghai"),
+      );
+      await createSourceRecord(fixture.store, {
+        taskId,
+        sourceType: "RSS",
+        title: "Agent feed",
+        url: "https://example.com/feed.xml",
+      });
+      const syncSourceByIdImpl = vi.fn();
+
+      const result = await syncDueSources(fixture.store, {
+        now: "2026-05-25T00:00:00.000Z",
+        syncSourceByIdImpl,
+      });
+
+      expect(syncSourceByIdImpl).not.toHaveBeenCalled();
+      expect(result).toEqual({
+        synced: 0,
+        failed: 0,
+        skipped: 1,
+        results: [],
+      });
     } finally {
       fixture.cleanup();
     }
