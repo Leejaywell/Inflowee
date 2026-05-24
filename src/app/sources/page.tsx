@@ -7,6 +7,7 @@ import {
   updateSourceSchedule,
 } from "@/app/actions";
 import Link from "next/link";
+import { MetricPill, Notice, PageHeader, Surface } from "@/components/ui-shell";
 import { requireSessionActor } from "@/lib/auth";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
@@ -86,64 +87,30 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
 
   return (
     <div className="grid gap-5">
-      {/* Header with health strip */}
-      <section className="rounded-[18px] border border-stone-900/10 bg-white px-6 py-5">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-white">
-              {t.badge}
-            </span>
-            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-950">
-              {t.title}
-            </h1>
-            <p className="mt-1 text-sm leading-6 text-stone-500">{t.description}</p>
+      <PageHeader
+        eyebrow={t.badge}
+        title={t.title}
+        description={t.description}
+        metrics={
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <MetricPill value={healthSummary.healthy} label={t.healthy} tone="success" />
+            <MetricPill
+              value={healthSummary.errored}
+              label={t.failing}
+              tone={healthSummary.errored > 0 ? "danger" : "default"}
+            />
+            <MetricPill value={healthSummary.idle} label={t.idle} />
+            <MetricPill
+              value={healthSummary.dueNow}
+              label={t.dueNow}
+              tone={healthSummary.dueNow > 0 ? "warning" : "default"}
+            />
           </div>
-
-          <div className="flex flex-wrap gap-3">
-            <div className="rounded-2xl bg-emerald-50 px-4 py-3 text-center">
-              <div className="text-xl font-semibold text-emerald-800">
-                {healthSummary.healthy}
-              </div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-emerald-600">
-                {t.healthy}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-rose-50 px-4 py-3 text-center">
-              <div className="text-xl font-semibold text-rose-800">
-                {healthSummary.errored}
-              </div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-rose-600">
-                {t.failing}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-stone-100 px-4 py-3 text-center">
-              <div className="text-xl font-semibold text-stone-700">
-                {healthSummary.idle}
-              </div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-stone-500">
-                {t.idle}
-              </div>
-            </div>
-            <div className="rounded-2xl bg-amber-50 px-4 py-3 text-center">
-              <div className="text-xl font-semibold text-amber-800">
-                {healthSummary.dueNow}
-              </div>
-              <div className="text-[10px] font-semibold uppercase tracking-[0.14em] text-amber-600">
-                {t.dueNow}
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
+        }
+      />
 
       {(created || error || synced || updated) && (
-        <section
-          className={`rounded-2xl border px-5 py-4 text-sm ${
-            error
-              ? "border-rose-200 bg-rose-50 text-rose-700"
-              : "border-emerald-200 bg-emerald-50 text-emerald-700"
-          }`}
-        >
+        <Notice tone={error ? "danger" : "success"}>
           {error
             ? decodeURIComponent(error)
             : created === "source"
@@ -155,13 +122,13 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                   : updated === "schedule"
                     ? t.cadenceUpdated
                     : t.updateApplied}
-        </section>
+        </Notice>
       )}
 
       {/* Main: source list (left) + add forms (right) */}
       <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
         {/* Source library */}
-        <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+        <Surface>
           <div className="mb-5 flex items-center justify-between border-b border-stone-100 pb-5">
             <div>
               <h2 className="text-xl font-semibold">{t.taskSources}</h2>
@@ -321,7 +288,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               ))}
             </div>
           )}
-        </section>
+        </Surface>
 
         {/* Right: Add source forms */}
         <div className="grid content-start gap-5 lg:sticky lg:top-6 lg:max-h-[calc(100vh-48px)] lg:overflow-y-auto">
@@ -483,7 +450,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
       </div>
 
       {/* Recent sync activity */}
-      <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+      <Surface>
         <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-4">
           <div>
             <h2 className="text-xl font-semibold">{t.recentSyncRuns}</h2>
@@ -548,7 +515,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             })}
           </div>
         )}
-      </section>
+      </Surface>
     </div>
   );
 }

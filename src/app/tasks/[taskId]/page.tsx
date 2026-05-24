@@ -11,6 +11,7 @@ import { TaskControls } from "@/components/task-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
 import { SubscriptionDiscovery } from "@/components/subscription-discovery";
 import { ChatConsole } from "@/components/chat-console";
+import { PageHeader, SectionNav } from "@/components/ui-shell";
 import {
   assertTaskAccess,
   getActorScopedChatScopeId,
@@ -178,18 +179,11 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
 
   return (
     <div className="grid gap-5">
-      {/* Task header */}
-      <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-        <div className="flex items-center gap-2 text-sm text-stone-500">
-          <Link href="/" className="hover:text-stone-700">
-            {t.dashboard}
-          </Link>
-          <span className="text-stone-300">/</span>
-          <span className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-            {t.badge}
-          </span>
-        </div>
-        <div className="mt-3 space-y-2">
+      <PageHeader
+        eyebrow={t.badge}
+        title={task.title}
+        description={`${t.monitoringGoal} ${task.userPrompt}`}
+        metrics={
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-stone-950 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-stone-50">
               {task.taskType}
@@ -198,32 +192,24 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
               {t.level} {task.relevanceLevel}
             </span>
           </div>
-          <h1 className="text-3xl font-semibold tracking-tight text-stone-950 sm:text-4xl">
-            {task.title}
-          </h1>
-          <p className="max-w-3xl text-sm leading-relaxed text-stone-600">
-            <strong className="text-stone-800">{t.monitoringGoal}</strong>{" "}
-            {task.userPrompt}
-          </p>
-        </div>
-      </section>
-
+        }
+      />
+      <div className="flex items-center gap-2 text-sm text-stone-500">
+        <Link href="/" className="hover:text-stone-700">
+          {t.dashboard}
+        </Link>
+        <span className="text-stone-300">/</span>
+        <span className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
+          {task.title}
+        </span>
+      </div>
       {/* Section navigation */}
-      <nav className="flex flex-wrap gap-2">
-        {SECTIONS.map((s) => (
-          <Link
-            key={s}
-            href={sectionHref(s)}
-            className={`inline-flex h-10 items-center rounded-xl px-4 text-sm font-semibold transition ${
-              section === s
-                ? "bg-stone-950 text-white"
-                : "border border-stone-200 bg-white text-stone-700 hover:bg-stone-50"
-            }`}
-          >
-            {sectionLabels[s]}
-          </Link>
-        ))}
-      </nav>
+      <SectionNav
+        items={SECTIONS}
+        active={section}
+        getHref={sectionHref}
+        getLabel={(item) => sectionLabels[item]}
+      />
 
       {/* Main content */}
       <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">

@@ -3,6 +3,14 @@ import { redirect } from "next/navigation";
 
 import { createTask, deleteTask } from "@/app/actions";
 import { ChatConsole } from "@/components/chat-console";
+import {
+  MetricPill,
+  Notice,
+  PageHeader,
+  PrimaryButton,
+  SecondaryButton,
+  Surface,
+} from "@/components/ui-shell";
 import { getActorScopedChatScopeId, getSessionUser } from "@/lib/auth";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
@@ -72,69 +80,52 @@ export default async function Home({ searchParams }: HomeProps) {
 
   return (
     <div className="grid gap-5">
-      {/* Status strip */}
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-[18px] border border-stone-900/10 bg-white px-6 py-4">
-        <div className="flex flex-wrap items-center gap-5">
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-semibold text-stone-950">{tasks.length}</span>
-            <span className="text-sm text-stone-500">{t.goals}</span>
+      <PageHeader
+        eyebrow={t.badge}
+        title={t.title}
+        description={t.description}
+        actions={
+          <>
+            <SecondaryButton href="/discover">
+              {isZh ? "发现来源" : "Discover sources"}
+            </SecondaryButton>
+            <PrimaryButton href="/sources">
+              {isZh ? "管理来源" : "Manage sources"}
+            </PrimaryButton>
+          </>
+        }
+        metrics={
+          <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <MetricPill value={tasks.length} label={t.goals} />
+            <MetricPill
+              value={unreadCount}
+              label={t.unreadBriefs}
+              tone={unreadCount > 0 ? "accent" : "default"}
+            />
+            <MetricPill value={sources.length} label={t.sources} />
+            <MetricPill
+              value={healthSummary.errored}
+              label={t.failing}
+              tone={healthSummary.errored > 0 ? "danger" : "default"}
+            />
+            <MetricPill
+              value={healthSummary.dueNow}
+              label={t.dueNow}
+              tone={healthSummary.dueNow > 0 ? "warning" : "default"}
+            />
           </div>
-          <span className="h-5 w-px bg-stone-200" />
-          <div className="flex items-center gap-2">
-            <span className={`text-2xl font-semibold ${unreadCount > 0 ? "text-[#0057ff]" : "text-stone-950"}`}>
-              {unreadCount}
-            </span>
-            <span className="text-sm text-stone-500">{t.unreadBriefs}</span>
-          </div>
-          <span className="h-5 w-px bg-stone-200" />
-          <div className="flex items-center gap-2">
-            <span className="text-2xl font-semibold text-stone-950">{sources.length}</span>
-            <span className="text-sm text-stone-500">{t.sources}</span>
-          </div>
-          {healthSummary.errored > 0 && (
-            <>
-              <span className="h-5 w-px bg-stone-200" />
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-semibold text-rose-600">{healthSummary.errored}</span>
-                <span className="text-sm text-stone-500">{t.failing}</span>
-              </div>
-            </>
-          )}
-          {healthSummary.dueNow > 0 && (
-            <>
-              <span className="h-5 w-px bg-stone-200" />
-              <div className="flex items-center gap-2">
-                <span className="text-2xl font-semibold text-amber-600">{healthSummary.dueNow}</span>
-                <span className="text-sm text-stone-500">{t.dueNow}</span>
-              </div>
-            </>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/discover"
-            className="inline-flex h-10 items-center rounded-xl border border-stone-200 px-4 text-sm font-medium text-stone-700 transition hover:bg-stone-50"
-          >
-            {isZh ? "发现来源" : "Discover sources"}
-          </Link>
-          <Link
-            href="/sources"
-            className="inline-flex h-10 items-center rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800"
-          >
-            {isZh ? "管理来源" : "Manage sources"}
-          </Link>
-        </div>
-      </section>
+        }
+      />
 
       {params?.error ? (
-        <section className="rounded-2xl border border-rose-200 bg-rose-50 px-5 py-4 text-sm text-rose-700">
+        <Notice tone="danger">
           {decodeURIComponent(params.error)}
-        </section>
+        </Notice>
       ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
         {/* Left column: Monitoring goals + create form */}
-        <section className="rounded-[18px] border border-stone-900/10 bg-white p-6">
+        <Surface>
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold">{t.goalListTitle}</h2>
@@ -225,12 +216,12 @@ export default async function Home({ searchParams }: HomeProps) {
               </button>
             </form>
           </div>
-        </section>
+        </Surface>
 
         {/* Right column: Briefs + Activity + Chat */}
         <div className="grid content-start gap-5">
           {/* Recent briefs */}
-          <section className="rounded-[18px] border border-stone-900/10 bg-white p-6">
+          <Surface>
             <div className="mb-4 flex items-center justify-between border-b border-stone-100 pb-4">
               <div>
                 <h2 className="text-xl font-semibold">{t.recentBriefs}</h2>
@@ -283,10 +274,10 @@ export default async function Home({ searchParams }: HomeProps) {
                 ))}
               </div>
             )}
-          </section>
+          </Surface>
 
           {/* Sync activity */}
-          <section className="rounded-[18px] border border-stone-900/10 bg-white p-6">
+          <Surface>
             <h2 className="mb-4 text-base font-semibold text-stone-950">
               {t.recentSyncRuns}
             </h2>
@@ -323,7 +314,7 @@ export default async function Home({ searchParams }: HomeProps) {
                 ))}
               </div>
             )}
-          </section>
+          </Surface>
 
           {/* AI assistant */}
           <ChatConsole
