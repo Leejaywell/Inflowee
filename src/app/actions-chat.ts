@@ -34,6 +34,11 @@ import {
   buildHotlistSourceConfig,
   buildHotlistSourceUrl,
 } from "@/lib/hotlist-discovery";
+import {
+  getDiscoverySourceCandidates,
+  type DiscoverySourceCandidate,
+} from "@/lib/discovery-catalog";
+import { createDiscoverySourcesForTask } from "@/lib/discovery-subscriptions";
 
 type ChatScope = "global" | "task" | "brief";
 
@@ -239,6 +244,44 @@ export async function subscribeRecommendedSources(
   }
 
   return { success: true };
+}
+
+export async function subscribeDiscoverySources(
+  taskId: string,
+  candidateIds: string[],
+) {
+  const store = defaultStore;
+  const actor = await requireSessionActor();
+  await assertTaskAccess(store, {
+    actorId: actor.id,
+    taskId,
+  });
+
+  const task = await getTaskById(store, taskId);
+
+  if (!task) {
+    throw new Error("Task not found.");
+  }
+
+  const allowedIds = new Set(candidateIds);
+  const candidates: DiscoverySourceCandidate[] = getDiscoverySourceCandidates(
+    task.taskProfile ?? null,
+  ).filter((candidate) => allowedIds.has(candidate.id));
+
+  if (candidates.length === 0) {
+    throw new Error("Select at least one valid discovery source.");
+  }
+
+  const result = await createDiscoverySourcesForTask(store, taskId, candidates);
+
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/sources");
+  revalidatePath("/inbox");
+
+  return {
+    success: true,
+    ...result,
+  };
 }
 
 export async function previewRecommendedSources(

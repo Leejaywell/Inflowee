@@ -9,6 +9,7 @@ import {
 } from "@/app/actions";
 import { TaskControls } from "@/components/task-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
+import { SubscriptionDiscovery } from "@/components/subscription-discovery";
 import { ChatConsole } from "@/components/chat-console";
 import {
   assertTaskAccess,
@@ -28,6 +29,11 @@ import {
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import { listConfiguredDeliveryChannels } from "@/lib/delivery";
+import {
+  getDiscoveryCategories,
+  getDiscoverySourceCandidates,
+  getDiscoveryTags,
+} from "@/lib/discovery-catalog";
 
 export const dynamic = "force-dynamic";
 
@@ -118,6 +124,15 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     taskProfile: task.taskProfile ?? null,
     recommendedBundles,
   });
+  const discoveryCategories = getDiscoveryCategories();
+  const discoveryTags = [
+    ...new Map(
+      discoveryCategories
+        .flatMap((category) => getDiscoveryTags(category.id, task.taskProfile ?? null))
+        .map((tag) => [tag.id, tag] as const),
+    ).values(),
+  ];
+  const discoveryCandidates = getDiscoverySourceCandidates(task.taskProfile ?? null);
   const actorScopeId = getActorScopedChatScopeId(actor.id, taskId);
   const chatThread = await findChatThread(store, "task", actorScopeId);
   const chatMessages = chatThread
@@ -408,6 +423,14 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             taskProfile={task.taskProfile ?? null}
             recommendedBundles={recommendedBundles}
             labels={dict.recommendation}
+          />
+
+          <SubscriptionDiscovery
+            taskId={taskId}
+            categories={discoveryCategories}
+            tags={discoveryTags}
+            candidates={discoveryCandidates}
+            isZh={isZh}
           />
 
           <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
