@@ -543,6 +543,67 @@ export async function deliverStoredBrief(
   return deliverStoredBriefToChannel(store, briefId, "webhook", options);
 }
 
+export async function deliverTextToChannel(
+  store: Store,
+  channel: DeliveryChannel,
+  input: {
+    id: string;
+    title: string;
+    body: string;
+  },
+  options?: {
+    fetchImpl?: FetchLike;
+    maxAttempts?: number;
+    sleepImpl?: SleepLike;
+  },
+) {
+  const adapter = getDeliveryAdapter(channel);
+  const endpoint = await adapter.getEndpoint(store);
+
+  if (!endpoint) {
+    throw new Error(adapter.missingConfigurationMessage);
+  }
+
+  const payloads = await adapter.buildPayloads({
+    brief: {
+      id: input.id,
+      title: input.title,
+      summary: input.body,
+    },
+    html: input.body,
+    store,
+  });
+  let attempts = 0;
+  let responseStatus = 0;
+
+  for (const payload of payloads) {
+    const result = await deliverBriefWithRetry({
+      endpoint,
+      payload,
+      fetchImpl: options?.fetchImpl,
+      maxAttempts: options?.maxAttempts,
+      sleepImpl: options?.sleepImpl,
+    });
+
+    attempts += result.attempts;
+
+    if (result.status === "error") {
+      return {
+        ...result,
+        attempts,
+      };
+    }
+
+    responseStatus = result.responseStatus;
+  }
+
+  return {
+    attempts,
+    status: "success" as const,
+    responseStatus,
+  };
+}
+
 export async function deliverStoredBriefToConfiguredChannels(
   store: Store,
   briefId: string,
