@@ -12,6 +12,7 @@ import {
   defaultStore,
   createChatMessage,
   createSourceRecord,
+  createTaskRecord,
   getOrCreateChatThread,
   getTaskById,
   listChatMessages,
@@ -20,7 +21,8 @@ import {
 import { answerGroundedQuestion } from "@/lib/ai";
 import { getGroundingForScope, type GroundingResult } from "@/lib/grounding";
 import { fetchLiveContext } from "@/lib/live-fetch";
-import { createSourceSchema } from "@/lib/validation";
+import { createSourceSchema, createTaskSchema } from "@/lib/validation";
+import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import {
   previewSubscriptionSources,
   syncSourceById,
@@ -37,7 +39,10 @@ import {
 import {
   type DiscoverySourceCandidate,
 } from "@/lib/discovery-catalog";
-import { buildTaskDiscoveryExperience } from "@/lib/discovery-runtime";
+import {
+  buildGenericDiscoveryExperience,
+  buildTaskDiscoveryExperience,
+} from "@/lib/discovery-runtime";
 import { createDiscoverySourcesForTask } from "@/lib/discovery-subscriptions";
 
 type ChatScope = "global" | "task" | "brief";
@@ -266,8 +271,14 @@ export async function subscribeDiscoverySources(
 
   const allowedIds = new Set(candidateIds);
   const discoveryExperience = await buildTaskDiscoveryExperience(store, task, context);
-  const candidates: DiscoverySourceCandidate[] =
+  let candidates: DiscoverySourceCandidate[] =
     discoveryExperience.candidates.filter((candidate) => allowedIds.has(candidate.id));
+
+  if (candidates.length === 0) {
+    candidates = buildGenericDiscoveryExperience().candidates.filter((candidate) =>
+      allowedIds.has(candidate.id),
+    );
+  }
 
   if (candidates.length === 0) {
     throw new Error("Select at least one valid discovery source.");
@@ -284,6 +295,72 @@ export async function subscribeDiscoverySources(
 
   return {
     success: true,
+    ...result,
+  };
+}
+
+export async function createTaskAndSubscribeDiscoverySources(input: {
+  title: string;
+  userPrompt: string;
+  candidateIds: string[];
+  categoryId?: string;
+  selectedTagIds?: string[];
+}) {
+  const store = defaultStore;
+  const actor = await requireSessionActor();
+  const userPrompt = input.userPrompt.trim();
+  const title = input.title.trim() || userPrompt.slice(0, 28);
+  const parsed = createTaskSchema.safeParse({
+    title,
+    taskType: "TOPIC",
+    userPrompt,
+  });
+
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues[0]?.message ?? "Invalid task input.");
+  }
+
+  const taskId = await createTaskRecord(store, {
+    ...parsed.data,
+    ownerId: actor.id,
+  });
+
+  try {
+    await refreshTaskIntelligence(store, taskId);
+  } catch (error) {
+    console.error(`Failed to initialize task intelligence for ${taskId}:`, error);
+  }
+
+  const task = await getTaskById(store, taskId);
+  if (!task) {
+    throw new Error("Task not found after creation.");
+  }
+
+  const allowedIds = new Set(input.candidateIds);
+  const discoveryExperience = await buildTaskDiscoveryExperience(store, task, {
+    categoryId: input.categoryId,
+    selectedTagIds: input.selectedTagIds,
+  });
+  const candidates: DiscoverySourceCandidate[] =
+    discoveryExperience.candidates.filter((candidate) => allowedIds.has(candidate.id));
+
+  if (candidates.length === 0) {
+    throw new Error("Select at least one valid discovery source.");
+  }
+
+  const result = await createDiscoverySourcesForTask(store, taskId, candidates, {
+    syncImmediately: true,
+  });
+
+  revalidatePath("/");
+  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath("/discover");
+  revalidatePath("/sources");
+  revalidatePath("/inbox");
+
+  return {
+    success: true,
+    taskId,
     ...result,
   };
 }

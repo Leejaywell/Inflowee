@@ -181,10 +181,12 @@ export async function setThemeAction(formData: FormData) {
 
 export async function createTask(formData: FormData) {
   const actor = await requireSessionActor();
+  const userPrompt = getString(formData, "userPrompt");
+  const title = getString(formData, "title") || userPrompt.slice(0, 28);
   const parsed = createTaskSchema.safeParse({
-    title: getString(formData, "title"),
+    title,
     taskType: getString(formData, "taskType") || "TOPIC",
-    userPrompt: getString(formData, "userPrompt"),
+    userPrompt,
   });
 
   if (!parsed.success) {

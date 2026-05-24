@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  createTaskAndSubscribeDiscoverySources,
   previewRecommendedSources,
   subscribeDiscoverySources,
 } from "@/app/actions-chat";
@@ -19,7 +20,8 @@ import {
 import type { SubscriptionPreviewResult } from "@/lib/source-ingestion";
 
 type SubscriptionDiscoveryProps = {
-  taskId: string;
+  taskId?: string | null;
+  taskOptions?: Array<{ id: string; title: string }>;
   categories: DiscoveryCategory[];
   tags: DiscoveryTag[];
   candidates: DiscoverySourceCandidate[];
@@ -28,12 +30,16 @@ type SubscriptionDiscoveryProps = {
 
 export function SubscriptionDiscovery({
   taskId,
+  taskOptions = [],
   categories,
   tags,
   candidates,
   isZh,
 }: SubscriptionDiscoveryProps) {
   const router = useRouter();
+  const [selectedTaskId, setSelectedTaskId] = useState(taskId ?? taskOptions[0]?.id ?? "");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskPrompt, setNewTaskPrompt] = useState("");
   const [categoryId, setCategoryId] = useState("all");
   const [batchIndex, setBatchIndex] = useState(0);
   const [shuffleSeed, setShuffleSeed] = useState(0);
@@ -75,6 +81,8 @@ export function SubscriptionDiscovery({
   const selectedCandidates = visibleCandidates.filter((candidate) =>
     selectedCandidateIds.includes(candidate.id),
   );
+  const effectiveTaskId = taskId ?? selectedTaskId;
+  const canCreateTaskForSelection = !taskId && !effectiveTaskId;
 
   const resetForCategory = (nextCategoryId: string) => {
     setCategoryId(nextCategoryId);
@@ -122,8 +130,13 @@ export function SubscriptionDiscovery({
     setError(null);
     startPreviewTransition(async () => {
       try {
+        if (!effectiveTaskId) {
+          setError(isZh ? "请先选择或创建监控目标再预览。" : "Choose or create a goal before previewing.");
+          return;
+        }
+
         const result = await previewRecommendedSources(
-          taskId,
+          effectiveTaskId,
           selectedCandidates.map((candidate) => ({
             title: candidate.title,
             url: candidate.url,
@@ -152,10 +165,18 @@ export function SubscriptionDiscovery({
     setError(null);
     startAddTransition(async () => {
       try {
-        const result = await subscribeDiscoverySources(taskId, selectedCandidateIds, {
-          categoryId,
-          selectedTagIds,
-        });
+        const result = effectiveTaskId
+          ? await subscribeDiscoverySources(effectiveTaskId, selectedCandidateIds, {
+              categoryId,
+              selectedTagIds,
+            })
+          : await createTaskAndSubscribeDiscoverySources({
+              title: newTaskTitle,
+              userPrompt: newTaskPrompt,
+              candidateIds: selectedCandidateIds,
+              categoryId,
+              selectedTagIds,
+            });
         setMessage(
           isZh
             ? `已添加 ${result.createdSourceIds.length} 个来源，首次同步 ${result.syncedSourceCount} 个，生成 ${result.createdBriefCount} 份简报，跳过 ${result.skippedCandidateIds.length} 个。`
@@ -163,6 +184,9 @@ export function SubscriptionDiscovery({
         );
         setCreatedBriefCount(result.createdBriefCount);
         setSelectedCandidateIds([]);
+        if ("taskId" in result && typeof result.taskId === "string") {
+          setSelectedTaskId(result.taskId);
+        }
         setPreview(null);
         router.refresh();
       } catch (err) {
@@ -350,6 +374,69 @@ export function SubscriptionDiscovery({
         )}
       </div>
 
+      {!taskId ? (
+        <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 p-4">
+          <h3 className="text-sm font-semibold text-stone-950">
+            {isZh ? "订阅到监控目标" : "Subscribe to a goal"}
+          </h3>
+          {taskOptions.length > 0 ? (
+            <label className="mt-3 grid gap-1.5 text-sm">
+              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                {isZh ? "已有目标" : "Existing goal"}
+              </span>
+              <select
+                value={selectedTaskId}
+                onChange={(event) => setSelectedTaskId(event.currentTarget.value)}
+                className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
+              >
+                <option value="">{isZh ? "新建目标" : "Create new goal"}</option>
+                {taskOptions.map((task) => (
+                  <option key={task.id} value={task.id}>
+                    {task.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          {canCreateTaskForSelection ? (
+            <div className="mt-3 grid gap-3">
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  {isZh ? "目标标题（可选）" : "Goal title (optional)"}
+                </span>
+                <input
+                  value={newTaskTitle}
+                  onChange={(event) => setNewTaskTitle(event.currentTarget.value)}
+                  placeholder={isZh ? "AI 编程工具动向" : "AI coding tools"}
+                  className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
+                />
+              </label>
+              <label className="grid gap-1.5 text-sm">
+                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  {isZh ? "监控目标" : "Monitoring goal"}
+                </span>
+                <textarea
+                  value={newTaskPrompt}
+                  onChange={(event) => setNewTaskPrompt(event.currentTarget.value)}
+                  rows={3}
+                  placeholder={
+                    isZh
+                      ? "监控 AI 编程工具的新产品、融资和重要更新。"
+                      : "Monitor new products, funding, and important updates for AI coding tools."
+                  }
+                  className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400"
+                />
+              </label>
+            </div>
+          ) : null}
+          <p className="mt-3 text-xs leading-5 text-stone-500">
+            {isZh
+              ? "可以先浏览分类和标签；只有添加来源时才需要选择或创建目标。"
+              : "You can browse categories first. A goal is only required when adding sources."}
+          </p>
+        </div>
+      ) : null}
+
       {preview ? (
         <div className="mt-4 grid gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800 sm:grid-cols-4">
           <span>{preview.sourceCount} {isZh ? "来源" : "sources"}</span>
@@ -393,7 +480,11 @@ export function SubscriptionDiscovery({
         <button
           type="button"
           onClick={addSelected}
-          disabled={selectedCandidateIds.length === 0 || isAdding}
+          disabled={
+            selectedCandidateIds.length === 0 ||
+            isAdding ||
+            (!effectiveTaskId && newTaskPrompt.trim().length < 8)
+          }
           className="h-11 rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
         >
           {isAdding
@@ -407,7 +498,7 @@ export function SubscriptionDiscovery({
         <button
           type="button"
           onClick={previewSelected}
-          disabled={selectedCandidateIds.length === 0 || isPreviewing}
+          disabled={selectedCandidateIds.length === 0 || isPreviewing || !effectiveTaskId}
           className="h-11 rounded-xl border border-stone-200 px-4 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
         >
           {isPreviewing ? (isZh ? "预览中..." : "Previewing...") : isZh ? "预览已选" : "Preview selected"}

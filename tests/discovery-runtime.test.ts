@@ -1,6 +1,9 @@
 /// <reference types="vitest/globals" />
 
-import { buildTaskDiscoveryExperience } from "@/lib/discovery-runtime";
+import {
+  buildGenericDiscoveryExperience,
+  buildTaskDiscoveryExperience,
+} from "@/lib/discovery-runtime";
 import {
   createItemRecordResult,
   createSourceRecord,
@@ -11,6 +14,14 @@ import {
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
 describe("task discovery runtime", () => {
+  it("builds a browsable generic discovery experience without a task", () => {
+    const experience = buildGenericDiscoveryExperience();
+
+    expect(experience.categories.length).toBeGreaterThan(0);
+    expect(experience.tags.length).toBeGreaterThan(0);
+    expect(experience.candidates.length).toBeGreaterThan(0);
+  });
+
   it("combines AI-planned tags, local subscription stats, and contextual radar candidates", async () => {
     const fixture = createSqliteFixture();
 

@@ -3,7 +3,10 @@ import { redirect } from "next/navigation";
 
 import { SubscriptionDiscovery } from "@/components/subscription-discovery";
 import { getSessionUser } from "@/lib/auth";
-import { buildTaskDiscoveryExperience } from "@/lib/discovery-runtime";
+import {
+  buildGenericDiscoveryExperience,
+  buildTaskDiscoveryExperience,
+} from "@/lib/discovery-runtime";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import { defaultStore, listTasks } from "@/lib/store";
@@ -32,7 +35,7 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
     tasks.find((task) => task.id === params?.taskId) ?? tasks[0] ?? null;
   const experience = selectedTask
     ? await buildTaskDiscoveryExperience(defaultStore, selectedTask)
-    : null;
+    : buildGenericDiscoveryExperience();
   const isZh = locale === "zh";
   const dict = getDictionary(locale);
 
@@ -49,8 +52,8 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
               {isZh
-                ? "选择一个监控目标，系统会结合目标画像、AI 标签规划、已有订阅趋势和实时 radar 源生成候选。"
-                : "Choose a monitoring goal. The system combines its profile, AI tag planning, subscription trends, and live radar sources."}
+                ? "可以先浏览大分类、标签和候选来源；添加来源时再选择已有目标，或直接创建一个新监控目标。"
+                : "Browse broad categories, tags, and source candidates first. Choose or create a monitoring goal only when adding sources."}
             </p>
           </div>
           <Link
@@ -62,13 +65,7 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
         </div>
       </section>
 
-      {tasks.length === 0 ? (
-        <section className="rounded-[18px] border border-dashed border-stone-200 bg-white px-6 py-10 text-sm text-stone-500">
-          {isZh
-            ? "还没有监控目标。先回到工作台创建目标，再进入发现页添加订阅。"
-            : "No monitoring goals yet. Create a goal in the workspace before adding discovery subscriptions."}
-        </section>
-      ) : (
+      {tasks.length > 0 ? (
         <>
           <section className="rounded-[18px] border border-stone-900/10 bg-white p-4">
             <div className="flex flex-wrap gap-2">
@@ -91,18 +88,20 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
               })}
             </div>
           </section>
-
-          {selectedTask && experience ? (
-            <SubscriptionDiscovery
-              taskId={selectedTask.id}
-              categories={experience.categories}
-              tags={experience.tags}
-              candidates={experience.candidates}
-              isZh={isZh}
-            />
-          ) : null}
         </>
-      )}
+      ) : null}
+
+      <SubscriptionDiscovery
+        taskId={selectedTask?.id ?? null}
+        taskOptions={tasks.map((task) => ({
+          id: task.id,
+          title: task.title,
+        }))}
+        categories={experience.categories}
+        tags={experience.tags}
+        candidates={experience.candidates}
+        isZh={isZh}
+      />
 
       <section className="rounded-[18px] border border-stone-900/10 bg-white p-6 text-sm leading-6 text-stone-500">
         {isZh
