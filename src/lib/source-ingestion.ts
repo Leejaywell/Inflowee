@@ -2,6 +2,7 @@ import { extractPageContent } from "@/lib/page-extract";
 import { parseFeedItems } from "@/lib/rss";
 import { fetchSourceFeed, getBlockedSourceUrlError } from "@/lib/source-sync";
 import { generateBriefsFromItems } from "@/lib/ai";
+import { listConfiguredDeliveryChannels } from "@/lib/delivery";
 import { queueBriefDelivery } from "@/lib/inngest";
 import { extractStructuredList } from "@/lib/structured-extract";
 import { fetchTelegramBotFeed } from "@/lib/telegram-bot-ingest";
@@ -24,13 +25,9 @@ import {
   createItemRecordResult,
   createSyncRun,
   finishSyncRun,
-  getFeishuSettings,
-  getSlackSettings,
   getSourceById,
-  getTelegramSourceSettings,
-  getTelegramSettings,
   getTaskById,
-  getWebhookSettings,
+  getTelegramSourceSettings,
   listSources,
   markSourceSyncResult,
   type SourceRecord,
@@ -219,12 +216,9 @@ export async function storeSourceItemsAndCreateBriefs(
   }
 
   const briefs = await generateBriefsFromItems(task, unbriefedItems);
-  const [webhookSettings, slackSettings, telegramSettings, feishuSettings] = await Promise.all([
-    getWebhookSettings(store),
-    getSlackSettings(store),
-    getTelegramSettings(store),
-    getFeishuSettings(store),
-  ]);
+  const hasDeliveryChannel = (await listConfiguredDeliveryChannels(store)).some(
+    (channel) => channel.enabled,
+  );
 
   for (const brief of briefs) {
     const briefId = await createBriefRecord(store, {
@@ -239,12 +233,7 @@ export async function storeSourceItemsAndCreateBriefs(
       tags: brief.tags,
     });
 
-    if (
-      webhookSettings.endpoint ||
-      slackSettings.endpoint ||
-      (telegramSettings.botToken && telegramSettings.chatId) ||
-      feishuSettings.endpoint
-    ) {
+    if (hasDeliveryChannel) {
       try {
         await queueBriefDelivery(briefId, {
           requestKey: briefId,

@@ -1,7 +1,14 @@
 /// <reference types="vitest/globals" />
 
-import { buildDeliveryPayload, deliverBriefWithRetry } from "@/lib/delivery";
+import {
+  buildDeliveryPayload,
+  deliverBriefWithRetry,
+  listConfiguredDeliveryChannels,
+  splitDeliveryText,
+} from "@/lib/delivery";
+import { saveNtfySettings } from "@/lib/store";
 import { makeBriefRecord } from "./helpers/records";
+import { createSqliteFixture } from "./helpers/sqlite-store";
 
 describe("delivery payloads", () => {
   it("builds channel-specific payloads from a personal brief", async () => {
@@ -27,6 +34,43 @@ describe("delivery payloads", () => {
         parse_mode: "HTML",
       }),
     );
+    await expect(buildDeliveryPayload({ channel: "ntfy", brief })).resolves.toEqual(
+      expect.objectContaining({
+        title: "Agent launch",
+        message: "A new coding agent launched.",
+      }),
+    );
+  });
+
+  it("exposes configured channel adapters without leaking credentials", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
+
+      const channels = await listConfiguredDeliveryChannels(fixture.store);
+
+      expect(channels).toContainEqual(
+        expect.objectContaining({
+          type: "ntfy",
+          enabled: true,
+          formatGuide: expect.objectContaining({
+            maxPayloadCharacters: 4000,
+          }),
+        }),
+      );
+      expect(JSON.stringify(channels)).not.toContain("https://ntfy.sh/inflowee");
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("splits long delivery text on batch limits", () => {
+    expect(splitDeliveryText("first line\nsecond line\nthird line", 20)).toEqual([
+      "first line",
+      "second line",
+      "third line",
+    ]);
   });
 
   it("retries transient delivery failures", async () => {

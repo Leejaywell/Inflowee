@@ -166,3 +166,12 @@ export const feishuWebhookEndpointSchema = z
       return false;
     }
   }, "Feishu webhooks must use open.feishu.cn or open.larksuite.com.");
+
+export const ntfyEndpointSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid ntfy endpoint URL.")
+  .refine(
+    (value) => value.startsWith("https://"),
+    "Enter a valid https ntfy endpoint URL.",
+  );

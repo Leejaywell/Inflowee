@@ -1,5 +1,6 @@
 import {
   saveFeishuEndpoint,
+  saveNtfyEndpoint,
   saveSlackEndpoint,
   saveTelegramSourceBot,
   saveTelegramDelivery,
@@ -7,13 +8,14 @@ import {
 } from "@/app/actions";
 import { getAiRuntimeStatus } from "@/lib/ai-config";
 import { requireSessionActor } from "@/lib/auth";
-import { buildDeliveryPayload } from "@/lib/delivery";
+import { buildDeliveryPayload, listConfiguredDeliveryChannels } from "@/lib/delivery";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import {
   defaultStore,
   getDeliveryHealthSummary,
   getFeishuSettings,
+  getNtfySettings,
   getSlackSettings,
   getTelegramSourceSettings,
   getTelegramSettings,
@@ -37,14 +39,27 @@ export default async function SettingsPage({
   ]);
   const t = getDictionary(locale).settings;
   const aiStatus = getAiRuntimeStatus();
-  const [webhookSettings, slackSettings, telegramSettings, telegramSourceSettings, feishuSettings, recentLogs, deliveryHealth, params] = await Promise.all([
+  const [
+    webhookSettings,
+    slackSettings,
+    telegramSettings,
+    telegramSourceSettings,
+    feishuSettings,
+    ntfySettings,
+    recentLogs,
+    deliveryHealth,
+    deliveryChannels,
+    params,
+  ] = await Promise.all([
     getWebhookSettings(defaultStore),
     getSlackSettings(defaultStore),
     getTelegramSettings(defaultStore),
     getTelegramSourceSettings(defaultStore),
     getFeishuSettings(defaultStore),
+    getNtfySettings(defaultStore),
     listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),
     getDeliveryHealthSummary(defaultStore, { actorId: actor.id }),
+    listConfiguredDeliveryChannels(defaultStore),
     searchParams,
   ]);
   const error = params?.error;
@@ -234,6 +249,32 @@ export default async function SettingsPage({
           </button>
         </form>
 
+        <form
+          action={saveNtfyEndpoint}
+          className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+        >
+          <div className="space-y-1">
+            <h2 className="text-xl font-semibold">ntfy</h2>
+            <p className="text-sm leading-6 text-stone-500">
+              Send brief notifications to an ntfy topic endpoint.
+            </p>
+          </div>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">ntfy endpoint</span>
+            <input
+              name="endpoint"
+              defaultValue={ntfySettings.endpoint ?? ""}
+              placeholder="https://ntfy.sh/inflowee"
+              className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
+            Save ntfy
+          </button>
+        </form>
+
         <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
           <h2 className="text-xl font-semibold">{t.deliveryHealth}</h2>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -267,10 +308,19 @@ export default async function SettingsPage({
                   ? " + "
                   : null}
                 {deliveryHealth.feishuConfigured ? "Feishu" : null}
+                {(deliveryHealth.webhookConfigured ||
+                  deliveryHealth.slackConfigured ||
+                  deliveryHealth.telegramConfigured ||
+                  deliveryHealth.feishuConfigured) &&
+                deliveryHealth.ntfyConfigured
+                  ? " + "
+                  : null}
+                {deliveryHealth.ntfyConfigured ? "ntfy" : null}
                 {!deliveryHealth.webhookConfigured &&
                 !deliveryHealth.slackConfigured &&
                 !deliveryHealth.telegramConfigured &&
-                !deliveryHealth.feishuConfigured
+                !deliveryHealth.feishuConfigured &&
+                !deliveryHealth.ntfyConfigured
                   ? t.noneConfigured
                   : null}
               </div>
@@ -319,6 +369,8 @@ export default async function SettingsPage({
                     ? t.telegramSourceSaved
                   : updated === "feishu"
                     ? t.feishuSaved
+                  : updated === "ntfy"
+                    ? "ntfy settings saved."
                 : t.updateApplied}
         </section>
       )}
@@ -386,6 +438,33 @@ export default async function SettingsPage({
         <p className="mt-2 text-sm leading-6 text-stone-500">
           {t.adaptersDescription}
         </p>
+        <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          {deliveryChannels.map((channel) => (
+            <article
+              key={channel.type}
+              className="rounded-2xl border border-stone-200 bg-stone-50 p-4"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-sm font-semibold text-stone-900">
+                  {channel.name}
+                </h3>
+                <span
+                  className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase ${
+                    channel.enabled
+                      ? "bg-emerald-100 text-emerald-700"
+                      : "bg-stone-200 text-stone-600"
+                  }`}
+                >
+                  {channel.enabled ? "enabled" : "off"}
+                </span>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-stone-500">
+                {channel.formatGuide.contentTypes.join(", ")} · max{" "}
+                {channel.formatGuide.maxPayloadCharacters.toLocaleString()} chars
+              </p>
+            </article>
+          ))}
+        </div>
         <pre className="mt-4 overflow-x-auto rounded-2xl bg-stone-950 p-4 text-xs leading-6 text-stone-200">
           {JSON.stringify(slackPreview, null, 2)}
         </pre>

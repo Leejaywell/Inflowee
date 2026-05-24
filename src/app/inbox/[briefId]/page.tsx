@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 
 import {
   sendBriefToFeishu,
+  sendBriefToNtfy,
   sendBriefToSlack,
   sendBriefToTelegram,
   sendBriefToWebhook,
@@ -17,6 +18,7 @@ import {
   defaultStore,
   getBriefById,
   getFeishuSettings,
+  getNtfySettings,
   getSlackSettings,
   getTelegramSettings,
   getWebhookSettings,
@@ -62,7 +64,17 @@ export default async function BriefDetailPage({
 
   const actorScopeId = getActorScopedChatScopeId(actor.id, briefId);
 
-  const [itemIds, linkedItems, chatThread, webhookSettings, slackSettings, telegramSettings, feishuSettings, deliveryLogs] =
+  const [
+    itemIds,
+    linkedItems,
+    chatThread,
+    webhookSettings,
+    slackSettings,
+    telegramSettings,
+    feishuSettings,
+    ntfySettings,
+    deliveryLogs,
+  ] =
     await Promise.all([
       listBriefItemIds(defaultStore, briefId),
       listItemsByBriefId(defaultStore, briefId),
@@ -71,6 +83,7 @@ export default async function BriefDetailPage({
       getSlackSettings(defaultStore),
       getTelegramSettings(defaultStore),
       getFeishuSettings(defaultStore),
+      getNtfySettings(defaultStore),
       listRecentDeliveryLogsByBrief(defaultStore, briefId),
     ]);
   const chatMessages = await listChatMessages(defaultStore, chatThread.id);
@@ -97,6 +110,8 @@ export default async function BriefDetailPage({
                   ? "Brief delivered to Telegram."
                   : delivered === "feishu"
                     ? "Brief delivered to Feishu."
+                    : delivered === "ntfy"
+                      ? "Brief delivered to ntfy."
               : "Update applied."}
         </section>
       )}
@@ -260,6 +275,20 @@ export default async function BriefDetailPage({
                   Send Feishu
                 </button>
               </form>
+              <form action={sendBriefToNtfy}>
+                <input type="hidden" name="briefId" value={briefId} />
+                <button
+                  className="inline-flex h-10 items-center rounded-full border border-stone-200 bg-stone-50 px-4 text-sm font-medium text-stone-700 transition hover:bg-stone-100"
+                  disabled={!ntfySettings.endpoint}
+                  title={
+                    ntfySettings.endpoint
+                      ? "Send this brief to the configured ntfy topic."
+                      : "Configure an ntfy endpoint in Settings first."
+                  }
+                >
+                  Send ntfy
+                </button>
+              </form>
               <ChatDrawer
                 briefId={briefId}
                 briefTitle={brief.title}
@@ -279,7 +308,8 @@ export default async function BriefDetailPage({
             !slackSettings.endpoint &&
             !telegramSettings.botToken &&
             !telegramSettings.chatId &&
-            !feishuSettings.endpoint ? (
+            !feishuSettings.endpoint &&
+            !ntfySettings.endpoint ? (
               <p className="mt-3 text-sm text-stone-500">
                 No delivery channel configured yet. Add one in{" "}
                 <Link href="/settings" className="text-[#0057ff] underline">

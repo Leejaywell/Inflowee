@@ -103,7 +103,7 @@ type DeliveryLogRow = {
   id: string;
   brief_id: string;
   endpoint: string;
-  payload_type: "html" | "slack" | "telegram" | "feishu";
+  payload_type: DeliveryPayloadType;
   status: DeliveryStatus;
   attempt_count: number | null;
   response_status: number | null;
@@ -284,11 +284,23 @@ export type FeishuSettingsRecord = {
   updatedAt: string | null;
 };
 
+export type NtfySettingsRecord = {
+  endpoint: string | null;
+  updatedAt: string | null;
+};
+
+export type DeliveryPayloadType =
+  | "html"
+  | "slack"
+  | "telegram"
+  | "feishu"
+  | "ntfy";
+
 export type DeliveryLogRecord = {
   id: string;
   briefId: string;
   endpoint: string;
-  payloadType: "html" | "slack" | "telegram" | "feishu";
+  payloadType: DeliveryPayloadType;
   status: DeliveryStatus;
   attemptCount: number | null;
   responseStatus: number | null;
@@ -314,6 +326,7 @@ export type DeliveryHealthSummary = {
   slackConfigured: boolean;
   telegramConfigured: boolean;
   feishuConfigured: boolean;
+  ntfyConfigured: boolean;
 };
 
 export type ItemRecord = {
@@ -727,7 +740,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
   }
 
   const needsDeliveryPayloadUpgrade =
-    deliveryLogsTable && !deliveryLogsTable.sql.includes("'feishu'");
+    deliveryLogsTable && !deliveryLogsTable.sql.includes("'ntfy'");
 
   if (needsDeliveryPayloadUpgrade) {
     database.exec(`
@@ -738,7 +751,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
         id TEXT PRIMARY KEY,
         brief_id TEXT NOT NULL,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -786,7 +799,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       id TEXT PRIMARY KEY,
       brief_id TEXT NOT NULL,
       endpoint TEXT NOT NULL,
-      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu')),
+      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy')),
       status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
       attempt_count INTEGER,
       response_status INTEGER,
@@ -1358,7 +1371,7 @@ export function createStore(
         id TEXT PRIMARY KEY,
         brief_id TEXT NOT NULL,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -2806,6 +2819,21 @@ export async function getFeishuSettings(
   };
 }
 
+export async function saveNtfySettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "ntfy_endpoint", endpoint);
+}
+
+export async function getNtfySettings(
+  store: Store,
+): Promise<NtfySettingsRecord> {
+  const row = await getAppSetting(store, "ntfy_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export async function hasProcessedDeliveryRequest(
   store: Store,
   requestKey: string,
@@ -2830,7 +2858,7 @@ export async function createDeliveryLog(
   input: {
     briefId: string;
     endpoint: string;
-    payloadType: "html" | "slack" | "telegram" | "feishu";
+    payloadType: DeliveryPayloadType;
   },
 ) {
   if (store.prisma) {
@@ -3115,12 +3143,20 @@ export async function getDeliveryHealthSummary(
   store: Store,
   filters: { actorId?: string } = {},
 ): Promise<DeliveryHealthSummary> {
-  const [logs, webhookSettings, slackSettings, telegramSettings, feishuSettings] = await Promise.all([
+  const [
+    logs,
+    webhookSettings,
+    slackSettings,
+    telegramSettings,
+    feishuSettings,
+    ntfySettings,
+  ] = await Promise.all([
     listRecentDeliveryLogs(store, 50, filters),
     getWebhookSettings(store),
     getSlackSettings(store),
     getTelegramSettings(store),
     getFeishuSettings(store),
+    getNtfySettings(store),
   ]);
 
   return logs.reduce<DeliveryHealthSummary>(
@@ -3140,6 +3176,7 @@ export async function getDeliveryHealthSummary(
         telegramSettings.botToken && telegramSettings.chatId,
       ),
       feishuConfigured: Boolean(feishuSettings.endpoint),
+      ntfyConfigured: Boolean(ntfySettings.endpoint),
     },
   );
 }

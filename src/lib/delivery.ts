@@ -2,12 +2,14 @@ import { renderBriefHtmlDigest } from "@/lib/brief-render";
 import {
   createDeliveryLog,
   getFeishuSettings,
+  getNtfySettings,
   getSlackSettings,
   getTelegramSettings,
   finishDeliveryLog,
   getBriefById,
   getWebhookSettings,
   listItemsByBriefId,
+  type DeliveryPayloadType,
   type Store,
 } from "@/lib/store";
 
@@ -18,7 +20,12 @@ export type DeliveryPayload = {
   html: string;
 };
 
-export type DeliveryChannel = "webhook" | "slack" | "telegram" | "feishu";
+export type DeliveryChannel =
+  | "webhook"
+  | "slack"
+  | "telegram"
+  | "feishu"
+  | "ntfy";
 export type SlackDeliveryPayload = {
   text: string;
   blocks: Array<Record<string, unknown>>;
@@ -33,6 +40,45 @@ export type FeishuDeliveryPayload = {
   content: {
     text: string;
   };
+};
+export type NtfyDeliveryPayload = {
+  topic?: string;
+  title: string;
+  message: string;
+};
+
+export type DeliveryPayloadUnion =
+  | DeliveryPayload
+  | SlackDeliveryPayload
+  | TelegramDeliveryPayload
+  | FeishuDeliveryPayload
+  | NtfyDeliveryPayload;
+
+export type DeliveryFormatGuide = {
+  contentTypes: Array<"plain" | "markdown" | "html" | "json">;
+  maxPayloadCharacters: number;
+  supportsLinks: boolean;
+  supportsButtons: boolean;
+  batchSeparator: string;
+  titleRule: string;
+};
+
+type DeliveryAdapter = {
+  type: DeliveryChannel;
+  name: string;
+  payloadType: DeliveryPayloadType;
+  formatGuide: DeliveryFormatGuide;
+  getEndpoint(store: Store): Promise<string | null>;
+  buildPayloads(input: {
+    brief: {
+      id: string;
+      title: string;
+      summary: string;
+    };
+    html: string;
+    store: Store;
+  }): Promise<DeliveryPayloadUnion[]>;
+  missingConfigurationMessage: string;
 };
 
 type FetchLike = typeof fetch;
@@ -64,6 +110,31 @@ function getDeliveryRetryDelayMs(attempt: number) {
     DELIVERY_RETRY_MAX_DELAY_MS,
     DELIVERY_RETRY_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1),
   );
+}
+
+export function splitDeliveryText(
+  text: string,
+  maxCharacters: number,
+): string[] {
+  if (text.length <= maxCharacters) {
+    return [text];
+  }
+
+  const batches: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > maxCharacters) {
+    const nextBreak = remaining.lastIndexOf("\n", maxCharacters);
+    const end = nextBreak >= maxCharacters * 0.5 ? nextBreak : maxCharacters;
+    batches.push(remaining.slice(0, end).trim());
+    remaining = remaining.slice(end).trim();
+  }
+
+  if (remaining) {
+    batches.push(remaining);
+  }
+
+  return batches;
 }
 
 export async function buildDeliveryPayload(input: {
@@ -104,6 +175,15 @@ export async function buildDeliveryPayload(input: {
   html?: string;
 }): Promise<FeishuDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
+  channel: "ntfy";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<NtfyDeliveryPayload>;
+export async function buildDeliveryPayload(input: {
   channel: DeliveryChannel;
   brief: {
     id: string;
@@ -112,9 +192,7 @@ export async function buildDeliveryPayload(input: {
   };
   chatId?: string;
   html?: string;
-}): Promise<
-  DeliveryPayload | SlackDeliveryPayload | TelegramDeliveryPayload | FeishuDeliveryPayload
-> {
+}): Promise<DeliveryPayloadUnion> {
   switch (input.channel) {
     case "slack":
       return {
@@ -149,6 +227,11 @@ export async function buildDeliveryPayload(input: {
           text: `${input.brief.title}\n${input.brief.summary}`,
         },
       };
+    case "ntfy":
+      return {
+        title: input.brief.title,
+        message: input.brief.summary,
+      };
     default:
       return {
         briefId: input.brief.id,
@@ -161,11 +244,7 @@ export async function buildDeliveryPayload(input: {
 
 export async function deliverBriefDigest(input: {
   endpoint: string;
-  payload:
-    | DeliveryPayload
-    | SlackDeliveryPayload
-    | TelegramDeliveryPayload
-    | FeishuDeliveryPayload;
+  payload: DeliveryPayloadUnion;
   fetchImpl?: FetchLike;
 }): Promise<number> {
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -191,11 +270,7 @@ export async function deliverBriefDigest(input: {
 
 export async function deliverBriefWithRetry(input: {
   endpoint: string;
-  payload:
-    | DeliveryPayload
-    | SlackDeliveryPayload
-    | TelegramDeliveryPayload
-    | FeishuDeliveryPayload;
+  payload: DeliveryPayloadUnion;
   fetchImpl?: FetchLike;
   maxAttempts?: number;
   sleepImpl?: SleepLike;
@@ -230,6 +305,146 @@ export async function deliverBriefWithRetry(input: {
   };
 }
 
+export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
+  {
+    type: "webhook",
+    name: "Generic webhook",
+    payloadType: "html",
+    formatGuide: {
+      contentTypes: ["html", "json"],
+      maxPayloadCharacters: 80_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Use the brief title as the payload title.",
+    },
+    async getEndpoint(store) {
+      return (await getWebhookSettings(store)).endpoint;
+    },
+    async buildPayloads({ brief, html }) {
+      return [await buildDeliveryPayload({ channel: "webhook", brief, html })];
+    },
+    missingConfigurationMessage: "Configure a webhook endpoint first.",
+  },
+  {
+    type: "slack",
+    name: "Slack",
+    payloadType: "slack",
+    formatGuide: {
+      contentTypes: ["markdown", "json"],
+      maxPayloadCharacters: 3_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Use the brief title as the header block.",
+    },
+    async getEndpoint(store) {
+      return (await getSlackSettings(store)).endpoint;
+    },
+    async buildPayloads({ brief }) {
+      return [await buildDeliveryPayload({ channel: "slack", brief })];
+    },
+    missingConfigurationMessage: "Configure a Slack webhook endpoint first.",
+  },
+  {
+    type: "telegram",
+    name: "Telegram",
+    payloadType: "telegram",
+    formatGuide: {
+      contentTypes: ["html"],
+      maxPayloadCharacters: 4_096,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Use bold HTML for the brief title.",
+    },
+    async getEndpoint(store) {
+      const settings = await getTelegramSettings(store);
+      return settings.botToken && settings.chatId
+        ? `https://api.telegram.org/bot${settings.botToken}/sendMessage`
+        : null;
+    },
+    async buildPayloads({ brief, store }) {
+      const settings = await getTelegramSettings(store);
+      return [
+        await buildDeliveryPayload({
+          channel: "telegram",
+          brief,
+          chatId: settings.chatId ?? "",
+        }),
+      ];
+    },
+    missingConfigurationMessage: "Configure Telegram delivery first.",
+  },
+  {
+    type: "feishu",
+    name: "Feishu",
+    payloadType: "feishu",
+    formatGuide: {
+      contentTypes: ["plain", "json"],
+      maxPayloadCharacters: 16_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Prefix the plain text body with the brief title.",
+    },
+    async getEndpoint(store) {
+      return (await getFeishuSettings(store)).endpoint;
+    },
+    async buildPayloads({ brief }) {
+      return [await buildDeliveryPayload({ channel: "feishu", brief })];
+    },
+    missingConfigurationMessage: "Configure a Feishu webhook endpoint first.",
+  },
+  {
+    type: "ntfy",
+    name: "ntfy",
+    payloadType: "ntfy",
+    formatGuide: {
+      contentTypes: ["plain", "json"],
+      maxPayloadCharacters: 4_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Use the brief title as the notification title.",
+    },
+    async getEndpoint(store) {
+      return (await getNtfySettings(store)).endpoint;
+    },
+    async buildPayloads({ brief }) {
+      return splitDeliveryText(brief.summary, 4_000).map((message) => ({
+        title: brief.title,
+        message,
+      }));
+    },
+    missingConfigurationMessage: "Configure an ntfy endpoint first.",
+  },
+];
+
+function getDeliveryAdapter(channel: DeliveryChannel) {
+  const adapter = DELIVERY_ADAPTERS.find((candidate) => candidate.type === channel);
+
+  if (!adapter) {
+    throw new Error(`Unsupported delivery channel: ${channel}`);
+  }
+
+  return adapter;
+}
+
+export async function listConfiguredDeliveryChannels(store: Store) {
+  const configured = await Promise.all(
+    DELIVERY_ADAPTERS.map(async (adapter) => ({
+      type: adapter.type,
+      name: adapter.name,
+      payloadType: adapter.payloadType,
+      formatGuide: adapter.formatGuide,
+      enabled: Boolean(await adapter.getEndpoint(store)),
+    })),
+  );
+
+  return configured;
+}
+
 export async function deliverStoredBriefToChannel(
   store: Store,
   briefId: string,
@@ -248,122 +463,71 @@ export async function deliverStoredBriefToChannel(
 
   const linkedItems = await listItemsByBriefId(store, briefId);
   const html = renderBriefHtmlDigest({ brief, linkedItems });
-  let endpoint: string | null = null;
-  let payload:
-    | DeliveryPayload
-    | SlackDeliveryPayload
-    | TelegramDeliveryPayload
-    | FeishuDeliveryPayload;
-
-  if (channel === "slack") {
-    const settings = await getSlackSettings(store);
-    endpoint = settings.endpoint;
-    payload = await buildDeliveryPayload({
-      channel: "slack",
-      brief: {
-        id: briefId,
-        title: brief.title,
-        summary: brief.summary,
-      },
-    });
-  } else if (channel === "telegram") {
-    const settings = await getTelegramSettings(store);
-    endpoint =
-      settings.botToken && settings.chatId
-        ? `https://api.telegram.org/bot${settings.botToken}/sendMessage`
-        : null;
-    payload = await buildDeliveryPayload({
-      channel: "telegram",
-      brief: {
-        id: briefId,
-        title: brief.title,
-        summary: brief.summary,
-      },
-      chatId: settings.chatId ?? "",
-    });
-  } else if (channel === "feishu") {
-    const settings = await getFeishuSettings(store);
-    endpoint = settings.endpoint;
-    payload = await buildDeliveryPayload({
-      channel: "feishu",
-      brief: {
-        id: briefId,
-        title: brief.title,
-        summary: brief.summary,
-      },
-    });
-  } else {
-    const settings = await getWebhookSettings(store);
-    endpoint = settings.endpoint;
-    payload = await buildDeliveryPayload({
-      channel: "webhook",
-      brief: {
-        id: briefId,
-        title: brief.title,
-        summary: brief.summary,
-      },
-      html,
-    });
-  }
+  const adapter = getDeliveryAdapter(channel);
+  const endpoint = await adapter.getEndpoint(store);
 
   if (!endpoint) {
-    throw new Error(
-      channel === "slack"
-        ? "Configure a Slack webhook endpoint first."
-        : channel === "telegram"
-          ? "Configure Telegram delivery first."
-          : channel === "feishu"
-            ? "Configure a Feishu webhook endpoint first."
-        : "Configure a webhook endpoint first.",
-    );
+    throw new Error(adapter.missingConfigurationMessage);
   }
 
-  const payloadType =
-    channel === "slack"
-      ? "slack"
-      : channel === "telegram"
-        ? "telegram"
-        : channel === "feishu"
-          ? "feishu"
-          : "html";
+  const payloads = await adapter.buildPayloads({
+    brief: {
+      id: briefId,
+      title: brief.title,
+      summary: brief.summary,
+    },
+    html,
+    store,
+  });
   const logId = await createDeliveryLog(store, {
     briefId,
     endpoint,
-    payloadType,
+    payloadType: adapter.payloadType,
   });
+  let attempts = 0;
+  let responseStatus: number | undefined;
 
-  const result = await deliverBriefWithRetry({
-    endpoint,
-    payload,
-    fetchImpl: options?.fetchImpl,
-    maxAttempts: options?.maxAttempts,
-    sleepImpl: options?.sleepImpl,
-  });
-
-  if (result.status === "success") {
-    await finishDeliveryLog(store, {
-      logId,
-      status: "success",
-      attemptCount: result.attempts,
-      responseStatus: result.responseStatus,
+  for (const payload of payloads) {
+    const result = await deliverBriefWithRetry({
+      endpoint,
+      payload,
+      fetchImpl: options?.fetchImpl,
+      maxAttempts: options?.maxAttempts,
+      sleepImpl: options?.sleepImpl,
     });
 
-    return {
-      logId,
-      ...result,
-    };
+    attempts += result.attempts;
+
+    if (result.status === "error") {
+      await finishDeliveryLog(store, {
+        logId,
+        status: "error",
+        attemptCount: attempts,
+        error: result.error,
+      });
+
+      return {
+        logId,
+        ...result,
+        attempts,
+      };
+    }
+
+    responseStatus = result.responseStatus;
   }
 
   await finishDeliveryLog(store, {
     logId,
-    status: "error",
-    attemptCount: result.attempts,
-    error: result.error,
+    status: "success",
+    attemptCount: attempts,
+    responseStatus,
   });
 
   return {
     logId,
-    ...result,
+    attempts,
+    status: "success" as const,
+    responseStatus: responseStatus ?? 0,
   };
 }
 
@@ -388,28 +552,9 @@ export async function deliverStoredBriefToConfiguredChannels(
     sleepImpl?: SleepLike;
   },
 ) {
-  const [webhookSettings, slackSettings, telegramSettings, feishuSettings] = await Promise.all([
-    getWebhookSettings(store),
-    getSlackSettings(store),
-    getTelegramSettings(store),
-    getFeishuSettings(store),
-  ]);
-  const channels: DeliveryChannel[] = [];
-
-  if (webhookSettings.endpoint) {
-    channels.push("webhook");
-  }
-  if (slackSettings.endpoint) {
-    channels.push("slack");
-  }
-
-  if (telegramSettings.botToken && telegramSettings.chatId) {
-    channels.push("telegram");
-  }
-
-  if (feishuSettings.endpoint) {
-    channels.push("feishu");
-  }
+  const channels = (await listConfiguredDeliveryChannels(store))
+    .filter((channel) => channel.enabled)
+    .map((channel) => channel.type);
 
   if (channels.length === 0) {
     throw new Error("Configure at least one delivery channel first.");

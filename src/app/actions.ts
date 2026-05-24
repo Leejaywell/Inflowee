@@ -32,6 +32,7 @@ import {
   markBriefRead,
   markBriefUnread,
   saveFeishuSettings,
+  saveNtfySettings,
   saveSlackSettings,
   saveTelegramSettings,
   saveTelegramSourceSettings,
@@ -59,6 +60,7 @@ import {
   createSourceSchema,
   createTaskSchema,
   feishuWebhookEndpointSchema,
+  ntfyEndpointSchema,
   slackWebhookEndpointSchema,
   telegramSettingsSchema,
   telegramSourceSettingsSchema,
@@ -539,9 +541,24 @@ export async function saveFeishuEndpoint(formData: FormData) {
   redirect("/settings?updated=feishu");
 }
 
+export async function saveNtfyEndpoint(formData: FormData) {
+  await requireSessionActor();
+  const parsed = ntfyEndpointSchema.safeParse(getString(formData, "endpoint"));
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid ntfy endpoint.")}`,
+    );
+  }
+
+  await saveNtfySettings(defaultStore, parsed.data);
+  revalidatePath("/settings");
+  redirect("/settings?updated=ntfy");
+}
+
 async function sendBriefToChannel(
   briefId: string,
-  channel: "webhook" | "slack" | "telegram" | "feishu",
+  channel: "webhook" | "slack" | "telegram" | "feishu" | "ntfy",
 ) {
   const actor = await requireSessionActor();
   await assertBriefAccess(defaultStore, { actorId: actor.id, briefId });
@@ -616,4 +633,10 @@ export async function sendBriefToFeishu(formData: FormData) {
   }
 
   await sendBriefToChannel(briefId, "feishu");
+}
+
+export async function sendBriefToNtfy(formData: FormData) {
+  const briefId = getString(formData, "briefId");
+
+  await sendBriefToChannel(briefId, "ntfy");
 }
