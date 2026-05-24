@@ -195,7 +195,7 @@ export const dictionary = {
       items: "条内容",
       briefs: "份简报",
       builtInSources: "内置来源预设",
-      builtInDescription: "常用结构化来源的一键预设。",
+      builtInDescription: "官方更新、社区、国内技术内容、社媒发现和招聘来源的一键预设。",
       task: "目标",
       selectTask: "选择目标",
       add: "添加",
@@ -475,7 +475,8 @@ export const dictionary = {
       items: "items",
       briefs: "briefs",
       builtInSources: "Built-in source presets",
-      builtInDescription: "One-click presets for common structured sources.",
+      builtInDescription:
+        "One-click presets for official updates, communities, domestic tech, social discovery, and hiring sources.",
       task: "Task",
       selectTask: "Select a task",
       add: "Add",

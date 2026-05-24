@@ -257,6 +257,7 @@ export async function createPresetSource(formData: FormData) {
       sourceType: preset.sourceType,
       title: preset.title,
       url: preset.url,
+      configJson: preset.configJson ?? null,
     });
   } catch {
     destination = "/sources?error=Unable%20to%20add%20built-in%20source.";

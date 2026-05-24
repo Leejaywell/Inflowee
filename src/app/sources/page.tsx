@@ -299,6 +299,9 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                       <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-stone-500">
                         {preset.sourceType}
                       </span>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-stone-500">
+                        {preset.category}
+                      </span>
                     </div>
                     <p className="text-sm leading-6 text-stone-600">
                       {preset.description}
