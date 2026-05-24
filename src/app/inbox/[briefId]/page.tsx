@@ -45,6 +45,7 @@ export default async function BriefDetailPage({
     getRequestLocale(),
   ]);
   const dict = getDictionary(locale);
+  const isZh = locale === "zh";
   const [{ briefId }, query] = await Promise.all([params, searchParams]);
   const brief = await getBriefById(defaultStore, briefId, { actorId: actor.id });
 
@@ -111,7 +112,9 @@ export default async function BriefDetailPage({
                   : delivered === "feishu"
                     ? "Brief delivered to Feishu."
                     : delivered === "ntfy"
-                      ? "Brief delivered to ntfy."
+                      ? isZh
+                        ? "简报已投递到 ntfy。"
+                        : "Brief delivered to ntfy."
               : "Update applied."}
         </section>
       )}
@@ -282,11 +285,15 @@ export default async function BriefDetailPage({
                   disabled={!ntfySettings.endpoint}
                   title={
                     ntfySettings.endpoint
-                      ? "Send this brief to the configured ntfy topic."
-                      : "Configure an ntfy endpoint in Settings first."
+                      ? isZh
+                        ? "发送到已配置的 ntfy topic。"
+                        : "Send this brief to the configured ntfy topic."
+                      : isZh
+                        ? "请先在设置中配置 ntfy endpoint。"
+                        : "Configure an ntfy endpoint in Settings first."
                   }
                 >
-                  Send ntfy
+                  {isZh ? "发送 ntfy" : "Send ntfy"}
                 </button>
               </form>
               <ChatDrawer

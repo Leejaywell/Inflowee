@@ -413,10 +413,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 pb-4">
               <div>
                 <h2 className="text-lg font-semibold text-stone-950">
-                  Trend reports
+                  {isZh ? "趋势报告" : "Trend reports"}
                 </h2>
                 <p className="mt-1 text-sm text-stone-500">
-                  Generate a time-window analysis from stored briefs and items.
+                  {isZh
+                    ? "基于已保存的简报和原始内容生成时间窗口分析。"
+                    : "Generate a time-window analysis from stored briefs and items."}
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -434,7 +436,9 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
             {reports.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-center text-sm text-stone-500">
-                No reports yet. Generate a current report after syncing sources.
+                {isZh
+                  ? "还没有报告。同步来源后可以先生成 current 报告。"
+                  : "No reports yet. Generate a current report after syncing sources."}
               </div>
             ) : (
               <div className="grid gap-3">
