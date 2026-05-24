@@ -119,6 +119,11 @@ type DeliveryAdapter = {
 type FetchLike = typeof fetch;
 type SleepLike = (durationMs: number) => Promise<void>;
 
+type DeliveryChannelSettings = {
+  endpoint: string | null;
+  updatedAt: string | null;
+};
+
 export type DeliveryAttemptResult =
   | {
       attempts: number;
@@ -657,15 +662,64 @@ function getDeliveryAdapter(channel: DeliveryChannel) {
   return adapter;
 }
 
+async function getDeliveryChannelSettings(
+  store: Store,
+  channel: DeliveryChannel,
+): Promise<DeliveryChannelSettings> {
+  if (channel === "webhook") {
+    return getWebhookSettings(store);
+  }
+
+  if (channel === "slack") {
+    return getSlackSettings(store);
+  }
+
+  if (channel === "telegram") {
+    const settings = await getTelegramSettings(store);
+
+    return {
+      endpoint: settings.botToken && settings.chatId ? settings.botToken : null,
+      updatedAt: settings.updatedAt,
+    };
+  }
+
+  if (channel === "feishu") {
+    return getFeishuSettings(store);
+  }
+
+  if (channel === "ntfy") {
+    return getNtfySettings(store);
+  }
+
+  if (channel === "dingtalk") {
+    return getDingTalkSettings(store);
+  }
+
+  if (channel === "wecom") {
+    return getWeComSettings(store);
+  }
+
+  if (channel === "bark") {
+    return getBarkSettings(store);
+  }
+
+  return getEmailSettings(store);
+}
+
 export async function listConfiguredDeliveryChannels(store: Store) {
   const configured = await Promise.all(
-    DELIVERY_ADAPTERS.map(async (adapter) => ({
-      type: adapter.type,
-      name: adapter.name,
-      payloadType: adapter.payloadType,
-      formatGuide: adapter.formatGuide,
-      enabled: Boolean(await adapter.getEndpoint(store)),
-    })),
+    DELIVERY_ADAPTERS.map(async (adapter) => {
+      const settings = await getDeliveryChannelSettings(store, adapter.type);
+
+      return {
+        type: adapter.type,
+        name: adapter.name,
+        payloadType: adapter.payloadType,
+        formatGuide: adapter.formatGuide,
+        enabled: Boolean(settings.endpoint),
+        updatedAt: settings.updatedAt,
+      };
+    }),
   );
 
   return configured;

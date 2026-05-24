@@ -90,6 +90,7 @@ describe("delivery payloads", () => {
         expect.objectContaining({
           type: "ntfy",
           enabled: true,
+          updatedAt: expect.any(String),
           formatGuide: expect.objectContaining({
             maxPayloadCharacters: 4000,
           }),

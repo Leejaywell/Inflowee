@@ -14,7 +14,12 @@ import {
   requireSessionActor,
   setSessionActorCookie,
 } from "@/lib/auth";
-import { deliverStoredBrief, deliverStoredBriefToChannel } from "@/lib/delivery";
+import {
+  deliverStoredBrief,
+  deliverStoredBriefToChannel,
+  deliverTextToChannel,
+  type DeliveryChannel,
+} from "@/lib/delivery";
 import {
   createSourceRecord,
   createTaskRecord,
@@ -673,6 +678,38 @@ export async function saveBarkEndpoint(formData: FormData) {
 
 export async function saveEmailEndpoint(formData: FormData) {
   await saveGenericDeliveryEndpoint(formData, "email");
+}
+
+export async function testDeliveryChannelAction(formData: FormData) {
+  await requireSessionActor();
+  const channel = getString(formData, "channel") as DeliveryChannel;
+  const adapter = DELIVERY_ADAPTERS.find((candidate) => candidate.type === channel);
+
+  if (!adapter) {
+    redirect("/settings?error=Unsupported%20delivery%20channel.");
+  }
+
+  try {
+    const result = await deliverTextToChannel(defaultStore, channel, {
+      id: `test:${Date.now()}`,
+      title: "Inflowee test delivery",
+      body: "This is a test message from Inflowee.",
+      contentType: "message",
+    });
+
+    if (result.status !== "success") {
+      throw new Error(result.error);
+    }
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Unknown delivery failure.";
+
+    revalidatePath("/settings");
+    redirect(`/settings?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath("/settings");
+  redirect(`/settings?updated=test-${channel}`);
 }
 
 async function sendBriefToChannel(
