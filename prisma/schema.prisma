@@ -7,15 +7,15 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Task {
+model Topic {
   id                    String                 @id @default(uuid())
   ownerId               String                 @default("local-user")
   title                 String
-  taskType              String
+  topicType             String
   userPrompt            String
   relevanceLevel        Int                    @default(3)
   summaryPreference     String                 @default("balanced")
-  taskProfile           Json?
+  topicProfile          Json?
   scheduleProfile       Json?
   deliveryChannels      Json?
   createdAt             DateTime               @default(now())
@@ -24,13 +24,15 @@ model Task {
   briefs                Brief[]
   reports               Report[]
   recommendationBundles RecommendationBundle[]
+  htmlPushConfig        TopicHtmlPushConfig?
+  htmlPublications      HtmlPublication[]
 
   @@index([ownerId, createdAt])
 }
 
 model Source {
   id                  String    @id @default(uuid())
-  taskId              String
+  topicId             String
   sourceType          String
   title               String
   url                 String
@@ -42,97 +44,99 @@ model Source {
   nextSyncAt          DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
-  task                Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  topic               Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
   items               Item[]
   syncRuns            SyncRun[]
 
-  @@index([taskId, createdAt])
+  @@index([topicId, createdAt])
   @@index([nextSyncAt, status])
 }
 
 model Item {
-  id               String    @id @default(uuid())
-  sourceId         String
-  title            String
-  canonicalUrl     String
-  summary          String?
-  rawContent       String?
-  origin           String?
-  language         String?
-  contentHash      String
-  structuredFields Json?
-  isReal           Boolean?
-  relevanceScore   Float?
-  relevanceReason  String?
-  keywordMentioned Boolean?
-  matchedTerms     Json?
-  qualityStatus    String    @default("pending")
-  qualityError     String?
-  viewCount        Int?
-  likeCount        Int?
-  commentCount     Int?
-  shareCount       Int?
-  replyCount       Int?
-  repostCount      Int?
+  id                String      @id @default(uuid())
+  sourceId          String
+  title             String
+  canonicalUrl      String
+  summary           String?
+  rawContent        String?
+  origin            String?
+  language          String?
+  contentHash       String
+  structuredFields  Json?
+  isReal            Boolean?
+  relevanceScore    Float?
+  relevanceReason   String?
+  keywordMentioned  Boolean?
+  matchedTerms      Json?
+  qualityStatus     String      @default("pending")
+  qualityError      String?
+  viewCount         Int?
+  likeCount         Int?
+  commentCount      Int?
+  shareCount        Int?
+  replyCount        Int?
+  repostCount       Int?
   sourceNativeScore Float?
-  authorName       String?
-  authorUsername   String?
-  authorFollowers  Int?
-  authorVerified   Boolean?
-  publishedAt      DateTime?
-  fetchedAt        DateTime
-  createdAt        DateTime  @default(now())
-  source           Source    @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  briefItems       BriefItem[]
+  authorName        String?
+  authorUsername    String?
+  authorFollowers   Int?
+  authorVerified    Boolean?
+  publishedAt       DateTime?
+  fetchedAt         DateTime
+  createdAt         DateTime    @default(now())
+  source            Source      @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  briefItems        BriefItem[]
 
   @@unique([sourceId, contentHash])
   @@index([sourceId, publishedAt])
 }
 
 model Brief {
-  id              String    @id @default(uuid())
-  taskId          String
-  title           String
-  summary         String
-  whyItMatters    String
-  sourceCitations Json
-  relevanceScore  Float
-  importanceScore Float
-  tagsJson        Json
-  isRead          Boolean   @default(false)
-  createdAt       DateTime  @default(now())
-  task            Task      @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  briefItems      BriefItem[]
-  briefReads      BriefRead[]
-  deliveryLogs    DeliveryLog[]
+  id               String            @id @default(uuid())
+  topicId          String
+  title            String
+  summary          String
+  whyItMatters     String
+  sourceCitations  Json
+  relevanceScore   Float
+  importanceScore  Float
+  tagsJson         Json
+  isRead           Boolean           @default(false)
+  createdAt        DateTime          @default(now())
+  topic            Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  briefItems       BriefItem[]
+  briefReads       BriefRead[]
+  deliveryLogs     DeliveryLog[]
+  htmlPublications HtmlPublication[]
 
-  @@index([taskId, createdAt])
+  @@index([topicId, createdAt])
 }
 
 model Report {
-  id              String   @id @default(uuid())
-  taskId          String
-  mode            String
-  title           String
-  summary         String
-  contentJson     Json
-  markdown        String
-  itemIds         Json
-  briefIds        Json
-  sourceCitations Json
-  periodStart     DateTime?
-  periodEnd       DateTime?
-  createdAt       DateTime @default(now())
-  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  id               String            @id @default(uuid())
+  topicId          String
+  mode             String
+  title            String
+  summary          String
+  contentJson      Json
+  markdown         String
+  itemIds          Json
+  briefIds         Json
+  sourceCitations  Json
+  periodStart      DateTime?
+  periodEnd        DateTime?
+  createdAt        DateTime          @default(now())
+  topic            Topic             @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  htmlPublications HtmlPublication[]
 
-  @@index([taskId, createdAt])
+  @@index([topicId, createdAt])
 }
 
 model BriefRead {
-  briefId  String
-  actorId  String
-  readAt   DateTime @default(now())
-  brief    Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  briefId String
+  actorId String
+  readAt  DateTime @default(now())
+  brief   Brief    @relation(fields: [briefId], references: [id], onDelete: Cascade)
 
   @@id([briefId, actorId])
   @@index([actorId, readAt])
@@ -141,8 +145,8 @@ model BriefRead {
 model BriefItem {
   briefId String
   itemId  String
-  brief   Brief @relation(fields: [briefId], references: [id], onDelete: Cascade)
-  item    Item  @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  brief   Brief  @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  item    Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
 
   @@id([briefId, itemId])
 }
@@ -168,34 +172,103 @@ model AppSetting {
 }
 
 model DeliveryLog {
-  id             String    @id @default(uuid())
-  briefId        String?
-  contentType    String    @default("brief")
-  contentId      String?
-  endpoint       String
-  payloadType    String
-  status         String
-  attemptCount   Int?
-  responseStatus Int?
-  error          String?
-  startedAt      DateTime
-  finishedAt     DateTime?
-  brief          Brief?    @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  id                String           @id @default(uuid())
+  briefId           String?
+  contentType       String           @default("brief")
+  contentId         String?
+  endpoint          String
+  payloadType       String
+  status            String
+  attemptCount      Int?
+  responseStatus    Int?
+  error             String?
+  startedAt         DateTime
+  finishedAt        DateTime?
+  htmlPublicationId String?
+  htmlUrl           String?
+  htmlStatus        String?
+  brief             Brief?           @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  htmlPublication   HtmlPublication? @relation(fields: [htmlPublicationId], references: [id], onDelete: SetNull)
 
   @@index([briefId, startedAt])
   @@index([contentType, contentId, startedAt])
 }
 
+model HtmlPushConfig {
+  id                   String   @id @default(uuid())
+  ownerId              String   @unique
+  enabled              Boolean  @default(false)
+  entitlementStatus    String   @default("available")
+  stylePreset          String   @default("minimal_news")
+  modulePreset         String   @default("standard_summary")
+  enabledModulesJson   Json
+  customPrompt         String?
+  publishTarget        String   @default("github")
+  githubTokenEncrypted String?
+  githubRepo           String?
+  githubBranch         String   @default("main")
+  githubBasePath       String   @default("inflowee/html")
+  publicBaseUrl        String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model TopicHtmlPushConfig {
+  id                 String   @id @default(uuid())
+  topicId            String   @unique
+  useGlobal          Boolean  @default(true)
+  enabled            Boolean  @default(false)
+  stylePreset        String   @default("minimal_news")
+  modulePreset       String   @default("standard_summary")
+  enabledModulesJson Json
+  customPrompt       String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  topic              Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
+}
+
+model HtmlPublication {
+  id               String        @id @default(uuid())
+  ownerId          String
+  topicId          String
+  briefId          String?
+  reportId         String?
+  contentType      String
+  contentId        String
+  deliveryLogId    String?
+  status           String
+  title            String?
+  html             String?
+  htmlUrl          String?
+  publishTarget    String        @default("github")
+  publishPath      String?
+  commitSha        String?
+  error            String?
+  styleConfigJson  Json
+  moduleConfigJson Json
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  publishedAt      DateTime?
+  topic            Topic         @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  brief            Brief?        @relation(fields: [briefId], references: [id], onDelete: Cascade)
+  report           Report?       @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  deliveryLogs     DeliveryLog[]
+
+  @@unique([contentType, contentId])
+  @@index([ownerId, createdAt])
+  @@index([topicId, createdAt])
+}
+
 model RecommendationBundle {
   id         String   @id @default(uuid())
-  taskId     String
+  topicId    String
   position   Int
   bundleJson Json
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
-  task       Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  topic      Topic    @relation(fields: [topicId], references: [id], onDelete: Cascade)
 
-  @@index([taskId, position])
+  @@index([topicId, position])
 }
 
 model ChatThread {

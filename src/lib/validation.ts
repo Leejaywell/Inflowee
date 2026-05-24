@@ -1,8 +1,14 @@
 import { z } from "zod";
 
-export const createTaskSchema = z.object({
-  title: z.string().trim().min(2, "Task title must be at least 2 characters."),
-  taskType: z.enum(["TOPIC", "QUESTION"]),
+import {
+  HTML_PUSH_MODULE_PRESETS,
+  HTML_PUSH_MODULES,
+  HTML_PUSH_STYLE_PRESETS,
+} from "@/lib/html-push-config";
+
+export const createTopicSchema = z.object({
+  title: z.string().trim().min(2, "Topic title must be at least 2 characters."),
+  topicType: z.enum(["TOPIC", "QUESTION"]),
   userPrompt: z
     .string()
     .trim()
@@ -11,7 +17,7 @@ export const createTaskSchema = z.object({
 });
 
 export const createSourceSchema = z.object({
-  taskId: z.string().trim().min(1, "Select a task."),
+  topicId: z.string().trim().min(1, "Select a Topic."),
   sourceType: z.enum([
     "RSS",
     "PAGE",
@@ -201,3 +207,43 @@ export const smtpEndpointSchema = z
     const url = new URL(value);
     return Boolean(url.searchParams.get("from") && url.searchParams.get("to"));
   }, "SMTP endpoint must include from and to query parameters.");
+
+export const saveHtmlPushConfigSchema = z.object({
+  enabled: z.coerce.boolean(),
+  entitlementStatus: z
+    .enum(["available", "disabled", "upgrade_required"])
+    .default("available"),
+  stylePreset: z.enum(HTML_PUSH_STYLE_PRESETS),
+  modulePreset: z.enum(HTML_PUSH_MODULE_PRESETS),
+  enabledModules: z.array(z.enum(HTML_PUSH_MODULES)).min(1),
+  customPrompt: z.string().trim().max(1000).optional(),
+  githubToken: z.string().trim().max(500).optional(),
+  githubRepo: z
+    .string()
+    .trim()
+    .regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, "Enter a GitHub repo as owner/repo.")
+    .optional(),
+  githubBranch: z.string().trim().min(1).max(100).default("main"),
+  githubBasePath: z
+    .string()
+    .trim()
+    .min(1)
+    .max(200)
+    .default("inflowee/html"),
+  publicBaseUrl: z
+    .string()
+    .trim()
+    .url("Enter a valid public base URL.")
+    .optional()
+    .or(z.literal("")),
+});
+
+export const saveTopicHtmlPushConfigSchema = z.object({
+  topicId: z.string().trim().min(1, "Select a Topic."),
+  useGlobal: z.coerce.boolean(),
+  enabled: z.coerce.boolean(),
+  stylePreset: z.enum(HTML_PUSH_STYLE_PRESETS),
+  modulePreset: z.enum(HTML_PUSH_MODULE_PRESETS),
+  enabledModules: z.array(z.enum(HTML_PUSH_MODULES)).min(1),
+  customPrompt: z.string().trim().max(1000).optional(),
+});

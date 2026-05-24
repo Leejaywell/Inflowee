@@ -9,6 +9,7 @@ import {
   saveTelegramDelivery,
   saveDefaultDeliveryChannelsAction,
   saveDeliveryTemplateAction,
+  saveHtmlPushConfigAction,
   testDeliveryChannelAction,
   saveWeComEndpoint,
   saveWebhookEndpoint,
@@ -16,6 +17,12 @@ import {
 import { getAiRuntimeStatus } from "@/lib/ai-config";
 import { requireSessionActor } from "@/lib/auth";
 import { buildDeliveryPayload, listConfiguredDeliveryChannels } from "@/lib/delivery";
+import {
+  getDefaultHtmlPushModules,
+  HTML_PUSH_MODULE_PRESETS,
+  HTML_PUSH_MODULES,
+  HTML_PUSH_STYLE_PRESETS,
+} from "@/lib/html-push-config";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import {
@@ -24,12 +31,14 @@ import {
   getDeliveryHealthSummary,
   getDeliveryTemplate,
   getDefaultDeliveryChannels,
+  getHtmlPushConfig,
   getDingTalkSettings,
   getEmailSettings,
   getSlackSettings,
   getWeComSettings,
   getWebhookSettings,
   listRecentDeliveryLogs,
+  listRecentHtmlPublications,
 } from "@/lib/store";
 
 type SettingsPageProps = {
@@ -61,6 +70,8 @@ export default async function SettingsPage({
     deliveryChannels,
     defaultDeliveryChannels,
     deliveryTemplate,
+    htmlPushConfig,
+    recentHtmlPublications,
     params,
   ] = await Promise.all([
     getWebhookSettings(defaultStore),
@@ -74,6 +85,8 @@ export default async function SettingsPage({
     listConfiguredDeliveryChannels(defaultStore),
     getDefaultDeliveryChannels(defaultStore),
     getDeliveryTemplate(defaultStore),
+    getHtmlPushConfig(defaultStore, actor.id),
+    listRecentHtmlPublications(defaultStore, 6, { ownerId: actor.id }),
     searchParams,
   ]);
   const error = params?.error;
@@ -83,6 +96,9 @@ export default async function SettingsPage({
   );
   const recentDeliveryErrors = recentLogs
     .filter((log) => log.status === "error")
+    .slice(0, 3);
+  const recentHtmlFailures = recentHtmlPublications
+    .filter((publication) => publication.status === "failed")
     .slice(0, 3);
   const extraDeliveryForms = [
     {
@@ -492,6 +508,10 @@ export default async function SettingsPage({
                     ? isZh
                       ? "投递模板已保存。"
                       : "Delivery template saved."
+                  : updated === "html-push"
+                    ? isZh
+                      ? "HTML 推送设置已保存。"
+                      : "HTML push settings saved."
                 : t.updateApplied}
         </section>
       )}
@@ -504,7 +524,7 @@ export default async function SettingsPage({
           <p className="mt-2 text-sm leading-6 text-stone-500">
             {isZh
               ? "任务没有单独选择通道时，会优先使用这里的默认通道。留空则发送到所有已配置通道。"
-              : "Tasks without their own channel selection use these defaults first. Leave empty to send to every configured channel."}
+              : "Topics without their own channel selection use these defaults first. Leave empty to send to every configured channel."}
           </p>
         </div>
         <form action={saveDefaultDeliveryChannelsAction} className="grid gap-4">
@@ -590,6 +610,193 @@ export default async function SettingsPage({
               </p>
             ) : null}
           </div>
+        </form>
+      </section>
+
+      <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+        <div className="mb-4 border-b border-stone-100 pb-4">
+          <h2 className="text-xl font-semibold">
+            {isZh ? "HTML 推送增强" : "HTML push enhancement"}
+          </h2>
+          <p className="mt-2 text-sm leading-6 text-stone-500">
+            {isZh
+              ? "推送简报或报告时，可选生成一份精美 HTML 摘要页，并把链接附在消息里。"
+              : "Optionally publish a polished HTML summary page for delivered briefs and reports, then append the link to the notification."}
+          </p>
+        </div>
+        <form action={saveHtmlPushConfigAction} className="grid gap-5">
+          <input name="entitlementStatus" type="hidden" value="available" />
+          <label className="flex items-center justify-between gap-4 rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm">
+            <span>
+              <span className="block font-semibold text-stone-900">
+                {isZh ? "启用 HTML 摘要页" : "Enable HTML summary pages"}
+              </span>
+              <span className="text-xs leading-5 text-stone-500">
+                {isZh
+                  ? "失败时仍会继续发送原始推送。"
+                  : "Delivery continues as plain text if HTML publishing fails."}
+              </span>
+            </span>
+            <input
+              name="enabled"
+              type="checkbox"
+              defaultChecked={htmlPushConfig?.enabled ?? false}
+              className="size-4"
+            />
+          </label>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-stone-700">GitHub token</span>
+              <input
+                name="githubToken"
+                type="password"
+                placeholder={
+                  htmlPushConfig?.githubTokenEncrypted
+                    ? isZh
+                      ? "已保存，留空保持不变"
+                      : "Saved. Leave blank to keep it."
+                    : "github_pat_..."
+                }
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              />
+            </label>
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-stone-700">Repository</span>
+              <input
+                name="githubRepo"
+                defaultValue={htmlPushConfig?.githubRepo ?? ""}
+                placeholder="owner/repo"
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              />
+            </label>
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-stone-700">Branch</span>
+              <input
+                name="githubBranch"
+                defaultValue={htmlPushConfig?.githubBranch ?? "main"}
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              />
+            </label>
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-stone-700">
+                {isZh ? "基础路径" : "Base path"}
+              </span>
+              <input
+                name="githubBasePath"
+                defaultValue={htmlPushConfig?.githubBasePath ?? "inflowee/html"}
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              />
+            </label>
+            <label className="grid gap-2 text-sm md:col-span-2">
+              <span className="font-medium text-stone-700">
+                {isZh ? "公开访问基础 URL" : "Public base URL"}
+              </span>
+              <input
+                name="publicBaseUrl"
+                defaultValue={htmlPushConfig?.publicBaseUrl ?? ""}
+                placeholder="https://username.github.io/repo"
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              />
+            </label>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-stone-700">
+                {isZh ? "视觉风格" : "Visual style"}
+              </span>
+              <select
+                name="stylePreset"
+                defaultValue={htmlPushConfig?.stylePreset ?? "minimal_news"}
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              >
+                {HTML_PUSH_STYLE_PRESETS.map((preset) => (
+                  <option key={preset} value={preset}>
+                    {preset.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-stone-700">
+                {isZh ? "内容预设" : "Content preset"}
+              </span>
+              <select
+                name="modulePreset"
+                defaultValue={htmlPushConfig?.modulePreset ?? "standard_summary"}
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              >
+                {HTML_PUSH_MODULE_PRESETS.map((preset) => (
+                  <option key={preset} value={preset}>
+                    {preset.replaceAll("_", " ")}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          <div className="grid gap-2">
+            <div className="text-sm font-medium text-stone-700">
+              {isZh ? "HTML 内容模块" : "HTML content modules"}
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+              {HTML_PUSH_MODULES.map((module) => (
+                <label
+                  key={module}
+                  className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm"
+                >
+                  <input
+                    name="enabledModules"
+                    type="checkbox"
+                    value={module}
+                    defaultChecked={(
+                      htmlPushConfig?.enabledModules ??
+                      getDefaultHtmlPushModules("standard_summary")
+                    ).includes(module)}
+                    className="size-4"
+                  />
+                  <span>{module.replaceAll("_", " ")}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <label className="grid gap-2 text-sm">
+            <span className="font-medium text-stone-700">
+              {isZh ? "自定义生成要求" : "Custom generation instructions"}
+            </span>
+            <textarea
+              name="customPrompt"
+              rows={4}
+              maxLength={1000}
+              defaultValue={htmlPushConfig?.customPrompt ?? ""}
+              placeholder={
+                isZh
+                  ? "例如：写给非技术读者，强调影响和下一步。"
+                  : "Example: write for non-technical readers and emphasize impact."
+              }
+              className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 outline-none transition focus:border-stone-400 focus:bg-white"
+            />
+          </label>
+
+          {recentHtmlFailures.length > 0 ? (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs leading-5 text-amber-800">
+              <div className="mb-2 font-semibold">
+                {isZh ? "最近 HTML 发布失败" : "Recent HTML publish failures"}
+              </div>
+              {recentHtmlFailures.map((publication) => (
+                <div key={publication.id}>
+                  {publication.contentType} {publication.contentId}:{" "}
+                  {publication.error ?? (isZh ? "未知错误" : "Unknown error")}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          <button className="h-11 justify-self-start rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
+            {isZh ? "保存 HTML 推送设置" : "Save HTML push settings"}
+          </button>
         </form>
       </section>
 

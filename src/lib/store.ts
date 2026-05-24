@@ -5,9 +5,9 @@ import { DatabaseSync } from "node:sqlite";
 import { Prisma, PrismaClient } from "@prisma/client";
 
 import { getDatabaseUrl, getPrisma, requireDatabaseUrl } from "./db.ts";
-import type { TaskScheduleProfile } from "./task-schedule";
+import type { TopicScheduleProfile } from "./topic-schedule";
 
-export type TaskType = "TOPIC" | "QUESTION";
+export type TopicType = "TOPIC" | "QUESTION";
 export type ReportMode = "current" | "daily" | "incremental";
 export type SourceType =
   | "RSS"
@@ -24,6 +24,38 @@ export type SourceType =
 export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
 export type DeliveryStatus = "running" | "success" | "error";
+export type HtmlPushEntitlementStatus =
+  | "available"
+  | "disabled"
+  | "upgrade_required";
+export type HtmlPushStylePreset =
+  | "minimal_news"
+  | "tech_radar"
+  | "investment_brief"
+  | "newsletter"
+  | "magazine_cards";
+export type HtmlPushModulePreset =
+  | "standard_summary"
+  | "analysis_report"
+  | "news_flash";
+export type HtmlPushModule =
+  | "summary"
+  | "key_content"
+  | "ai_conclusion"
+  | "trend_changes"
+  | "citations"
+  | "original_links"
+  | "recommended_actions";
+export type HtmlPublicationStatus =
+  | "pending"
+  | "generated"
+  | "published"
+  | "failed";
+export type HtmlDeliveryStatus =
+  | "skipped"
+  | "pending"
+  | "published"
+  | "failed";
 export type SqliteStore = {
   runtime: "sqlite";
   database: DatabaseSync;
@@ -52,15 +84,15 @@ function createUnavailablePrismaHandle(): PrismaClient {
   });
 }
 
-type TaskRow = {
+type TopicRow = {
   id: string;
   owner_id: string;
   title: string;
-  task_type: TaskType;
+  topic_type: TopicType;
   user_prompt: string;
   relevance_level: number;
   summary_preference: string;
-  task_profile: string | null;
+  topic_profile: string | null;
   schedule_profile: string | null;
   delivery_channels: string | null;
   created_at: string;
@@ -69,7 +101,7 @@ type TaskRow = {
 
 type SourceRow = {
   id: string;
-  task_id: string;
+  topic_id: string;
   source_type: SourceType;
   title: string;
   url: string;
@@ -111,8 +143,67 @@ type DeliveryLogRow = {
   attempt_count: number | null;
   response_status: number | null;
   error: string | null;
+  html_publication_id: string | null;
+  html_url: string | null;
+  html_status: HtmlDeliveryStatus | null;
   started_at: string;
   finished_at: string | null;
+};
+
+type HtmlPushConfigRow = {
+  id: string;
+  owner_id: string;
+  enabled: number;
+  entitlement_status: HtmlPushEntitlementStatus;
+  style_preset: HtmlPushStylePreset;
+  module_preset: HtmlPushModulePreset;
+  enabled_modules_json: string;
+  custom_prompt: string | null;
+  publish_target: "github";
+  github_token_encrypted: string | null;
+  github_repo: string | null;
+  github_branch: string;
+  github_base_path: string;
+  public_base_url: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type TopicHtmlPushConfigRow = {
+  id: string;
+  topic_id: string;
+  use_global: number;
+  enabled: number;
+  style_preset: HtmlPushStylePreset;
+  module_preset: HtmlPushModulePreset;
+  enabled_modules_json: string;
+  custom_prompt: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type HtmlPublicationRow = {
+  id: string;
+  owner_id: string;
+  topic_id: string;
+  brief_id: string | null;
+  report_id: string | null;
+  content_type: "brief" | "report";
+  content_id: string;
+  delivery_log_id: string | null;
+  status: HtmlPublicationStatus;
+  title: string | null;
+  html: string | null;
+  html_url: string | null;
+  publish_target: "github";
+  publish_path: string | null;
+  commit_sha: string | null;
+  error: string | null;
+  style_config_json: string;
+  module_config_json: string;
+  created_at: string;
+  updated_at: string;
+  published_at: string | null;
 };
 
 type ItemRow = {
@@ -151,7 +242,7 @@ type ItemRow = {
 
 type BriefRow = {
   id: string;
-  task_id: string;
+  topic_id: string;
   title: string;
   summary: string;
   why_it_matters: string;
@@ -161,12 +252,12 @@ type BriefRow = {
   tags_json: string;
   is_read: number;
   created_at: string;
-  task_title?: string;
+  topic_title?: string;
 };
 
 type ReportRow = {
   id: string;
-  task_id: string;
+  topic_id: string;
   mode: ReportMode;
   title: string;
   summary: string;
@@ -178,12 +269,12 @@ type ReportRow = {
   period_start: string | null;
   period_end: string | null;
   created_at: string;
-  task_title?: string;
+  topic_title?: string;
 };
 
 type RecommendationBundleRow = {
   id: string;
-  task_id: string;
+  topic_id: string;
   position: number;
   bundle_json: string;
   created_at: string;
@@ -207,7 +298,7 @@ export type ChatMessageRow = {
   created_at: string;
 };
 
-export type TaskProfile = {
+export type TopicProfile = {
   keywords: string[];
   suggestedQueries: string[];
 };
@@ -225,16 +316,16 @@ export type RecommendationBundle = {
   sources: RecommendationSource[];
 };
 
-export type TaskRecord = {
+export type TopicRecord = {
   id: string;
   ownerId: string;
   title: string;
-  taskType: TaskType;
+  topicType: TopicType;
   userPrompt: string;
   relevanceLevel: number;
   summaryPreference: string;
-  taskProfile?: TaskProfile | null;
-  scheduleProfile?: TaskScheduleProfile | null;
+  topicProfile?: TopicProfile | null;
+  scheduleProfile?: TopicScheduleProfile | null;
   deliveryChannels?: string[] | null;
   createdAt: string;
   updatedAt: string;
@@ -242,7 +333,7 @@ export type TaskRecord = {
 
 export type SourceRecord = {
   id: string;
-  taskId: string;
+  topicId: string;
   sourceType: SourceType;
   title: string;
   url: string;
@@ -325,9 +416,132 @@ export type DeliveryLogRecord = {
   attemptCount: number | null;
   responseStatus: number | null;
   error: string | null;
+  htmlPublicationId: string | null;
+  htmlUrl: string | null;
+  htmlStatus: HtmlDeliveryStatus | null;
   startedAt: string;
   finishedAt: string | null;
 };
+
+export type HtmlPushConfigRecord = {
+  id: string;
+  ownerId: string;
+  enabled: boolean;
+  entitlementStatus: HtmlPushEntitlementStatus;
+  stylePreset: HtmlPushStylePreset;
+  modulePreset: HtmlPushModulePreset;
+  enabledModules: HtmlPushModule[];
+  customPrompt: string | null;
+  publishTarget: "github";
+  githubTokenEncrypted: string | null;
+  githubRepo: string | null;
+  githubBranch: string;
+  githubBasePath: string;
+  publicBaseUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type TopicHtmlPushConfigRecord = {
+  id: string;
+  topicId: string;
+  useGlobal: boolean;
+  enabled: boolean;
+  stylePreset: HtmlPushStylePreset;
+  modulePreset: HtmlPushModulePreset;
+  enabledModules: HtmlPushModule[];
+  customPrompt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type HtmlPublicationRecord = {
+  id: string;
+  ownerId: string;
+  topicId: string;
+  briefId: string | null;
+  reportId: string | null;
+  contentType: "brief" | "report";
+  contentId: string;
+  deliveryLogId: string | null;
+  status: HtmlPublicationStatus;
+  title: string | null;
+  html: string | null;
+  htmlUrl: string | null;
+  publishTarget: "github";
+  publishPath: string | null;
+  commitSha: string | null;
+  error: string | null;
+  styleConfig: Record<string, unknown>;
+  moduleConfig: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt: string | null;
+};
+
+export type SaveHtmlPushConfigInput = {
+  ownerId: string;
+  enabled: boolean;
+  entitlementStatus?: HtmlPushEntitlementStatus;
+  stylePreset: HtmlPushStylePreset;
+  modulePreset: HtmlPushModulePreset;
+  enabledModules: HtmlPushModule[];
+  customPrompt?: string | null;
+  publishTarget?: "github";
+  githubTokenEncrypted?: string | null;
+  githubRepo?: string | null;
+  githubBranch?: string;
+  githubBasePath?: string;
+  publicBaseUrl?: string | null;
+};
+
+export type SaveTopicHtmlPushConfigInput = {
+  topicId: string;
+  useGlobal: boolean;
+  enabled: boolean;
+  stylePreset: HtmlPushStylePreset;
+  modulePreset: HtmlPushModulePreset;
+  enabledModules: HtmlPushModule[];
+  customPrompt?: string | null;
+};
+
+export type CreateHtmlPublicationInput = {
+  ownerId: string;
+  topicId: string;
+  briefId?: string | null;
+  reportId?: string | null;
+  contentType: "brief" | "report";
+  contentId: string;
+  deliveryLogId?: string | null;
+  status?: HtmlPublicationStatus;
+  title?: string | null;
+  html?: string | null;
+  htmlUrl?: string | null;
+  publishTarget?: "github";
+  publishPath?: string | null;
+  commitSha?: string | null;
+  error?: string | null;
+  styleConfig?: Record<string, unknown>;
+  moduleConfig?: Record<string, unknown>;
+  publishedAt?: string | null;
+};
+
+export type UpdateHtmlPublicationInput = Partial<
+  Pick<
+    HtmlPublicationRecord,
+    | "deliveryLogId"
+    | "status"
+    | "title"
+    | "html"
+    | "htmlUrl"
+    | "publishPath"
+    | "commitSha"
+    | "error"
+    | "styleConfig"
+    | "moduleConfig"
+    | "publishedAt"
+  >
+>;
 
 export type SourceHealthSummary = {
   total: number;
@@ -385,7 +599,7 @@ export type ItemRecord = {
 
 export type BriefRecord = {
   id: string;
-  taskId: string;
+  topicId: string;
   title: string;
   summary: string;
   whyItMatters: string;
@@ -395,12 +609,12 @@ export type BriefRecord = {
   tags: string[];
   isRead: boolean;
   createdAt: string;
-  taskTitle?: string;
+  topicTitle?: string;
 };
 
 export type ReportRecord = {
   id: string;
-  taskId: string;
+  topicId: string;
   mode: ReportMode;
   title: string;
   summary: string;
@@ -412,12 +626,12 @@ export type ReportRecord = {
   periodStart: string | null;
   periodEnd: string | null;
   createdAt: string;
-  taskTitle?: string;
+  topicTitle?: string;
 };
 
 export type ChatThreadRecord = {
   id: string;
-  scopeType: "global" | "task" | "brief";
+  scopeType: "global" | "topic" | "brief";
   scopeId: string;
   createdAt: string;
 };
@@ -432,10 +646,10 @@ export type ChatMessageRecord = {
   createdAt: string;
 };
 
-type CreateTaskInput = {
+type CreateTopicInput = {
   ownerId?: string;
   title: string;
-  taskType: TaskType;
+  topicType: TopicType;
   userPrompt: string;
 };
 
@@ -445,7 +659,7 @@ const sourceTypeSql =
 const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
-    task_id TEXT NOT NULL,
+    topic_id TEXT NOT NULL,
     source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
@@ -457,14 +671,14 @@ const sourceTableDefinition = `
     next_sync_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
   );
 `;
 
 function mapSource(row: SourceRow): SourceRecord {
   return {
     id: row.id,
-    taskId: row.task_id,
+    topicId: row.topic_id,
     sourceType: row.source_type,
     title: row.title,
     url: row.url,
@@ -506,8 +720,75 @@ function mapDeliveryLog(row: DeliveryLogRow): DeliveryLogRecord {
     attemptCount: row.attempt_count,
     responseStatus: row.response_status,
     error: row.error,
+    htmlPublicationId: row.html_publication_id,
+    htmlUrl: row.html_url,
+    htmlStatus: row.html_status,
     startedAt: row.started_at,
     finishedAt: row.finished_at,
+  };
+}
+
+function mapHtmlPushConfig(row: HtmlPushConfigRow): HtmlPushConfigRecord {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    enabled: Boolean(row.enabled),
+    entitlementStatus: row.entitlement_status,
+    stylePreset: row.style_preset,
+    modulePreset: row.module_preset,
+    enabledModules: JSON.parse(row.enabled_modules_json) as HtmlPushModule[],
+    customPrompt: row.custom_prompt,
+    publishTarget: row.publish_target,
+    githubTokenEncrypted: row.github_token_encrypted,
+    githubRepo: row.github_repo,
+    githubBranch: row.github_branch,
+    githubBasePath: row.github_base_path,
+    publicBaseUrl: row.public_base_url,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapTopicHtmlPushConfig(
+  row: TopicHtmlPushConfigRow,
+): TopicHtmlPushConfigRecord {
+  return {
+    id: row.id,
+    topicId: row.topic_id,
+    useGlobal: Boolean(row.use_global),
+    enabled: Boolean(row.enabled),
+    stylePreset: row.style_preset,
+    modulePreset: row.module_preset,
+    enabledModules: JSON.parse(row.enabled_modules_json) as HtmlPushModule[],
+    customPrompt: row.custom_prompt,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapHtmlPublication(row: HtmlPublicationRow): HtmlPublicationRecord {
+  return {
+    id: row.id,
+    ownerId: row.owner_id,
+    topicId: row.topic_id,
+    briefId: row.brief_id,
+    reportId: row.report_id,
+    contentType: row.content_type,
+    contentId: row.content_id,
+    deliveryLogId: row.delivery_log_id,
+    status: row.status,
+    title: row.title,
+    html: row.html,
+    htmlUrl: row.html_url,
+    publishTarget: row.publish_target,
+    publishPath: row.publish_path,
+    commitSha: row.commit_sha,
+    error: row.error,
+    styleConfig: JSON.parse(row.style_config_json) as Record<string, unknown>,
+    moduleConfig: JSON.parse(row.module_config_json) as Record<string, unknown>,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    publishedAt: row.published_at,
   };
 }
 
@@ -556,7 +837,7 @@ function mapItem(row: ItemRow): ItemRecord {
 function mapBrief(row: BriefRow): BriefRecord {
   return {
     id: row.id,
-    taskId: row.task_id,
+    topicId: row.topic_id,
     title: row.title,
     summary: row.summary,
     whyItMatters: row.why_it_matters,
@@ -566,14 +847,14 @@ function mapBrief(row: BriefRow): BriefRecord {
     tags: JSON.parse(row.tags_json) as string[],
     isRead: Boolean(row.is_read),
     createdAt: row.created_at,
-    taskTitle: row.task_title,
+    topicTitle: row.topic_title,
   };
 }
 
 function mapReport(row: ReportRow): ReportRecord {
   return {
     id: row.id,
-    taskId: row.task_id,
+    topicId: row.topic_id,
     mode: row.mode,
     title: row.title,
     summary: row.summary,
@@ -585,7 +866,7 @@ function mapReport(row: ReportRow): ReportRecord {
     periodStart: row.period_start,
     periodEnd: row.period_end,
     createdAt: row.created_at,
-    taskTitle: row.task_title,
+    topicTitle: row.topic_title,
   };
 }
 
@@ -598,7 +879,7 @@ function mapRecommendationBundle(
 function mapChatThread(row: ChatThreadRow): ChatThreadRecord {
   return {
     id: row.id,
-    scopeType: row.scope_type as "global" | "task" | "brief",
+    scopeType: row.scope_type as "global" | "topic" | "brief",
     scopeId: row.scope_id,
     createdAt: row.created_at,
   };
@@ -659,7 +940,7 @@ function migrateSourcesTable(database: DatabaseSync) {
 
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
+      topic_id TEXT NOT NULL,
       source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
@@ -671,12 +952,12 @@ function migrateSourcesTable(database: DatabaseSync) {
       next_sync_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
     );
 
     INSERT INTO sources_migrated (
       id,
-      task_id,
+      topic_id,
       source_type,
       title,
       url,
@@ -691,7 +972,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     )
     SELECT
       id,
-      task_id,
+      topic_id,
       CASE
         WHEN source_type IN (${sourceTypeSql}) THEN source_type
         ELSE 'PAGE'
@@ -761,6 +1042,21 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
     database.exec("ALTER TABLE delivery_logs ADD COLUMN response_status INTEGER;");
   }
 
+  if (
+    deliveryLogsTable &&
+    !hasColumn(database, "delivery_logs", "html_publication_id")
+  ) {
+    database.exec("ALTER TABLE delivery_logs ADD COLUMN html_publication_id TEXT;");
+  }
+
+  if (deliveryLogsTable && !hasColumn(database, "delivery_logs", "html_url")) {
+    database.exec("ALTER TABLE delivery_logs ADD COLUMN html_url TEXT;");
+  }
+
+  if (deliveryLogsTable && !hasColumn(database, "delivery_logs", "html_status")) {
+    database.exec("ALTER TABLE delivery_logs ADD COLUMN html_status TEXT;");
+  }
+
   const needsDeliveryPayloadUpgrade =
     deliveryLogsTable &&
     (!deliveryLogsTable.sql.includes("'email'") ||
@@ -790,6 +1086,9 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
         attempt_count INTEGER,
         response_status INTEGER,
         error TEXT,
+        html_publication_id TEXT,
+        html_url TEXT,
+        html_status TEXT,
         started_at TEXT NOT NULL,
         finished_at TEXT,
         FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
@@ -806,6 +1105,9 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
         attempt_count,
         response_status,
         error,
+        html_publication_id,
+        html_url,
+        html_status,
         started_at,
         finished_at
       )
@@ -820,6 +1122,9 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
         attempt_count,
         response_status,
         error,
+        NULL,
+        NULL,
+        NULL,
         started_at,
         finished_at
       FROM delivery_logs;
@@ -844,6 +1149,9 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       attempt_count INTEGER,
       response_status INTEGER,
       error TEXT,
+      html_publication_id TEXT,
+      html_url TEXT,
+      html_status TEXT,
       started_at TEXT NOT NULL,
       finished_at TEXT,
       FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
@@ -858,6 +1166,76 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
   if (deliveryLogsTable && !deliveryLogsTable.sql.includes("attempt_count")) {
     database.exec("ALTER TABLE delivery_logs ADD COLUMN attempt_count INTEGER;");
   }
+}
+
+function migrateHtmlPushTables(database: DatabaseSync) {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS html_push_configs (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL UNIQUE,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      entitlement_status TEXT NOT NULL DEFAULT 'available',
+      style_preset TEXT NOT NULL DEFAULT 'minimal_news',
+      module_preset TEXT NOT NULL DEFAULT 'standard_summary',
+      enabled_modules_json TEXT NOT NULL,
+      custom_prompt TEXT,
+      publish_target TEXT NOT NULL DEFAULT 'github',
+      github_token_encrypted TEXT,
+      github_repo TEXT,
+      github_branch TEXT NOT NULL DEFAULT 'main',
+      github_base_path TEXT NOT NULL DEFAULT 'inflowee/html',
+      public_base_url TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS topic_html_push_configs (
+      id TEXT PRIMARY KEY,
+      topic_id TEXT NOT NULL UNIQUE,
+      use_global INTEGER NOT NULL DEFAULT 1,
+      enabled INTEGER NOT NULL DEFAULT 0,
+      style_preset TEXT NOT NULL DEFAULT 'minimal_news',
+      module_preset TEXT NOT NULL DEFAULT 'standard_summary',
+      enabled_modules_json TEXT NOT NULL,
+      custom_prompt TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS html_publications (
+      id TEXT PRIMARY KEY,
+      owner_id TEXT NOT NULL,
+      topic_id TEXT NOT NULL,
+      brief_id TEXT,
+      report_id TEXT,
+      content_type TEXT NOT NULL CHECK(content_type IN ('brief', 'report')),
+      content_id TEXT NOT NULL,
+      delivery_log_id TEXT,
+      status TEXT NOT NULL CHECK(status IN ('pending', 'generated', 'published', 'failed')),
+      title TEXT,
+      html TEXT,
+      html_url TEXT,
+      publish_target TEXT NOT NULL DEFAULT 'github',
+      publish_path TEXT,
+      commit_sha TEXT,
+      error TEXT,
+      style_config_json TEXT NOT NULL,
+      module_config_json TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      published_at TEXT,
+      FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE,
+      FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE,
+      FOREIGN KEY(report_id) REFERENCES reports(id) ON DELETE CASCADE,
+      UNIQUE(content_type, content_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_html_publications_owner_created_at
+      ON html_publications(owner_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_html_publications_topic_created_at
+      ON html_publications(topic_id, created_at DESC);
+  `);
 }
 
 function migrateBriefsTable(database: DatabaseSync) {
@@ -889,7 +1267,7 @@ function migrateBriefsTable(database: DatabaseSync) {
 
     CREATE TABLE briefs_migrated (
       id TEXT PRIMARY KEY,
-      task_id TEXT NOT NULL,
+      topic_id TEXT NOT NULL,
       title TEXT NOT NULL,
       summary TEXT NOT NULL,
       why_it_matters TEXT NOT NULL,
@@ -899,12 +1277,12 @@ function migrateBriefsTable(database: DatabaseSync) {
       tags_json TEXT NOT NULL DEFAULT '[]',
       is_read INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL,
-      FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
     );
 
     INSERT INTO briefs_migrated (
       id,
-      task_id,
+      topic_id,
       title,
       summary,
       why_it_matters,
@@ -917,7 +1295,7 @@ function migrateBriefsTable(database: DatabaseSync) {
     )
     SELECT
       id,
-      task_id,
+      topic_id,
       title,
       summary,
       why_it_matters,
@@ -953,38 +1331,30 @@ function migrateBriefReadsTable(database: DatabaseSync) {
   `);
 }
 
-function migrateTasksTable(database: DatabaseSync) {
-  const tasksTable = database
+function migrateLegacyTopicSchema(database: DatabaseSync) {
+  const legacyTopicsTable = database
     .prepare(
       "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks'",
     )
     .get() as { sql: string } | undefined;
 
-  if (!tasksTable) {
-    return;
-  }
-
-  if (!tasksTable.sql.includes("owner_id")) {
+  if (legacyTopicsTable) {
     database.exec(`
-      PRAGMA foreign_keys = OFF;
-      BEGIN;
-
-      CREATE TABLE tasks_migrated (
-        id TEXT PRIMARY KEY,
-        owner_id TEXT NOT NULL DEFAULT 'local-user',
-        title TEXT NOT NULL,
-        task_type TEXT NOT NULL CHECK(task_type IN ('TOPIC', 'QUESTION')),
-        user_prompt TEXT NOT NULL,
-        relevance_level INTEGER NOT NULL DEFAULT 3,
-        summary_preference TEXT NOT NULL DEFAULT 'balanced',
-        task_profile TEXT,
-        schedule_profile TEXT,
-        delivery_channels TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
-      );
-
-      INSERT INTO tasks_migrated (
+      INSERT OR IGNORE INTO topics (
+        id,
+        owner_id,
+        title,
+        topic_type,
+        user_prompt,
+        relevance_level,
+        summary_preference,
+        topic_profile,
+        schedule_profile,
+        delivery_channels,
+        created_at,
+        updated_at
+      )
+      SELECT
         id,
         owner_id,
         title,
@@ -997,25 +1367,296 @@ function migrateTasksTable(database: DatabaseSync) {
         delivery_channels,
         created_at,
         updated_at
+      FROM tasks;
+    `);
+  }
+
+  if (hasColumn(database, "sources", "task_id") && !hasColumn(database, "sources", "topic_id")) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+
+      CREATE TABLE sources_migrated (
+        id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL,
+        source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
+        title TEXT NOT NULL,
+        url TEXT NOT NULL,
+        config_json TEXT,
+        status TEXT NOT NULL DEFAULT 'idle' ${sourceStatusConstraint},
+        last_synced_at TEXT,
+        last_error TEXT,
+        sync_interval_minutes INTEGER NOT NULL DEFAULT 360,
+        next_sync_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO sources_migrated (
+        id,
+        topic_id,
+        source_type,
+        title,
+        url,
+        config_json,
+        status,
+        last_synced_at,
+        last_error,
+        sync_interval_minutes,
+        next_sync_at,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        task_id,
+        source_type,
+        title,
+        url,
+        config_json,
+        status,
+        last_synced_at,
+        last_error,
+        sync_interval_minutes,
+        next_sync_at,
+        created_at,
+        updated_at
+      FROM sources;
+
+      DROP TABLE sources;
+      ALTER TABLE sources_migrated RENAME TO sources;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+
+  if (hasColumn(database, "briefs", "task_id") && !hasColumn(database, "briefs", "topic_id")) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+
+      CREATE TABLE briefs_migrated (
+        id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        why_it_matters TEXT NOT NULL,
+        source_citations TEXT NOT NULL,
+        relevance_score REAL NOT NULL DEFAULT 0,
+        importance_score REAL NOT NULL DEFAULT 0,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        is_read INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO briefs_migrated (
+        id,
+        topic_id,
+        title,
+        summary,
+        why_it_matters,
+        source_citations,
+        relevance_score,
+        importance_score,
+        tags_json,
+        is_read,
+        created_at
+      )
+      SELECT
+        id,
+        task_id,
+        title,
+        summary,
+        why_it_matters,
+        source_citations,
+        relevance_score,
+        importance_score,
+        tags_json,
+        is_read,
+        created_at
+      FROM briefs;
+
+      DROP TABLE briefs;
+      ALTER TABLE briefs_migrated RENAME TO briefs;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+
+  if (hasColumn(database, "reports", "task_id") && !hasColumn(database, "reports", "topic_id")) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+
+      CREATE TABLE reports_migrated (
+        id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('current', 'daily', 'incremental')),
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        content_json TEXT NOT NULL,
+        markdown TEXT NOT NULL,
+        item_ids TEXT NOT NULL DEFAULT '[]',
+        brief_ids TEXT NOT NULL DEFAULT '[]',
+        source_citations TEXT NOT NULL DEFAULT '[]',
+        period_start TEXT,
+        period_end TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO reports_migrated (
+        id,
+        topic_id,
+        mode,
+        title,
+        summary,
+        content_json,
+        markdown,
+        item_ids,
+        brief_ids,
+        source_citations,
+        period_start,
+        period_end,
+        created_at
+      )
+      SELECT
+        id,
+        task_id,
+        mode,
+        title,
+        summary,
+        content_json,
+        markdown,
+        item_ids,
+        brief_ids,
+        source_citations,
+        period_start,
+        period_end,
+        created_at
+      FROM reports;
+
+      DROP TABLE reports;
+      ALTER TABLE reports_migrated RENAME TO reports;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+
+  if (
+    hasColumn(database, "recommendation_bundles", "task_id") &&
+    !hasColumn(database, "recommendation_bundles", "topic_id")
+  ) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+
+      CREATE TABLE recommendation_bundles_migrated (
+        id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        bundle_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO recommendation_bundles_migrated (
+        id,
+        topic_id,
+        position,
+        bundle_json,
+        created_at,
+        updated_at
+      )
+      SELECT
+        id,
+        task_id,
+        position,
+        bundle_json,
+        created_at,
+        updated_at
+      FROM recommendation_bundles;
+
+      DROP TABLE recommendation_bundles;
+      ALTER TABLE recommendation_bundles_migrated RENAME TO recommendation_bundles;
+      COMMIT;
+      PRAGMA foreign_keys = ON;
+    `);
+  }
+
+  if (hasColumn(database, "chat_threads", "scope_type")) {
+    database
+      .prepare("UPDATE chat_threads SET scope_type = 'topic' WHERE scope_type = 'task'")
+      .run();
+  }
+}
+
+function migrateTopicsTable(database: DatabaseSync) {
+  const topicsTable = database
+    .prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'topics'",
+    )
+    .get() as { sql: string } | undefined;
+
+  if (!topicsTable) {
+    return;
+  }
+
+  if (!topicsTable.sql.includes("owner_id")) {
+    database.exec(`
+      PRAGMA foreign_keys = OFF;
+      BEGIN;
+
+      CREATE TABLE topics_migrated (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL DEFAULT 'local-user',
+        title TEXT NOT NULL,
+        topic_type TEXT NOT NULL CHECK(topic_type IN ('TOPIC', 'QUESTION')),
+        user_prompt TEXT NOT NULL,
+        relevance_level INTEGER NOT NULL DEFAULT 3,
+        summary_preference TEXT NOT NULL DEFAULT 'balanced',
+        topic_profile TEXT,
+        schedule_profile TEXT,
+        delivery_channels TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT INTO topics_migrated (
+        id,
+        owner_id,
+        title,
+        topic_type,
+        user_prompt,
+        relevance_level,
+        summary_preference,
+        topic_profile,
+        schedule_profile,
+        delivery_channels,
+        created_at,
+        updated_at
       )
       SELECT
         id,
         'local-user',
         title,
-        task_type,
+        topic_type,
         user_prompt,
         relevance_level,
         summary_preference,
-        CASE WHEN instr(sql, 'task_profile') > 0 THEN task_profile ELSE NULL END,
+        CASE WHEN instr(sql, 'topic_profile') > 0 THEN topic_profile ELSE NULL END,
         CASE WHEN instr(sql, 'schedule_profile') > 0 THEN schedule_profile ELSE NULL END,
         CASE WHEN instr(sql, 'delivery_channels') > 0 THEN delivery_channels ELSE NULL END,
         created_at,
         updated_at
-      FROM tasks
-      CROSS JOIN (SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'tasks');
+      FROM topics
+      CROSS JOIN (SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'topics');
 
-      DROP TABLE tasks;
-      ALTER TABLE tasks_migrated RENAME TO tasks;
+      DROP TABLE topics;
+      ALTER TABLE topics_migrated RENAME TO topics;
 
       COMMIT;
       PRAGMA foreign_keys = ON;
@@ -1023,16 +1664,16 @@ function migrateTasksTable(database: DatabaseSync) {
     return;
   }
 
-  if (!tasksTable.sql.includes("task_profile")) {
-    database.exec("ALTER TABLE tasks ADD COLUMN task_profile TEXT;");
+  if (!topicsTable.sql.includes("topic_profile")) {
+    database.exec("ALTER TABLE topics ADD COLUMN topic_profile TEXT;");
   }
 
-  if (!tasksTable.sql.includes("schedule_profile")) {
-    database.exec("ALTER TABLE tasks ADD COLUMN schedule_profile TEXT;");
+  if (!topicsTable.sql.includes("schedule_profile")) {
+    database.exec("ALTER TABLE topics ADD COLUMN schedule_profile TEXT;");
   }
 
-  if (!tasksTable.sql.includes("delivery_channels")) {
-    database.exec("ALTER TABLE tasks ADD COLUMN delivery_channels TEXT;");
+  if (!topicsTable.sql.includes("delivery_channels")) {
+    database.exec("ALTER TABLE topics ADD COLUMN delivery_channels TEXT;");
   }
 }
 
@@ -1271,15 +1912,15 @@ export function createStore(
     nextDatabase.exec(`
       PRAGMA foreign_keys = ON;
 
-      CREATE TABLE IF NOT EXISTS tasks (
+      CREATE TABLE IF NOT EXISTS topics (
         id TEXT PRIMARY KEY,
         owner_id TEXT NOT NULL DEFAULT 'local-user',
         title TEXT NOT NULL,
-        task_type TEXT NOT NULL CHECK(task_type IN ('TOPIC', 'QUESTION')),
+        topic_type TEXT NOT NULL CHECK(topic_type IN ('TOPIC', 'QUESTION')),
         user_prompt TEXT NOT NULL,
         relevance_level INTEGER NOT NULL DEFAULT 3,
         summary_preference TEXT NOT NULL DEFAULT 'balanced',
-        task_profile TEXT,
+        topic_profile TEXT,
         schedule_profile TEXT,
         delivery_channels TEXT,
         created_at TEXT NOT NULL,
@@ -1325,7 +1966,7 @@ export function createStore(
 
       CREATE TABLE IF NOT EXISTS briefs (
         id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
         title TEXT NOT NULL,
         summary TEXT NOT NULL,
         why_it_matters TEXT NOT NULL,
@@ -1335,7 +1976,7 @@ export function createStore(
         tags_json TEXT NOT NULL DEFAULT '[]',
         is_read INTEGER NOT NULL DEFAULT 0,
         created_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS brief_reads (
@@ -1348,7 +1989,7 @@ export function createStore(
 
       CREATE TABLE IF NOT EXISTS reports (
         id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
         mode TEXT NOT NULL CHECK(mode IN ('current', 'daily', 'incremental')),
         title TEXT NOT NULL,
         summary TEXT NOT NULL,
@@ -1360,7 +2001,7 @@ export function createStore(
         period_start TEXT,
         period_end TEXT,
         created_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS brief_items (
@@ -1373,7 +2014,7 @@ export function createStore(
 
       CREATE TABLE IF NOT EXISTS chat_threads (
         id TEXT PRIMARY KEY,
-        scope_type TEXT NOT NULL CHECK(scope_type IN ('global', 'task', 'brief')),
+        scope_type TEXT NOT NULL CHECK(scope_type IN ('global', 'topic', 'brief')),
         scope_id TEXT NOT NULL,
         created_at TEXT NOT NULL
       );
@@ -1391,12 +2032,12 @@ export function createStore(
 
       CREATE TABLE IF NOT EXISTS recommendation_bundles (
         id TEXT PRIMARY KEY,
-        task_id TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
         position INTEGER NOT NULL,
         bundle_json TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
       );
 
       CREATE TABLE IF NOT EXISTS sync_runs (
@@ -1428,44 +2069,108 @@ export function createStore(
         attempt_count INTEGER,
         response_status INTEGER,
         error TEXT,
+        html_publication_id TEXT,
+        html_url TEXT,
+        html_status TEXT,
         started_at TEXT NOT NULL,
         finished_at TEXT,
         FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
       );
 
-      CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);
+      CREATE TABLE IF NOT EXISTS html_push_configs (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL UNIQUE,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        entitlement_status TEXT NOT NULL DEFAULT 'available',
+        style_preset TEXT NOT NULL DEFAULT 'minimal_news',
+        module_preset TEXT NOT NULL DEFAULT 'standard_summary',
+        enabled_modules_json TEXT NOT NULL,
+        custom_prompt TEXT,
+        publish_target TEXT NOT NULL DEFAULT 'github',
+        github_token_encrypted TEXT,
+        github_repo TEXT,
+        github_branch TEXT NOT NULL DEFAULT 'main',
+        github_base_path TEXT NOT NULL DEFAULT 'inflowee/html',
+        public_base_url TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS topic_html_push_configs (
+        id TEXT PRIMARY KEY,
+        topic_id TEXT NOT NULL UNIQUE,
+        use_global INTEGER NOT NULL DEFAULT 1,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        style_preset TEXT NOT NULL DEFAULT 'minimal_news',
+        module_preset TEXT NOT NULL DEFAULT 'standard_summary',
+        enabled_modules_json TEXT NOT NULL,
+        custom_prompt TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS html_publications (
+        id TEXT PRIMARY KEY,
+        owner_id TEXT NOT NULL,
+        topic_id TEXT NOT NULL,
+        brief_id TEXT,
+        report_id TEXT,
+        content_type TEXT NOT NULL CHECK(content_type IN ('brief', 'report')),
+        content_id TEXT NOT NULL,
+        delivery_log_id TEXT,
+        status TEXT NOT NULL CHECK(status IN ('pending', 'generated', 'published', 'failed')),
+        title TEXT,
+        html TEXT,
+        html_url TEXT,
+        publish_target TEXT NOT NULL DEFAULT 'github',
+        publish_path TEXT,
+        commit_sha TEXT,
+        error TEXT,
+        style_config_json TEXT NOT NULL,
+        module_config_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        published_at TEXT,
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE,
+        FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE,
+        FOREIGN KEY(report_id) REFERENCES reports(id) ON DELETE CASCADE,
+        UNIQUE(content_type, content_id)
+      );
+
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_reports_task_created_at ON reports(task_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_brief_reads_actor_read_at ON brief_reads(actor_id, read_at DESC);
       CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);
-      CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);
       CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);
       CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at ON delivery_logs(brief_id, started_at DESC);
     `);
 
+    migrateLegacyTopicSchema(nextDatabase);
     migrateSourcesTable(nextDatabase);
     migrateBriefsTable(nextDatabase);
     migrateBriefReadsTable(nextDatabase);
-    migrateTasksTable(nextDatabase);
+    migrateTopicsTable(nextDatabase);
     migrateItemsTable(nextDatabase);
     migrateChatMessagesTable(nextDatabase);
     migrateSyncRunsTable(nextDatabase);
     migrateDeliveryLogsTable(nextDatabase);
-    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_tasks_owner_created_at ON tasks(owner_id, created_at DESC);");
-    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_task_id ON sources(task_id);");
+    migrateHtmlPushTables(nextDatabase);
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_topics_owner_created_at ON topics(owner_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_topic_id ON sources(topic_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_next_sync_at ON sources(next_sync_at);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
-    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
-    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_reports_task_created_at ON reports(task_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_topic_created_at ON briefs(topic_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_reports_topic_created_at ON reports(topic_id, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_brief_reads_actor_read_at ON brief_reads(actor_id, read_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);");
-    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_topic_position ON recommendation_bundles(topic_id, position);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sync_runs_source_started_at ON sync_runs(source_id, started_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_delivery_logs_brief_started_at ON delivery_logs(brief_id, started_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_delivery_logs_content_started_at ON delivery_logs(content_type, content_id, started_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_html_publications_owner_created_at ON html_publications(owner_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_html_publications_topic_created_at ON html_publications(topic_id, created_at DESC);");
 
     database = nextDatabase;
     return nextDatabase;
@@ -1485,18 +2190,18 @@ export function getDefaultRuntimeStore(): Store {
   return createStore({ databaseUrl: requireDatabaseUrl() });
 }
 
-function mapTask(row: TaskRow): TaskRecord {
+function mapTopic(row: TopicRow): TopicRecord {
   return {
     id: row.id,
     ownerId: row.owner_id,
     title: row.title,
-    taskType: row.task_type,
+    topicType: row.topic_type,
     userPrompt: row.user_prompt,
     relevanceLevel: row.relevance_level,
     summaryPreference: row.summary_preference,
-    taskProfile: row.task_profile ? JSON.parse(row.task_profile) : null,
+    topicProfile: row.topic_profile ? JSON.parse(row.topic_profile) : null,
     scheduleProfile: row.schedule_profile
-      ? (JSON.parse(row.schedule_profile) as TaskScheduleProfile)
+      ? (JSON.parse(row.schedule_profile) as TopicScheduleProfile)
       : null,
     deliveryChannels: row.delivery_channels
       ? (JSON.parse(row.delivery_channels) as string[])
@@ -1506,40 +2211,40 @@ function mapTask(row: TaskRow): TaskRecord {
   };
 }
 
-function mapPrismaTask(task: {
+function mapPrismaTopic(topic: {
   id: string;
   ownerId: string;
   title: string;
-  taskType: string;
+  topicType: string;
   userPrompt: string;
   relevanceLevel: number;
   summaryPreference: string;
-  taskProfile: unknown;
+  topicProfile: unknown;
   scheduleProfile: unknown;
   deliveryChannels: unknown;
   createdAt: Date;
   updatedAt: Date;
-}): TaskRecord {
+}): TopicRecord {
   return {
-    id: task.id,
-    ownerId: task.ownerId,
-    title: task.title,
-    taskType: task.taskType as TaskType,
-    userPrompt: task.userPrompt,
-    relevanceLevel: task.relevanceLevel,
-    summaryPreference: task.summaryPreference,
-    taskProfile: (task.taskProfile as TaskProfile | null) ?? null,
+    id: topic.id,
+    ownerId: topic.ownerId,
+    title: topic.title,
+    topicType: topic.topicType as TopicType,
+    userPrompt: topic.userPrompt,
+    relevanceLevel: topic.relevanceLevel,
+    summaryPreference: topic.summaryPreference,
+    topicProfile: (topic.topicProfile as TopicProfile | null) ?? null,
     scheduleProfile:
-      (task.scheduleProfile as TaskScheduleProfile | null) ?? null,
-    deliveryChannels: (task.deliveryChannels as string[] | null) ?? null,
-    createdAt: task.createdAt.toISOString(),
-    updatedAt: task.updatedAt.toISOString(),
+      (topic.scheduleProfile as TopicScheduleProfile | null) ?? null,
+    deliveryChannels: (topic.deliveryChannels as string[] | null) ?? null,
+    createdAt: topic.createdAt.toISOString(),
+    updatedAt: topic.updatedAt.toISOString(),
   };
 }
 
 function mapPrismaSource(source: {
   id: string;
-  taskId: string;
+  topicId: string;
   sourceType: string;
   title: string;
   url: string;
@@ -1554,7 +2259,7 @@ function mapPrismaSource(source: {
 }): SourceRecord {
   return {
     id: source.id,
-    taskId: source.taskId,
+    topicId: source.topicId,
     sourceType: source.sourceType as SourceType,
     title: source.title,
     url: source.url,
@@ -1639,7 +2344,7 @@ function mapPrismaItem(item: {
 
 function mapPrismaBrief(brief: {
   id: string;
-  taskId: string;
+  topicId: string;
   title: string;
   summary: string;
   whyItMatters: string;
@@ -1650,11 +2355,11 @@ function mapPrismaBrief(brief: {
   isRead: boolean;
   createdAt: Date;
   briefReads?: Array<{ actorId: string }>;
-  task?: { title: string } | null;
+  topic?: { title: string } | null;
 }): BriefRecord {
   return {
     id: brief.id,
-    taskId: brief.taskId,
+    topicId: brief.topicId,
     title: brief.title,
     summary: brief.summary,
     whyItMatters: brief.whyItMatters,
@@ -1664,13 +2369,13 @@ function mapPrismaBrief(brief: {
     tags: (brief.tagsJson as string[]) ?? [],
     isRead: brief.briefReads ? brief.briefReads.length > 0 : brief.isRead,
     createdAt: brief.createdAt.toISOString(),
-    taskTitle: brief.task?.title,
+    topicTitle: brief.topic?.title,
   };
 }
 
 function mapPrismaReport(report: {
   id: string;
-  taskId: string;
+  topicId: string;
   mode: string;
   title: string;
   summary: string;
@@ -1682,11 +2387,11 @@ function mapPrismaReport(report: {
   periodStart: Date | null;
   periodEnd: Date | null;
   createdAt: Date;
-  task?: { title: string } | null;
+  topic?: { title: string } | null;
 }): ReportRecord {
   return {
     id: report.id,
-    taskId: report.taskId,
+    topicId: report.topicId,
     mode: report.mode as ReportMode,
     title: report.title,
     summary: report.summary,
@@ -1698,7 +2403,122 @@ function mapPrismaReport(report: {
     periodStart: report.periodStart?.toISOString() ?? null,
     periodEnd: report.periodEnd?.toISOString() ?? null,
     createdAt: report.createdAt.toISOString(),
-    taskTitle: report.task?.title,
+    topicTitle: report.topic?.title,
+  };
+}
+
+function mapPrismaHtmlPushConfig(config: {
+  id: string;
+  ownerId: string;
+  enabled: boolean;
+  entitlementStatus: string;
+  stylePreset: string;
+  modulePreset: string;
+  enabledModulesJson: unknown;
+  customPrompt: string | null;
+  publishTarget: string;
+  githubTokenEncrypted: string | null;
+  githubRepo: string | null;
+  githubBranch: string;
+  githubBasePath: string;
+  publicBaseUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): HtmlPushConfigRecord {
+  return {
+    id: config.id,
+    ownerId: config.ownerId,
+    enabled: config.enabled,
+    entitlementStatus:
+      config.entitlementStatus as HtmlPushEntitlementStatus,
+    stylePreset: config.stylePreset as HtmlPushStylePreset,
+    modulePreset: config.modulePreset as HtmlPushModulePreset,
+    enabledModules: (config.enabledModulesJson as HtmlPushModule[]) ?? [],
+    customPrompt: config.customPrompt,
+    publishTarget: config.publishTarget as "github",
+    githubTokenEncrypted: config.githubTokenEncrypted,
+    githubRepo: config.githubRepo,
+    githubBranch: config.githubBranch,
+    githubBasePath: config.githubBasePath,
+    publicBaseUrl: config.publicBaseUrl,
+    createdAt: config.createdAt.toISOString(),
+    updatedAt: config.updatedAt.toISOString(),
+  };
+}
+
+function mapPrismaTopicHtmlPushConfig(config: {
+  id: string;
+  topicId: string;
+  useGlobal: boolean;
+  enabled: boolean;
+  stylePreset: string;
+  modulePreset: string;
+  enabledModulesJson: unknown;
+  customPrompt: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): TopicHtmlPushConfigRecord {
+  return {
+    id: config.id,
+    topicId: config.topicId,
+    useGlobal: config.useGlobal,
+    enabled: config.enabled,
+    stylePreset: config.stylePreset as HtmlPushStylePreset,
+    modulePreset: config.modulePreset as HtmlPushModulePreset,
+    enabledModules: (config.enabledModulesJson as HtmlPushModule[]) ?? [],
+    customPrompt: config.customPrompt,
+    createdAt: config.createdAt.toISOString(),
+    updatedAt: config.updatedAt.toISOString(),
+  };
+}
+
+function mapPrismaHtmlPublication(publication: {
+  id: string;
+  ownerId: string;
+  topicId: string;
+  briefId: string | null;
+  reportId: string | null;
+  contentType: string;
+  contentId: string;
+  deliveryLogId: string | null;
+  status: string;
+  title: string | null;
+  html: string | null;
+  htmlUrl: string | null;
+  publishTarget: string;
+  publishPath: string | null;
+  commitSha: string | null;
+  error: string | null;
+  styleConfigJson: unknown;
+  moduleConfigJson: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+  publishedAt: Date | null;
+}): HtmlPublicationRecord {
+  return {
+    id: publication.id,
+    ownerId: publication.ownerId,
+    topicId: publication.topicId,
+    briefId: publication.briefId,
+    reportId: publication.reportId,
+    contentType: publication.contentType as "brief" | "report",
+    contentId: publication.contentId,
+    deliveryLogId: publication.deliveryLogId,
+    status: publication.status as HtmlPublicationStatus,
+    title: publication.title,
+    html: publication.html,
+    htmlUrl: publication.htmlUrl,
+    publishTarget: publication.publishTarget as "github",
+    publishPath: publication.publishPath,
+    commitSha: publication.commitSha,
+    error: publication.error,
+    styleConfig:
+      (publication.styleConfigJson as Record<string, unknown> | null) ?? {},
+    moduleConfig:
+      (publication.moduleConfigJson as Record<string, unknown> | null) ?? {},
+    createdAt: publication.createdAt.toISOString(),
+    updatedAt: publication.updatedAt.toISOString(),
+    publishedAt: publication.publishedAt?.toISOString() ?? null,
   };
 }
 
@@ -1735,6 +2555,9 @@ type PrismaDeliveryLogRow = {
   attempt_count: number | null;
   response_status: number | null;
   error: string | null;
+  html_publication_id: string | null;
+  html_url: string | null;
+  html_status: HtmlDeliveryStatus | null;
   started_at: Date;
   finished_at: Date | null;
 };
@@ -1751,70 +2574,567 @@ function mapPrismaDeliveryLogRow(row: PrismaDeliveryLogRow): DeliveryLogRecord {
     attemptCount: row.attempt_count,
     responseStatus: row.response_status,
     error: row.error,
+    htmlPublicationId: row.html_publication_id,
+    htmlUrl: row.html_url,
+    htmlStatus: row.html_status,
     startedAt: row.started_at.toISOString(),
     finishedAt: row.finished_at?.toISOString() ?? null,
   };
 }
 
-export async function listTasks(
+export async function getHtmlPushConfig(
+  store: Store,
+  ownerId: string,
+): Promise<HtmlPushConfigRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.htmlPushConfig.findUnique({
+      where: { ownerId },
+    });
+
+    return row ? mapPrismaHtmlPushConfig(row) : null;
+  }
+
+  const row = store.database
+    .prepare("SELECT * FROM html_push_configs WHERE owner_id = ? LIMIT 1")
+    .get(ownerId) as HtmlPushConfigRow | undefined;
+
+  return row ? mapHtmlPushConfig(row) : null;
+}
+
+export async function saveHtmlPushConfig(
+  store: Store,
+  input: SaveHtmlPushConfigInput,
+): Promise<HtmlPushConfigRecord> {
+  const timestamp = new Date().toISOString();
+  const enabledModulesJson = JSON.stringify(input.enabledModules);
+
+  if (store.prisma) {
+    const existing = await store.prisma.htmlPushConfig.findUnique({
+      where: { ownerId: input.ownerId },
+    });
+    const data = {
+      enabled: input.enabled,
+      entitlementStatus: input.entitlementStatus ?? "available",
+      stylePreset: input.stylePreset,
+      modulePreset: input.modulePreset,
+      enabledModulesJson: input.enabledModules as Prisma.InputJsonValue,
+      customPrompt: input.customPrompt ?? null,
+      publishTarget: input.publishTarget ?? "github",
+      githubTokenEncrypted:
+        input.githubTokenEncrypted === undefined
+          ? (existing?.githubTokenEncrypted ?? null)
+          : input.githubTokenEncrypted,
+      githubRepo: input.githubRepo ?? null,
+      githubBranch: input.githubBranch ?? "main",
+      githubBasePath: input.githubBasePath ?? "inflowee/html",
+      publicBaseUrl: input.publicBaseUrl ?? null,
+    };
+    const row = await store.prisma.htmlPushConfig.upsert({
+      where: { ownerId: input.ownerId },
+      create: {
+        ownerId: input.ownerId,
+        ...data,
+      },
+      update: data,
+    });
+
+    return mapPrismaHtmlPushConfig(row);
+  }
+
+  const existing = await getHtmlPushConfig(store, input.ownerId);
+  const id = existing?.id ?? randomUUID();
+  const githubTokenEncrypted =
+    input.githubTokenEncrypted === undefined
+      ? (existing?.githubTokenEncrypted ?? null)
+      : input.githubTokenEncrypted;
+
+  store.database
+    .prepare(
+      `INSERT INTO html_push_configs (
+        id,
+        owner_id,
+        enabled,
+        entitlement_status,
+        style_preset,
+        module_preset,
+        enabled_modules_json,
+        custom_prompt,
+        publish_target,
+        github_token_encrypted,
+        github_repo,
+        github_branch,
+        github_base_path,
+        public_base_url,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(owner_id) DO UPDATE SET
+        enabled = excluded.enabled,
+        entitlement_status = excluded.entitlement_status,
+        style_preset = excluded.style_preset,
+        module_preset = excluded.module_preset,
+        enabled_modules_json = excluded.enabled_modules_json,
+        custom_prompt = excluded.custom_prompt,
+        publish_target = excluded.publish_target,
+        github_token_encrypted = excluded.github_token_encrypted,
+        github_repo = excluded.github_repo,
+        github_branch = excluded.github_branch,
+        github_base_path = excluded.github_base_path,
+        public_base_url = excluded.public_base_url,
+        updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      input.ownerId,
+      Number(input.enabled),
+      input.entitlementStatus ?? "available",
+      input.stylePreset,
+      input.modulePreset,
+      enabledModulesJson,
+      input.customPrompt ?? null,
+      input.publishTarget ?? "github",
+      githubTokenEncrypted,
+      input.githubRepo ?? null,
+      input.githubBranch ?? "main",
+      input.githubBasePath ?? "inflowee/html",
+      input.publicBaseUrl ?? null,
+      existing?.createdAt ?? timestamp,
+      timestamp,
+    );
+
+  const saved = await getHtmlPushConfig(store, input.ownerId);
+  if (!saved) {
+    throw new Error("Failed to save HTML push config.");
+  }
+
+  return saved;
+}
+
+export async function getTopicHtmlPushConfig(
+  store: Store,
+  topicId: string,
+): Promise<TopicHtmlPushConfigRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.topicHtmlPushConfig.findUnique({
+      where: { topicId },
+    });
+
+    return row ? mapPrismaTopicHtmlPushConfig(row) : null;
+  }
+
+  const row = store.database
+    .prepare("SELECT * FROM topic_html_push_configs WHERE topic_id = ? LIMIT 1")
+    .get(topicId) as TopicHtmlPushConfigRow | undefined;
+
+  return row ? mapTopicHtmlPushConfig(row) : null;
+}
+
+export async function saveTopicHtmlPushConfig(
+  store: Store,
+  input: SaveTopicHtmlPushConfigInput,
+): Promise<TopicHtmlPushConfigRecord> {
+  const timestamp = new Date().toISOString();
+  const enabledModulesJson = JSON.stringify(input.enabledModules);
+
+  if (store.prisma) {
+    const row = await store.prisma.topicHtmlPushConfig.upsert({
+      where: { topicId: input.topicId },
+      create: {
+        topicId: input.topicId,
+        useGlobal: input.useGlobal,
+        enabled: input.enabled,
+        stylePreset: input.stylePreset,
+        modulePreset: input.modulePreset,
+        enabledModulesJson: input.enabledModules as Prisma.InputJsonValue,
+        customPrompt: input.customPrompt ?? null,
+      },
+      update: {
+        useGlobal: input.useGlobal,
+        enabled: input.enabled,
+        stylePreset: input.stylePreset,
+        modulePreset: input.modulePreset,
+        enabledModulesJson: input.enabledModules as Prisma.InputJsonValue,
+        customPrompt: input.customPrompt ?? null,
+      },
+    });
+
+    return mapPrismaTopicHtmlPushConfig(row);
+  }
+
+  const existing = await getTopicHtmlPushConfig(store, input.topicId);
+  const id = existing?.id ?? randomUUID();
+
+  store.database
+    .prepare(
+      `INSERT INTO topic_html_push_configs (
+        id,
+        topic_id,
+        use_global,
+        enabled,
+        style_preset,
+        module_preset,
+        enabled_modules_json,
+        custom_prompt,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(topic_id) DO UPDATE SET
+        use_global = excluded.use_global,
+        enabled = excluded.enabled,
+        style_preset = excluded.style_preset,
+        module_preset = excluded.module_preset,
+        enabled_modules_json = excluded.enabled_modules_json,
+        custom_prompt = excluded.custom_prompt,
+        updated_at = excluded.updated_at`,
+    )
+    .run(
+      id,
+      input.topicId,
+      Number(input.useGlobal),
+      Number(input.enabled),
+      input.stylePreset,
+      input.modulePreset,
+      enabledModulesJson,
+      input.customPrompt ?? null,
+      existing?.createdAt ?? timestamp,
+      timestamp,
+    );
+
+  const saved = await getTopicHtmlPushConfig(store, input.topicId);
+  if (!saved) {
+    throw new Error("Failed to save topic HTML push config.");
+  }
+
+  return saved;
+}
+
+export async function createHtmlPublication(
+  store: Store,
+  input: CreateHtmlPublicationInput,
+): Promise<string> {
+  const timestamp = new Date().toISOString();
+  const id = randomUUID();
+  const status = input.status ?? "pending";
+  const styleConfig = input.styleConfig ?? {};
+  const moduleConfig = input.moduleConfig ?? {};
+
+  if (store.prisma) {
+    const row = await store.prisma.htmlPublication.create({
+      data: {
+        id,
+        ownerId: input.ownerId,
+        topicId: input.topicId,
+        briefId: input.briefId ?? null,
+        reportId: input.reportId ?? null,
+        contentType: input.contentType,
+        contentId: input.contentId,
+        deliveryLogId: input.deliveryLogId ?? null,
+        status,
+        title: input.title ?? null,
+        html: input.html ?? null,
+        htmlUrl: input.htmlUrl ?? null,
+        publishTarget: input.publishTarget ?? "github",
+        publishPath: input.publishPath ?? null,
+        commitSha: input.commitSha ?? null,
+        error: input.error ?? null,
+        styleConfigJson: styleConfig as Prisma.InputJsonValue,
+        moduleConfigJson: moduleConfig as Prisma.InputJsonValue,
+        publishedAt: input.publishedAt ? new Date(input.publishedAt) : null,
+      },
+    });
+
+    return row.id;
+  }
+
+  store.database
+    .prepare(
+      `INSERT INTO html_publications (
+        id,
+        owner_id,
+        topic_id,
+        brief_id,
+        report_id,
+        content_type,
+        content_id,
+        delivery_log_id,
+        status,
+        title,
+        html,
+        html_url,
+        publish_target,
+        publish_path,
+        commit_sha,
+        error,
+        style_config_json,
+        module_config_json,
+        created_at,
+        updated_at,
+        published_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.ownerId,
+      input.topicId,
+      input.briefId ?? null,
+      input.reportId ?? null,
+      input.contentType,
+      input.contentId,
+      input.deliveryLogId ?? null,
+      status,
+      input.title ?? null,
+      input.html ?? null,
+      input.htmlUrl ?? null,
+      input.publishTarget ?? "github",
+      input.publishPath ?? null,
+      input.commitSha ?? null,
+      input.error ?? null,
+      JSON.stringify(styleConfig),
+      JSON.stringify(moduleConfig),
+      timestamp,
+      timestamp,
+      input.publishedAt ?? null,
+    );
+
+  return id;
+}
+
+export async function updateHtmlPublication(
+  store: Store,
+  id: string,
+  input: UpdateHtmlPublicationInput,
+): Promise<void> {
+  const timestamp = new Date().toISOString();
+
+  if (store.prisma) {
+    await store.prisma.htmlPublication.update({
+      where: { id },
+      data: {
+        ...(input.deliveryLogId !== undefined
+          ? { deliveryLogId: input.deliveryLogId }
+          : {}),
+        ...(input.status !== undefined ? { status: input.status } : {}),
+        ...(input.title !== undefined ? { title: input.title } : {}),
+        ...(input.html !== undefined ? { html: input.html } : {}),
+        ...(input.htmlUrl !== undefined ? { htmlUrl: input.htmlUrl } : {}),
+        ...(input.publishPath !== undefined
+          ? { publishPath: input.publishPath }
+          : {}),
+        ...(input.commitSha !== undefined ? { commitSha: input.commitSha } : {}),
+        ...(input.error !== undefined ? { error: input.error } : {}),
+        ...(input.styleConfig !== undefined
+          ? { styleConfigJson: input.styleConfig as Prisma.InputJsonValue }
+          : {}),
+        ...(input.moduleConfig !== undefined
+          ? { moduleConfigJson: input.moduleConfig as Prisma.InputJsonValue }
+          : {}),
+        ...(input.publishedAt !== undefined
+          ? {
+              publishedAt: input.publishedAt
+                ? new Date(input.publishedAt)
+                : null,
+            }
+          : {}),
+      },
+    });
+
+    return;
+  }
+
+  const existing = store.database
+    .prepare("SELECT * FROM html_publications WHERE id = ? LIMIT 1")
+    .get(id) as HtmlPublicationRow | undefined;
+
+  if (!existing) {
+    throw new Error("HTML publication not found.");
+  }
+
+  store.database
+    .prepare(
+      `UPDATE html_publications
+       SET delivery_log_id = ?,
+           status = ?,
+           title = ?,
+           html = ?,
+           html_url = ?,
+           publish_path = ?,
+           commit_sha = ?,
+           error = ?,
+           style_config_json = ?,
+           module_config_json = ?,
+           updated_at = ?,
+           published_at = ?
+       WHERE id = ?`,
+    )
+    .run(
+      input.deliveryLogId !== undefined
+        ? input.deliveryLogId
+        : existing.delivery_log_id,
+      input.status ?? existing.status,
+      input.title !== undefined ? input.title : existing.title,
+      input.html !== undefined ? input.html : existing.html,
+      input.htmlUrl !== undefined ? input.htmlUrl : existing.html_url,
+      input.publishPath !== undefined ? input.publishPath : existing.publish_path,
+      input.commitSha !== undefined ? input.commitSha : existing.commit_sha,
+      input.error !== undefined ? input.error : existing.error,
+      input.styleConfig !== undefined
+        ? JSON.stringify(input.styleConfig)
+        : existing.style_config_json,
+      input.moduleConfig !== undefined
+        ? JSON.stringify(input.moduleConfig)
+        : existing.module_config_json,
+      timestamp,
+      input.publishedAt !== undefined
+        ? input.publishedAt
+        : existing.published_at,
+      id,
+    );
+}
+
+export async function getHtmlPublicationByContent(
+  store: Store,
+  input: { contentType: "brief" | "report"; contentId: string },
+): Promise<HtmlPublicationRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.htmlPublication.findUnique({
+      where: {
+        contentType_contentId: {
+          contentType: input.contentType,
+          contentId: input.contentId,
+        },
+      },
+    });
+
+    return row ? mapPrismaHtmlPublication(row) : null;
+  }
+
+  const row = store.database
+    .prepare(
+      `SELECT * FROM html_publications
+       WHERE content_type = ?
+         AND content_id = ?
+       LIMIT 1`,
+    )
+    .get(input.contentType, input.contentId) as HtmlPublicationRow | undefined;
+
+  return row ? mapHtmlPublication(row) : null;
+}
+
+export async function getHtmlPublicationById(
+  store: Store,
+  id: string,
+): Promise<HtmlPublicationRecord | null> {
+  if (store.prisma) {
+    const row = await store.prisma.htmlPublication.findUnique({
+      where: { id },
+    });
+
+    return row ? mapPrismaHtmlPublication(row) : null;
+  }
+
+  const row = store.database
+    .prepare("SELECT * FROM html_publications WHERE id = ? LIMIT 1")
+    .get(id) as HtmlPublicationRow | undefined;
+
+  return row ? mapHtmlPublication(row) : null;
+}
+
+export async function listRecentHtmlPublications(
+  store: Store,
+  limit = 20,
+  filters: { ownerId?: string; topicId?: string } = {},
+): Promise<HtmlPublicationRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.htmlPublication.findMany({
+      where: {
+        ...(filters.ownerId ? { ownerId: filters.ownerId } : {}),
+        ...(filters.topicId ? { topicId: filters.topicId } : {}),
+      },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    return rows.map(mapPrismaHtmlPublication);
+  }
+
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM html_publications
+       WHERE (? IS NULL OR owner_id = ?)
+         AND (? IS NULL OR topic_id = ?)
+       ORDER BY created_at DESC
+       LIMIT ?`,
+    )
+    .all(
+      filters.ownerId ?? null,
+      filters.ownerId ?? null,
+      filters.topicId ?? null,
+      filters.topicId ?? null,
+      limit,
+    ) as HtmlPublicationRow[];
+
+  return rows.map(mapHtmlPublication);
+}
+
+export async function listTopics(
   store: Store = defaultStore,
   filters: { ownerId?: string; actorId?: string } = {},
-): Promise<TaskRecord[]> {
+): Promise<TopicRecord[]> {
   const ownerId = filters.actorId ?? filters.ownerId;
 
   if (store.prisma) {
-    const rows = await store.prisma.task.findMany({
+    const rows = await store.prisma.topic.findMany({
       where: ownerId ? { ownerId } : undefined,
       orderBy: { createdAt: "desc" },
     });
 
-    return rows.map(mapPrismaTask);
+    return rows.map(mapPrismaTopic);
   }
 
   const rows = store.database
     .prepare(
       ownerId
-        ? "SELECT * FROM tasks WHERE owner_id = ? ORDER BY created_at DESC"
-        : "SELECT * FROM tasks ORDER BY created_at DESC",
+        ? "SELECT * FROM topics WHERE owner_id = ? ORDER BY created_at DESC"
+        : "SELECT * FROM topics ORDER BY created_at DESC",
     )
-    .all(...(ownerId ? [ownerId] : [])) as TaskRow[];
+    .all(...(ownerId ? [ownerId] : [])) as TopicRow[];
 
-  return rows.map(mapTask);
+  return rows.map(mapTopic);
 }
 
-export async function hasTaskOwner(
+export async function hasTopicOwner(
   store: Store,
   actorId: string,
-  taskId: string,
+  topicId: string,
 ): Promise<boolean> {
-  const task = await getTaskById(store, taskId);
-  return task?.ownerId === actorId;
+  const topic = await getTopicById(store, topicId);
+  return topic?.ownerId === actorId;
 }
 
-export async function getTaskByBriefId(
+export async function getTopicByBriefId(
   store: Store,
   briefId: string,
-): Promise<TaskRecord | null> {
+): Promise<TopicRecord | null> {
   if (store.prisma) {
     const row = await store.prisma.brief.findUnique({
       where: { id: briefId },
-      include: { task: true },
+      include: { topic: true },
     });
 
-    return row ? mapPrismaTask(row.task) : null;
+    return row ? mapPrismaTopic(row.topic) : null;
   }
 
   const row = store.database
     .prepare(
-      `SELECT tasks.*
-       FROM tasks
-       JOIN briefs ON briefs.task_id = tasks.id
+      `SELECT topics.*
+       FROM topics
+       JOIN briefs ON briefs.topic_id = topics.id
        WHERE briefs.id = ?
        LIMIT 1`,
     )
-    .get(briefId) as TaskRow | undefined;
+    .get(briefId) as TopicRow | undefined;
 
-  return row ? mapTask(row) : null;
+  return row ? mapTopic(row) : null;
 }
 
 export async function hasBriefOwner(
@@ -1822,28 +3142,28 @@ export async function hasBriefOwner(
   actorId: string,
   briefId: string,
 ): Promise<boolean> {
-  const task = await getTaskByBriefId(store, briefId);
-  return task?.ownerId === actorId;
+  const topic = await getTopicByBriefId(store, briefId);
+  return topic?.ownerId === actorId;
 }
 
-export function createTaskRecord(input: CreateTaskInput): Promise<string>;
-export function createTaskRecord(
+export function createTopicRecord(input: CreateTopicInput): Promise<string>;
+export function createTopicRecord(
   store: Store,
-  input: CreateTaskInput,
+  input: CreateTopicInput,
 ): Promise<string>;
-export async function createTaskRecord(
-  storeOrInput: Store | CreateTaskInput,
-  maybeInput?: CreateTaskInput,
+export async function createTopicRecord(
+  storeOrInput: Store | CreateTopicInput,
+  maybeInput?: CreateTopicInput,
 ) {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
-  const input = maybeInput ?? (storeOrInput as CreateTaskInput);
+  const input = maybeInput ?? (storeOrInput as CreateTopicInput);
 
   if (store.prisma) {
-    const task = await store.prisma.task.create({
+    const topic = await store.prisma.topic.create({
       data: {
         ownerId: input.ownerId ?? "local-user",
         title: input.title,
-        taskType: input.taskType,
+        topicType: input.topicType,
         userPrompt: input.userPrompt,
         relevanceLevel: 3,
         summaryPreference: "balanced",
@@ -1851,7 +3171,7 @@ export async function createTaskRecord(
       },
     });
 
-    return task.id;
+    return topic.id;
   }
 
   const timestamp = new Date().toISOString();
@@ -1859,11 +3179,11 @@ export async function createTaskRecord(
 
   store.database
     .prepare(
-      `INSERT INTO tasks (
+      `INSERT INTO topics (
         id,
         owner_id,
         title,
-        task_type,
+        topic_type,
         user_prompt,
         relevance_level,
         summary_preference,
@@ -1877,7 +3197,7 @@ export async function createTaskRecord(
       id,
       input.ownerId ?? "local-user",
       input.title,
-      input.taskType,
+      input.topicType,
       input.userPrompt,
       3,
       "balanced",
@@ -1890,13 +3210,13 @@ export async function createTaskRecord(
   return id;
 }
 
-export async function hasTaskRecord(
+export async function hasTopicRecord(
   store: Store,
-  taskId: string,
+  topicId: string,
 ): Promise<boolean> {
   if (store.prisma) {
-    const count = await store.prisma.task.count({
-      where: { id: taskId },
+    const count = await store.prisma.topic.count({
+      where: { id: topicId },
     });
 
     return count > 0;
@@ -1904,8 +3224,8 @@ export async function hasTaskRecord(
 
   return Boolean(
     store.database
-      .prepare("SELECT 1 FROM tasks WHERE id = ? LIMIT 1")
-      .get(taskId),
+      .prepare("SELECT 1 FROM topics WHERE id = ? LIMIT 1")
+      .get(topicId),
   );
 }
 
@@ -1928,36 +3248,36 @@ export async function getSourceById(
   return row ? mapSource(row) : null;
 }
 
-export async function getTaskBySourceId(
+export async function getTopicBySourceId(
   store: Store,
   sourceId: string,
-): Promise<TaskRecord | null> {
+): Promise<TopicRecord | null> {
   if (store.prisma) {
     const row = await store.prisma.source.findUnique({
       where: { id: sourceId },
-      include: { task: true },
+      include: { topic: true },
     });
 
-    return row ? mapPrismaTask(row.task) : null;
+    return row ? mapPrismaTopic(row.topic) : null;
   }
 
   const row = store.database
     .prepare(
-      `SELECT tasks.*
-       FROM tasks
-       JOIN sources ON sources.task_id = tasks.id
+      `SELECT topics.*
+       FROM topics
+       JOIN sources ON sources.topic_id = topics.id
        WHERE sources.id = ?
        LIMIT 1`,
     )
-    .get(sourceId) as TaskRow | undefined;
+    .get(sourceId) as TopicRow | undefined;
 
-  return row ? mapTask(row) : null;
+  return row ? mapTopic(row) : null;
 }
 
 export async function createSourceRecord(
   store: Store,
   input: {
-    taskId: string;
+    topicId: string;
     sourceType: SourceType;
     title: string;
     url: string;
@@ -1967,7 +3287,7 @@ export async function createSourceRecord(
   if (store.prisma) {
     const source = await store.prisma.source.create({
       data: {
-        taskId: input.taskId,
+        topicId: input.topicId,
         sourceType: input.sourceType,
         title: input.title,
         url: input.url,
@@ -1990,7 +3310,7 @@ export async function createSourceRecord(
     .prepare(
       `INSERT INTO sources (
         id,
-        task_id,
+        topic_id,
         source_type,
         title,
         url,
@@ -2004,7 +3324,7 @@ export async function createSourceRecord(
     )
     .run(
       id,
-      input.taskId,
+      input.topicId,
       input.sourceType,
       input.title,
       input.url,
@@ -2278,13 +3598,13 @@ export async function createItemRecord(
   return (await createItemRecordResult(store, input)) !== null;
 }
 
-export async function listSourcesByTask(
+export async function listSourcesByTopic(
   store: Store,
-  taskId: string,
+  topicId: string,
 ): Promise<SourceRecord[]> {
   if (store.prisma) {
     const rows = await store.prisma.source.findMany({
-      where: { taskId },
+      where: { topicId },
       orderBy: { createdAt: "desc" },
     });
 
@@ -2293,9 +3613,9 @@ export async function listSourcesByTask(
 
   const rows = store.database
     .prepare(
-      "SELECT * FROM sources WHERE task_id = ? ORDER BY created_at DESC",
+      "SELECT * FROM sources WHERE topic_id = ? ORDER BY created_at DESC",
     )
-    .all(taskId) as SourceRow[];
+    .all(topicId) as SourceRow[];
 
   return rows.map(mapSource);
 }
@@ -2388,7 +3708,7 @@ export async function listItemsByBriefId(
 export async function createBriefRecord(
   store: Store,
   input: {
-    taskId: string;
+    topicId: string;
     itemIds: string[];
     title: string;
     summary: string;
@@ -2403,7 +3723,7 @@ export async function createBriefRecord(
     const created = await store.prisma.$transaction(async (tx) => {
       const brief = await tx.brief.create({
         data: {
-          taskId: input.taskId,
+          topicId: input.topicId,
           title: input.title,
           summary: input.summary,
           whyItMatters: input.whyItMatters,
@@ -2437,7 +3757,7 @@ export async function createBriefRecord(
     .prepare(
       `INSERT INTO briefs (
         id,
-        task_id,
+        topic_id,
         title,
         summary,
         why_it_matters,
@@ -2450,7 +3770,7 @@ export async function createBriefRecord(
     )
     .run(
       id,
-      input.taskId,
+      input.topicId,
       input.title,
       input.summary,
       input.whyItMatters,
@@ -2482,7 +3802,7 @@ export async function listBriefs(
         { relevanceScore: "desc" },
         { createdAt: "desc" },
       ],
-      include: { task: true },
+      include: { topic: true },
     });
 
     return rows.map(mapPrismaBrief);
@@ -2492,9 +3812,9 @@ export async function listBriefs(
     .prepare(
       `SELECT
          briefs.*,
-         tasks.title AS task_title
+         topics.title AS topic_title
        FROM briefs
-       JOIN tasks ON briefs.task_id = tasks.id
+       JOIN topics ON briefs.topic_id = topics.id
        ORDER BY briefs.importance_score DESC, briefs.relevance_score DESC, briefs.created_at DESC`,
     )
     .all() as BriefRow[];
@@ -3041,6 +4361,9 @@ export async function createDeliveryLog(
     contentId?: string | null;
     endpoint: string;
     payloadType: DeliveryPayloadType;
+    htmlPublicationId?: string | null;
+    htmlUrl?: string | null;
+    htmlStatus?: HtmlDeliveryStatus | null;
   },
 ) {
   const contentType = input.contentType ?? "brief";
@@ -3055,6 +4378,9 @@ export async function createDeliveryLog(
         endpoint: input.endpoint,
         payloadType: input.payloadType,
         status: "running",
+        htmlPublicationId: input.htmlPublicationId ?? null,
+        htmlUrl: input.htmlUrl ?? null,
+        htmlStatus: input.htmlStatus ?? null,
         startedAt: new Date(),
       },
     });
@@ -3075,8 +4401,11 @@ export async function createDeliveryLog(
         endpoint,
         payload_type,
         status,
+        html_publication_id,
+        html_url,
+        html_status,
         started_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'running', ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, 'running', ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -3085,6 +4414,9 @@ export async function createDeliveryLog(
       contentId,
       input.endpoint,
       input.payloadType,
+      input.htmlPublicationId ?? null,
+      input.htmlUrl ?? null,
+      input.htmlStatus ?? null,
       startedAt,
     );
 
@@ -3099,6 +4431,9 @@ export async function finishDeliveryLog(
     attemptCount?: number | null;
     responseStatus?: number | null;
     error?: string | null;
+    htmlPublicationId?: string | null;
+    htmlUrl?: string | null;
+    htmlStatus?: HtmlDeliveryStatus | null;
   },
 ) {
   if (store.prisma) {
@@ -3112,6 +4447,9 @@ export async function finishDeliveryLog(
                          ? (input.error ?? "Unknown delivery error.")
                          : null
                      },
+                     "htmlPublicationId" = ${input.htmlPublicationId ?? null},
+                     "htmlUrl" = ${input.htmlUrl ?? null},
+                     "htmlStatus" = ${input.htmlStatus ?? null},
                      "finishedAt" = ${new Date()}
                  WHERE "id" = ${input.logId}`,
     );
@@ -3126,6 +4464,9 @@ export async function finishDeliveryLog(
            attempt_count = ?,
            response_status = ?,
            error = ?,
+           html_publication_id = ?,
+           html_url = ?,
+           html_status = ?,
            finished_at = ?
        WHERE id = ?`,
     )
@@ -3136,6 +4477,9 @@ export async function finishDeliveryLog(
       input.status === "error"
         ? (input.error ?? "Unknown delivery error.")
         : null,
+      input.htmlPublicationId ?? null,
+      input.htmlUrl ?? null,
+      input.htmlStatus ?? null,
       new Date().toISOString(),
       input.logId,
     );
@@ -3159,6 +4503,9 @@ export async function listRecentDeliveryLogsByBrief(
         "attemptCount" AS attempt_count,
         "responseStatus" AS response_status,
         "error",
+        "htmlPublicationId" AS html_publication_id,
+        "htmlUrl" AS html_url,
+        "htmlStatus" AS html_status,
         "startedAt" AS started_at,
         "finishedAt" AS finished_at
       FROM "DeliveryLog"
@@ -3201,6 +4548,9 @@ export async function listRecentDeliveryLogsByContent(
         "attemptCount" AS attempt_count,
         "responseStatus" AS response_status,
         "error",
+        "htmlPublicationId" AS html_publication_id,
+        "htmlUrl" AS html_url,
+        "htmlStatus" AS html_status,
         "startedAt" AS started_at,
         "finishedAt" AS finished_at
       FROM "DeliveryLog"
@@ -3245,12 +4595,15 @@ export async function listRecentDeliveryLogs(
             dl."attemptCount" AS attempt_count,
             dl."responseStatus" AS response_status,
             dl."error",
+            dl."htmlPublicationId" AS html_publication_id,
+            dl."htmlUrl" AS html_url,
+            dl."htmlStatus" AS html_status,
             dl."startedAt" AS started_at,
             dl."finishedAt" AS finished_at
           FROM "DeliveryLog" dl
           LEFT JOIN "Brief" b ON b."id" = dl."briefId"
           LEFT JOIN "Report" r ON r."id" = dl."contentId" AND dl."contentType" = 'report'
-          JOIN "Task" t ON t."id" = COALESCE(b."taskId", r."taskId")
+          JOIN "Topic" t ON t."id" = COALESCE(b."topicId", r."topicId")
           WHERE t."ownerId" = ${filters.actorId}
           ORDER BY dl."startedAt" DESC
           LIMIT ${limit}
@@ -3267,6 +4620,9 @@ export async function listRecentDeliveryLogs(
             "attemptCount" AS attempt_count,
             "responseStatus" AS response_status,
             "error",
+            "htmlPublicationId" AS html_publication_id,
+            "htmlUrl" AS html_url,
+            "htmlStatus" AS html_status,
             "startedAt" AS started_at,
             "finishedAt" AS finished_at
           FROM "DeliveryLog"
@@ -3286,8 +4642,8 @@ export async function listRecentDeliveryLogs(
              LEFT JOIN briefs ON briefs.id = delivery_logs.brief_id
              LEFT JOIN reports ON reports.id = delivery_logs.content_id
                AND delivery_logs.content_type = 'report'
-             JOIN tasks ON tasks.id = COALESCE(briefs.task_id, reports.task_id)
-             WHERE tasks.owner_id = ?
+             JOIN topics ON topics.id = COALESCE(briefs.topic_id, reports.topic_id)
+             WHERE topics.owner_id = ?
              ORDER BY delivery_logs.started_at DESC
              LIMIT ?`,
           )
@@ -3314,7 +4670,7 @@ export async function listRecentSyncRuns(
       where: filters.actorId
         ? {
             source: {
-              task: {
+              topic: {
                 ownerId: filters.actorId,
               },
             },
@@ -3334,8 +4690,8 @@ export async function listRecentSyncRuns(
             `SELECT sync_runs.*
              FROM sync_runs
              JOIN sources ON sources.id = sync_runs.source_id
-             JOIN tasks ON tasks.id = sources.task_id
-             WHERE tasks.owner_id = ?
+             JOIN topics ON topics.id = sources.topic_id
+             WHERE topics.owner_id = ?
              ORDER BY sync_runs.started_at DESC
              LIMIT ?`,
           )
@@ -3439,7 +4795,7 @@ export async function listSources(
     const rows = await store.prisma.source.findMany({
       where: filters.actorId
         ? {
-            task: {
+            topic: {
               ownerId: filters.actorId,
             },
           }
@@ -3456,8 +4812,8 @@ export async function listSources(
           .prepare(
             `SELECT DISTINCT sources.*
              FROM sources
-             JOIN tasks ON tasks.id = sources.task_id
-             WHERE tasks.owner_id = ?
+             JOIN topics ON topics.id = sources.topic_id
+             WHERE topics.owner_id = ?
              ORDER BY sources.created_at DESC`,
           )
           .all(filters.actorId)
@@ -3486,7 +4842,7 @@ export async function getBriefById(
               },
             }
           : {}),
-        task: true,
+        topic: true,
       },
     });
 
@@ -3497,7 +4853,7 @@ export async function getBriefById(
     .prepare(
       `SELECT
          briefs.id,
-         briefs.task_id,
+         briefs.topic_id,
          briefs.title,
          briefs.summary,
          briefs.why_it_matters,
@@ -3511,9 +4867,9 @@ export async function getBriefById(
              : "briefs.is_read"
          } AS is_read,
          briefs.created_at,
-         tasks.title AS task_title
+         topics.title AS topic_title
        FROM briefs
-       JOIN tasks ON briefs.task_id = tasks.id
+       JOIN topics ON briefs.topic_id = topics.id
        ${
          options.actorId
            ? "LEFT JOIN brief_reads ON brief_reads.brief_id = briefs.id AND brief_reads.actor_id = ?"
@@ -3659,7 +5015,7 @@ export async function countUnreadBriefs(
           : { isRead: false }),
         ...(filters.actorId
           ? {
-              task: {
+              topic: {
                 ownerId: filters.actorId,
               },
             }
@@ -3674,12 +5030,12 @@ export async function countUnreadBriefs(
           .prepare(
             `SELECT COUNT(*) AS count
              FROM briefs
-             JOIN tasks ON briefs.task_id = tasks.id
+             JOIN topics ON briefs.topic_id = topics.id
              LEFT JOIN brief_reads
                ON brief_reads.brief_id = briefs.id
               AND brief_reads.actor_id = ?
              WHERE brief_reads.actor_id IS NULL
-               AND tasks.owner_id = ?`,
+               AND topics.owner_id = ?`,
           )
           .get(filters.actorId, filters.actorId)
       : store.database
@@ -3692,12 +5048,12 @@ export async function countUnreadBriefs(
 
 export async function listBriefsFiltered(
   store: Store,
-  filters: { taskId?: string; unreadOnly?: boolean; actorId?: string } = {},
+  filters: { topicId?: string; unreadOnly?: boolean; actorId?: string } = {},
 ): Promise<BriefRecord[]> {
   if (store.prisma) {
     const rows = await store.prisma.brief.findMany({
       where: {
-        ...(filters.taskId ? { taskId: filters.taskId } : {}),
+        ...(filters.topicId ? { topicId: filters.topicId } : {}),
         ...(filters.unreadOnly
           ? filters.actorId
             ? { briefReads: { none: { actorId: filters.actorId } } }
@@ -3705,7 +5061,7 @@ export async function listBriefsFiltered(
           : {}),
         ...(filters.actorId
           ? {
-              task: {
+              topic: {
                 ownerId: filters.actorId,
               },
             }
@@ -3725,7 +5081,7 @@ export async function listBriefsFiltered(
               },
             }
           : {}),
-        task: true,
+        topic: true,
       },
     });
 
@@ -3735,9 +5091,9 @@ export async function listBriefsFiltered(
   const conditions: string[] = [];
   const params: string[] = [];
 
-  if (filters.taskId) {
-    conditions.push("briefs.task_id = ?");
-    params.push(filters.taskId);
+  if (filters.topicId) {
+    conditions.push("briefs.topic_id = ?");
+    params.push(filters.topicId);
   }
   if (filters.unreadOnly) {
     conditions.push(
@@ -3745,7 +5101,7 @@ export async function listBriefsFiltered(
     );
   }
   if (filters.actorId) {
-    conditions.push("tasks.owner_id = ?");
+    conditions.push("topics.owner_id = ?");
     params.push(filters.actorId);
   }
 
@@ -3755,7 +5111,7 @@ export async function listBriefsFiltered(
     .prepare(
       `SELECT
          briefs.id,
-         briefs.task_id,
+         briefs.topic_id,
          briefs.title,
          briefs.summary,
          briefs.why_it_matters,
@@ -3769,9 +5125,9 @@ export async function listBriefsFiltered(
              : "briefs.is_read"
          } AS is_read,
          briefs.created_at,
-         tasks.title AS task_title
+         topics.title AS topic_title
        FROM briefs
-       JOIN tasks ON briefs.task_id = tasks.id
+       JOIN topics ON briefs.topic_id = topics.id
        ${
          filters.actorId
            ? "LEFT JOIN brief_reads ON brief_reads.brief_id = briefs.id AND brief_reads.actor_id = ?"
@@ -3790,7 +5146,7 @@ export async function listBriefsFiltered(
 export async function createReportRecord(
   store: Store,
   input: {
-    taskId: string;
+    topicId: string;
     mode: ReportMode;
     title: string;
     summary: string;
@@ -3806,7 +5162,7 @@ export async function createReportRecord(
   if (store.prisma) {
     const report = await store.prisma.report.create({
       data: {
-        taskId: input.taskId,
+        topicId: input.topicId,
         mode: input.mode,
         title: input.title,
         summary: input.summary,
@@ -3830,7 +5186,7 @@ export async function createReportRecord(
     .prepare(
       `INSERT INTO reports (
         id,
-        task_id,
+        topic_id,
         mode,
         title,
         summary,
@@ -3846,7 +5202,7 @@ export async function createReportRecord(
     )
     .run(
       id,
-      input.taskId,
+      input.topicId,
       input.mode,
       input.title,
       input.summary,
@@ -3863,14 +5219,14 @@ export async function createReportRecord(
   return id;
 }
 
-export async function listReportsByTask(
+export async function listReportsByTopic(
   store: Store,
-  taskId: string,
+  topicId: string,
 ): Promise<ReportRecord[]> {
   if (store.prisma) {
     const rows = await store.prisma.report.findMany({
-      where: { taskId },
-      include: { task: true },
+      where: { topicId },
+      include: { topic: true },
       orderBy: { createdAt: "desc" },
     });
 
@@ -3879,13 +5235,13 @@ export async function listReportsByTask(
 
   const rows = store.database
     .prepare(
-      `SELECT reports.*, tasks.title AS task_title
+      `SELECT reports.*, topics.title AS topic_title
        FROM reports
-       JOIN tasks ON tasks.id = reports.task_id
-       WHERE reports.task_id = ?
+       JOIN topics ON topics.id = reports.topic_id
+       WHERE reports.topic_id = ?
        ORDER BY reports.created_at DESC`,
     )
-    .all(taskId) as ReportRow[];
+    .all(topicId) as ReportRow[];
 
   return rows.map(mapReport);
 }
@@ -3897,7 +5253,7 @@ export async function getReportById(
   if (store.prisma) {
     const report = await store.prisma.report.findUnique({
       where: { id: reportId },
-      include: { task: true },
+      include: { topic: true },
     });
 
     return report ? mapPrismaReport(report) : null;
@@ -3905,9 +5261,9 @@ export async function getReportById(
 
   const row = store.database
     .prepare(
-      `SELECT reports.*, tasks.title AS task_title
+      `SELECT reports.*, topics.title AS topic_title
        FROM reports
-       JOIN tasks ON tasks.id = reports.task_id
+       JOIN topics ON topics.id = reports.topic_id
        WHERE reports.id = ?
        LIMIT 1`,
     )
@@ -3946,68 +5302,68 @@ export async function deleteSource(
   store.database.prepare("DELETE FROM sources WHERE id = ?").run(sourceId);
 }
 
-export async function deleteTask(
+export async function deleteTopic(
   store: Store,
-  taskId: string,
+  topicId: string,
 ): Promise<void> {
   if (store.prisma) {
-    await store.prisma.task.delete({
-      where: { id: taskId },
+    await store.prisma.topic.delete({
+      where: { id: topicId },
     });
     return;
   }
 
-  store.database.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
+  store.database.prepare("DELETE FROM topics WHERE id = ?").run(topicId);
 }
 
-// --- AI Task Intent, Profiles, Controls & Grounded Chat thread store helpers ---
+// --- AI Topic Intent, Profiles, Controls & Grounded Chat thread store helpers ---
 
-export async function getTaskById(
+export async function getTopicById(
   store: Store,
-  taskId: string,
-): Promise<TaskRecord | null> {
+  topicId: string,
+): Promise<TopicRecord | null> {
   if (store.prisma) {
-    const row = await store.prisma.task.findUnique({
-      where: { id: taskId },
+    const row = await store.prisma.topic.findUnique({
+      where: { id: topicId },
     });
 
-    return row ? mapPrismaTask(row) : null;
+    return row ? mapPrismaTopic(row) : null;
   }
 
   const row = store.database
-    .prepare("SELECT * FROM tasks WHERE id = ? LIMIT 1")
-    .get(taskId) as TaskRow | undefined;
+    .prepare("SELECT * FROM topics WHERE id = ? LIMIT 1")
+    .get(topicId) as TopicRow | undefined;
 
-  return row ? mapTask(row) : null;
+  return row ? mapTopic(row) : null;
 }
 
-export async function getTaskProfile(
+export async function getTopicProfile(
   store: Store,
-  taskId: string,
-): Promise<TaskProfile | null> {
+  topicId: string,
+): Promise<TopicProfile | null> {
   if (store.prisma) {
-    const task = await store.prisma.task.findUnique({
-      where: { id: taskId },
-      select: { taskProfile: true },
+    const topic = await store.prisma.topic.findUnique({
+      where: { id: topicId },
+      select: { topicProfile: true },
     });
 
-    return (task?.taskProfile as TaskProfile | null) ?? null;
+    return (topic?.topicProfile as TopicProfile | null) ?? null;
   }
 
-  const task = await getTaskById(store, taskId);
-  return task ? task.taskProfile ?? null : null;
+  const topic = await getTopicById(store, topicId);
+  return topic ? topic.topicProfile ?? null : null;
 }
 
-export async function saveTaskProfile(
+export async function saveTopicProfile(
   store: Store,
-  taskId: string,
-  profile: TaskProfile,
+  topicId: string,
+  profile: TopicProfile,
 ): Promise<void> {
   if (store.prisma) {
-    await store.prisma.task.update({
-      where: { id: taskId },
+    await store.prisma.topic.update({
+      where: { id: topicId },
       data: {
-        taskProfile: profile as Prisma.InputJsonValue,
+        topicProfile: profile as Prisma.InputJsonValue,
       },
     });
 
@@ -4016,18 +5372,18 @@ export async function saveTaskProfile(
 
   const timestamp = new Date().toISOString();
   store.database
-    .prepare("UPDATE tasks SET task_profile = ?, updated_at = ? WHERE id = ?")
-    .run(JSON.stringify(profile), timestamp, taskId);
+    .prepare("UPDATE topics SET topic_profile = ?, updated_at = ? WHERE id = ?")
+    .run(JSON.stringify(profile), timestamp, topicId);
 }
 
-export async function updateTaskScheduleProfile(
+export async function updateTopicScheduleProfile(
   store: Store,
-  taskId: string,
-  profile: TaskScheduleProfile | null,
+  topicId: string,
+  profile: TopicScheduleProfile | null,
 ): Promise<void> {
   if (store.prisma) {
-    await store.prisma.task.update({
-      where: { id: taskId },
+    await store.prisma.topic.update({
+      where: { id: topicId },
       data: {
         scheduleProfile: profile
           ? (profile as Prisma.InputJsonValue)
@@ -4041,21 +5397,21 @@ export async function updateTaskScheduleProfile(
   const timestamp = new Date().toISOString();
   store.database
     .prepare(
-      "UPDATE tasks SET schedule_profile = ?, updated_at = ? WHERE id = ?",
+      "UPDATE topics SET schedule_profile = ?, updated_at = ? WHERE id = ?",
     )
-    .run(profile ? JSON.stringify(profile) : null, timestamp, taskId);
+    .run(profile ? JSON.stringify(profile) : null, timestamp, topicId);
 }
 
-export async function updateTaskDeliveryChannels(
+export async function updateTopicDeliveryChannels(
   store: Store,
-  taskId: string,
+  topicId: string,
   channels: string[],
 ): Promise<void> {
   const uniqueChannels = [...new Set(channels)].filter(Boolean);
 
   if (store.prisma) {
-    await store.prisma.task.update({
-      where: { id: taskId },
+    await store.prisma.topic.update({
+      where: { id: topicId },
       data: {
         deliveryChannels: uniqueChannels as Prisma.InputJsonValue,
       },
@@ -4067,20 +5423,20 @@ export async function updateTaskDeliveryChannels(
   const timestamp = new Date().toISOString();
   store.database
     .prepare(
-      "UPDATE tasks SET delivery_channels = ?, updated_at = ? WHERE id = ?",
+      "UPDATE topics SET delivery_channels = ?, updated_at = ? WHERE id = ?",
     )
-    .run(JSON.stringify(uniqueChannels), timestamp, taskId);
+    .run(JSON.stringify(uniqueChannels), timestamp, topicId);
 }
 
 export async function replaceRecommendationBundles(
   store: Store,
-  taskId: string,
+  topicId: string,
   bundles: RecommendationBundle[],
 ): Promise<void> {
   if (store.prisma) {
     await store.prisma.$transaction(async (tx) => {
       await tx.recommendationBundle.deleteMany({
-        where: { taskId },
+        where: { topicId },
       });
 
       if (bundles.length === 0) {
@@ -4090,7 +5446,7 @@ export async function replaceRecommendationBundles(
       await tx.recommendationBundle.createMany({
         data: bundles.map((bundle, index) => ({
           id: randomUUID(),
-          taskId,
+          topicId,
           position: index,
           bundleJson: bundle as Prisma.InputJsonValue,
         })),
@@ -4101,12 +5457,12 @@ export async function replaceRecommendationBundles(
   }
 
   const deleteStatement = store.database.prepare(
-    "DELETE FROM recommendation_bundles WHERE task_id = ?",
+    "DELETE FROM recommendation_bundles WHERE topic_id = ?",
   );
   const insertStatement = store.database.prepare(
     `INSERT INTO recommendation_bundles (
       id,
-      task_id,
+      topic_id,
       position,
       bundle_json,
       created_at,
@@ -4117,13 +5473,13 @@ export async function replaceRecommendationBundles(
   store.database.exec("BEGIN");
 
   try {
-    deleteStatement.run(taskId);
+    deleteStatement.run(topicId);
 
     for (const [index, bundle] of bundles.entries()) {
       const timestamp = new Date().toISOString();
       insertStatement.run(
         randomUUID(),
-        taskId,
+        topicId,
         index,
         JSON.stringify(bundle),
         timestamp,
@@ -4138,13 +5494,13 @@ export async function replaceRecommendationBundles(
   }
 }
 
-export async function listRecommendationBundlesByTask(
+export async function listRecommendationBundlesByTopic(
   store: Store,
-  taskId: string,
+  topicId: string,
 ): Promise<RecommendationBundle[]> {
   if (store.prisma) {
     const rows = await store.prisma.recommendationBundle.findMany({
-      where: { taskId },
+      where: { topicId },
       orderBy: [{ position: "asc" }, { createdAt: "asc" }],
     });
 
@@ -4154,23 +5510,23 @@ export async function listRecommendationBundlesByTask(
   const rows = store.database
     .prepare(
       `SELECT * FROM recommendation_bundles
-       WHERE task_id = ?
+       WHERE topic_id = ?
        ORDER BY position ASC, created_at ASC`,
     )
-    .all(taskId) as RecommendationBundleRow[];
+    .all(topicId) as RecommendationBundleRow[];
 
   return rows.map(mapRecommendationBundle);
 }
 
-export async function updateTaskControls(
+export async function updateTopicControls(
   store: Store,
-  taskId: string,
+  topicId: string,
   relevanceLevel: number,
   summaryPreference: string,
 ): Promise<void> {
   if (store.prisma) {
-    await store.prisma.task.update({
-      where: { id: taskId },
+    await store.prisma.topic.update({
+      where: { id: topicId },
       data: {
         relevanceLevel,
         summaryPreference,
@@ -4183,18 +5539,18 @@ export async function updateTaskControls(
   const timestamp = new Date().toISOString();
   store.database
     .prepare(
-      `UPDATE tasks
+      `UPDATE topics
        SET relevance_level = ?,
            summary_preference = ?,
            updated_at = ?
        WHERE id = ?`,
     )
-    .run(relevanceLevel, summaryPreference, timestamp, taskId);
+    .run(relevanceLevel, summaryPreference, timestamp, topicId);
 }
 
 export async function getOrCreateChatThread(
   store: Store,
-  scopeType: "global" | "task" | "brief",
+  scopeType: "global" | "topic" | "brief",
   scopeId: string,
 ): Promise<ChatThreadRecord> {
   if (store.prisma) {
@@ -4274,7 +5630,7 @@ export async function getOrCreateChatThread(
 
 export async function findChatThread(
   store: Store,
-  scopeType: "global" | "task" | "brief",
+  scopeType: "global" | "topic" | "brief",
   scopeId: string,
 ): Promise<ChatThreadRecord | null> {
   if (store.prisma) {

@@ -1,7 +1,7 @@
 import * as cheerio from "cheerio";
 
 import { fetchSourceFeed } from "@/lib/source-sync";
-import type { SourceRecord, TaskRecord } from "@/lib/store";
+import type { SourceRecord, TopicRecord } from "@/lib/store";
 import { expandQualityTerms, type CandidateHeatMetrics } from "@/lib/item-quality";
 
 export type HotlistProvider =
@@ -88,32 +88,32 @@ export function buildHotlistSourceUrl() {
   return "radar://hotlist-discovery";
 }
 
-export function expandHotlistQueries(task: TaskRecord): string[] {
-  const profile = task.taskProfile;
-  const qualityTerms = expandQualityTerms(task).slice(0, 10);
+export function expandHotlistQueries(topic: TopicRecord): string[] {
+  const profile = topic.topicProfile;
+  const qualityTerms = expandQualityTerms(topic).slice(0, 10);
   const profileQueries = Array.isArray(profile?.suggestedQueries)
     ? profile.suggestedQueries
     : [];
 
   return uniqueValues([
     ...profileQueries,
-    task.userPrompt,
-    task.title,
+    topic.userPrompt,
+    topic.title,
     ...qualityTerms.slice(0, 6),
   ]).slice(0, 12);
 }
 
-export function buildHotlistSourceConfig(task: TaskRecord): HotlistSourceConfig {
+export function buildHotlistSourceConfig(topic: TopicRecord): HotlistSourceConfig {
   return {
     providers: [...DEFAULT_HOTLIST_PROVIDERS],
-    queries: expandHotlistQueries(task),
+    queries: expandHotlistQueries(topic),
     providerQuota: 20,
     totalQuota: 60,
   };
 }
 
-function getHotlistConfig(task: TaskRecord, source: SourceRecord): HotlistSourceConfig {
-  const fallback = buildHotlistSourceConfig(task);
+function getHotlistConfig(topic: TopicRecord, source: SourceRecord): HotlistSourceConfig {
+  const fallback = buildHotlistSourceConfig(topic);
   const raw = source.configJson ?? {};
 
   return {
@@ -269,13 +269,13 @@ async function fetchHotlistProviderCandidates(
 }
 
 export async function discoverHotlistCandidates(
-  task: TaskRecord,
+  topic: TopicRecord,
   source: SourceRecord,
   options?: {
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
   },
 ): Promise<HotlistDiscoveryResult> {
-  const config = getHotlistConfig(task, source);
+  const config = getHotlistConfig(topic, source);
   const fetchSourceFeedImpl = options?.fetchSourceFeedImpl ?? fetchSourceFeed;
   const candidates: HotlistCandidate[] = [];
   const failures: HotlistProviderFailure[] = [];

@@ -3,17 +3,17 @@ import {
   listConfiguredDeliveryChannels,
   type DeliveryChannel,
 } from "@/lib/delivery";
-import { generateTaskReport } from "@/lib/reports";
+import { generateTopicReport } from "@/lib/reports";
 import {
   getBriefById,
   getReportById,
   hasBriefOwner,
-  hasTaskOwner,
+  hasTopicOwner,
   listBriefsFiltered,
   listItemsBySource,
-  listReportsByTask,
+  listReportsByTopic,
   listSources,
-  listTasks,
+  listTopics,
   type BriefRecord,
   type ItemRecord,
   type ReportMode,
@@ -21,7 +21,7 @@ import {
 } from "@/lib/store";
 
 export type McpToolName =
-  | "list_tasks"
+  | "list_topics"
   | "search_items"
   | "list_briefs"
   | "read_brief"
@@ -48,9 +48,9 @@ export const INFLOWEE_MCP_TOOLS: Array<{
   description: string;
 }> = [
   {
-    name: "list_tasks",
+    name: "list_topics",
     readOnly: true,
-    description: "List monitoring tasks for the current actor.",
+    description: "List monitoring topics for the current actor.",
   },
   {
     name: "search_items",
@@ -60,7 +60,7 @@ export const INFLOWEE_MCP_TOOLS: Array<{
   {
     name: "list_briefs",
     readOnly: true,
-    description: "List actor-scoped briefs, optionally filtered by task.",
+    description: "List actor-scoped briefs, optionally filtered by topic.",
   },
   {
     name: "read_brief",
@@ -75,7 +75,7 @@ export const INFLOWEE_MCP_TOOLS: Array<{
   {
     name: "generate_report",
     readOnly: false,
-    description: "Generate a task report when action tools are enabled.",
+    description: "Generate a topic report when action tools are enabled.",
   },
   {
     name: "send_report",
@@ -149,8 +149,8 @@ async function listActorItems(context: McpToolContext) {
 function summarizeBrief(brief: BriefRecord) {
   return {
     id: brief.id,
-    taskId: brief.taskId,
-    taskTitle: brief.taskTitle,
+    topicId: brief.topicId,
+    topicTitle: brief.topicTitle,
     title: brief.title,
     summary: brief.summary,
     whyItMatters: brief.whyItMatters,
@@ -163,17 +163,17 @@ function summarizeBrief(brief: BriefRecord) {
 }
 
 export async function listMcpResources(context: McpToolContext) {
-  const tasks = await listTasks(context.store, { actorId: context.actorId });
+  const topics = await listTopics(context.store, { actorId: context.actorId });
   const [sources, deliveryChannels] = await Promise.all([
     listSources(context.store, { actorId: context.actorId }),
     listConfiguredDeliveryChannels(context.store),
   ]);
   const reportGroups = await Promise.all(
-    tasks.map((task) => listReportsByTask(context.store, task.id)),
+    topics.map((topic) => listReportsByTopic(context.store, topic.id)),
   );
 
   return {
-    tasks,
+    topics,
     sources,
     briefs: await listBriefsFiltered(context.store, { actorId: context.actorId }),
     reports: reportGroups.flat(),
@@ -186,29 +186,29 @@ export async function runInfloweeMcpTool(
   toolName: McpToolName,
   input: Record<string, unknown> = {},
 ): Promise<McpToolResponse> {
-  if (toolName === "list_tasks") {
-    const tasks = await listTasks(context.store, { actorId: context.actorId });
+  if (toolName === "list_topics") {
+    const topics = await listTopics(context.store, { actorId: context.actorId });
     return {
       success: true,
-      summary: `Found ${tasks.length} task(s).`,
-      data: tasks,
+      summary: `Found ${topics.length} topic(s).`,
+      data: topics,
     };
   }
 
   if (toolName === "list_briefs") {
-    const taskId = getString(input, "taskId");
+    const topicId = getString(input, "topicId");
 
-    if (taskId && !(await hasTaskOwner(context.store, context.actorId, taskId))) {
+    if (topicId && !(await hasTopicOwner(context.store, context.actorId, topicId))) {
       return {
         success: false,
-        summary: "Task is not accessible.",
-        error: "Task not found for the current actor.",
+        summary: "Topic is not accessible.",
+        error: "Topic not found for the current actor.",
       };
     }
 
     const briefs = await listBriefsFiltered(context.store, {
       actorId: context.actorId,
-      ...(taskId ? { taskId } : {}),
+      ...(topicId ? { topicId } : {}),
     });
 
     return {
@@ -293,14 +293,14 @@ export async function runInfloweeMcpTool(
       return allowed;
     }
 
-    const taskId = getString(input, "taskId");
+    const topicId = getString(input, "topicId");
     const mode = getString(input, "mode") as ReportMode;
 
-    if (!(await hasTaskOwner(context.store, context.actorId, taskId))) {
+    if (!(await hasTopicOwner(context.store, context.actorId, topicId))) {
       return {
         success: false,
-        summary: "Task is not accessible.",
-        error: "Task not found for the current actor.",
+        summary: "Topic is not accessible.",
+        error: "Topic not found for the current actor.",
       };
     }
 
@@ -312,7 +312,7 @@ export async function runInfloweeMcpTool(
       };
     }
 
-    const reportId = await generateTaskReport(context.store, taskId, { mode });
+    const reportId = await generateTopicReport(context.store, topicId, { mode });
     const report = await getReportById(context.store, reportId);
 
     return {
@@ -337,7 +337,7 @@ export async function runInfloweeMcpTool(
 
     if (
       !report ||
-      !(await hasTaskOwner(context.store, context.actorId, report.taskId))
+      !(await hasTopicOwner(context.store, context.actorId, report.topicId))
     ) {
       return {
         success: false,

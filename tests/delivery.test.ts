@@ -1,6 +1,9 @@
 /// <reference types="vitest/globals" />
 
 import {
+  SESSION_SECRET_ENV,
+} from "@/lib/auth-config";
+import {
   buildDeliveryPayload,
   deliverBriefWithRetry,
   deliverStoredBriefToConfiguredChannels,
@@ -10,15 +13,17 @@ import {
 } from "@/lib/delivery";
 import {
   createBriefRecord,
-  createTaskRecord,
+  createTopicRecord,
   listRecentDeliveryLogsByContent,
   saveDingTalkSettings,
   saveDefaultDeliveryChannels,
   saveDeliveryTemplate,
+  saveHtmlPushConfig,
   saveNtfySettings,
   saveWeComSettings,
-  updateTaskDeliveryChannels,
+  updateTopicDeliveryChannels,
 } from "@/lib/store";
+import { encryptSecret } from "@/lib/secret-box";
 import { makeBriefRecord } from "./helpers/records";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
@@ -105,18 +110,18 @@ describe("delivery payloads", () => {
     }
   });
 
-  it("uses task-level delivery channel overrides", async () => {
+  it("uses topic-level delivery channel overrides", async () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents.",
       });
       const briefId = await createBriefRecord(fixture.store, {
-        taskId,
+        topicId,
         itemIds: [],
         title: "Agent launch",
         summary: "A new coding agent launched.",
@@ -128,7 +133,7 @@ describe("delivery payloads", () => {
         fixture.store,
         "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
       );
-      await updateTaskDeliveryChannels(fixture.store, taskId, ["ntfy"]);
+      await updateTopicDeliveryChannels(fixture.store, topicId, ["ntfy"]);
       const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
         new Response("ok", { status: 200 }),
       );
@@ -148,18 +153,18 @@ describe("delivery payloads", () => {
     }
   });
 
-  it("uses global default delivery channels when a task has no override", async () => {
+  it("uses global default delivery channels when a topic has no override", async () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents.",
       });
       const briefId = await createBriefRecord(fixture.store, {
-        taskId,
+        topicId,
         itemIds: [],
         title: "Agent launch",
         summary: "A new coding agent launched.",
@@ -190,6 +195,124 @@ describe("delivery payloads", () => {
       );
     } finally {
       fixture.cleanup();
+    }
+  });
+
+  it("publishes one HTML summary and appends the same URL to every configured channel", async () => {
+    const previousSecret = process.env[SESSION_SECRET_ENV];
+    const previousOpenAiKey = process.env.OPENAI_API_KEY;
+    const previousAiKey = process.env.AI_API_KEY;
+    process.env[SESSION_SECRET_ENV] = "test-secret";
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.AI_API_KEY;
+    const fixture = createSqliteFixture();
+
+    try {
+      const topicId = await createTopicRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "Track agents",
+        topicType: "TOPIC",
+        userPrompt: "Track coding agents.",
+      });
+      const briefId = await createBriefRecord(fixture.store, {
+        topicId,
+        itemIds: [],
+        title: "Agent launch",
+        summary: "A new coding agent launched.",
+        whyItMatters: "Developer tooling is changing.",
+        sourceCitations: ["https://example.com/agent"],
+      });
+      await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
+      await saveWeComSettings(
+        fixture.store,
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+      );
+      await updateTopicDeliveryChannels(fixture.store, topicId, [
+        "ntfy",
+        "wecom",
+      ]);
+      await saveHtmlPushConfig(fixture.store, {
+        ownerId: "user-1",
+        enabled: true,
+        stylePreset: "minimal_news",
+        modulePreset: "standard_summary",
+        enabledModules: ["summary", "key_content", "citations"],
+        githubTokenEncrypted: encryptSecret("github-token"),
+        githubRepo: "owner/repo",
+        githubBranch: "main",
+        githubBasePath: "inflowee/html",
+        publicBaseUrl: "https://pages.example.com",
+      });
+      const fetchImpl = vi.fn<typeof fetch>().mockImplementation(
+        async (url: string | URL | Request, init?: RequestInit) => {
+          const href = String(url);
+
+          if (href.startsWith("https://api.github.com") && !init?.method) {
+            return new Response("", { status: 404 });
+          }
+
+          if (href.startsWith("https://api.github.com")) {
+            return new Response(
+              JSON.stringify({
+                content: { html_url: "https://github.com/owner/repo/blob/main/file.html" },
+                commit: { sha: "commit-sha" },
+              }),
+              { status: 200 },
+            );
+          }
+
+          return new Response("ok", { status: 200 });
+        },
+      );
+
+      const result = await deliverStoredBriefToConfiguredChannels(
+        fixture.store,
+        briefId,
+        { fetchImpl },
+      );
+
+      expect(result.status).toBe("success");
+      expect(fetchImpl).toHaveBeenCalledTimes(4);
+      const deliveryBodies = fetchImpl.mock.calls
+        .filter(([url]) => !String(url).startsWith("https://api.github.com"))
+        .map(([, init]) => String(init?.body));
+
+      expect(deliveryBodies).toHaveLength(2);
+      for (const body of deliveryBodies) {
+        expect(body).toContain(
+          "https://pages.example.com/inflowee/html/topics/track-agents/brief-" +
+            `${briefId}.html`,
+        );
+      }
+      expect(
+        await listRecentDeliveryLogsByContent(
+          fixture.store,
+          "brief",
+          briefId,
+        ),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ htmlStatus: "published" }),
+          expect.objectContaining({ htmlStatus: "published" }),
+        ]),
+      );
+    } finally {
+      fixture.cleanup();
+      if (previousSecret === undefined) {
+        delete process.env[SESSION_SECRET_ENV];
+      } else {
+        process.env[SESSION_SECRET_ENV] = previousSecret;
+      }
+      if (previousOpenAiKey === undefined) {
+        delete process.env.OPENAI_API_KEY;
+      } else {
+        process.env.OPENAI_API_KEY = previousOpenAiKey;
+      }
+      if (previousAiKey === undefined) {
+        delete process.env.AI_API_KEY;
+      } else {
+        process.env.AI_API_KEY = previousAiKey;
+      }
     }
   });
 

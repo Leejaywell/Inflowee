@@ -1,15 +1,15 @@
-import type { BriefRecord, ItemRecord, TaskRecord } from "@/lib/store";
+import type { BriefRecord, ItemRecord, TopicRecord } from "@/lib/store";
 
-export function makeTaskRecord(overrides: Partial<TaskRecord> = {}): TaskRecord {
+export function makeTopicRecord(overrides: Partial<TopicRecord> = {}): TopicRecord {
   return {
-    id: "task-1",
+    id: "topic-1",
     ownerId: "local-user",
     title: "Monitor coding agents",
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt: "Monitor autonomous coding agents and developer tools.",
     relevanceLevel: 3,
     summaryPreference: "balanced",
-    taskProfile: null,
+    topicProfile: null,
     createdAt: "2026-05-22T00:00:00.000Z",
     updatedAt: "2026-05-22T00:00:00.000Z",
     ...overrides,
@@ -56,7 +56,7 @@ export function makeItemRecord(overrides: Partial<ItemRecord> = {}): ItemRecord 
 export function makeBriefRecord(overrides: Partial<BriefRecord> = {}): BriefRecord {
   return {
     id: "brief-1",
-    taskId: "task-1",
+    topicId: "topic-1",
     title: "Devin updates announced",
     summary: "Autonomous coding agent achieves SWE-bench progress.",
     whyItMatters: "Advancements redefine agentic coding tools.",
@@ -66,7 +66,7 @@ export function makeBriefRecord(overrides: Partial<BriefRecord> = {}): BriefReco
     tags: ["agent"],
     isRead: false,
     createdAt: "2026-05-22T00:00:00.000Z",
-    taskTitle: "Monitor coding agents",
+    topicTitle: "Monitor coding agents",
     ...overrides,
   };
 }

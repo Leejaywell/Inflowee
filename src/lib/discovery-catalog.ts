@@ -1,6 +1,6 @@
 import { sourcePresets, type SourcePresetCategory } from "@/lib/source-presets";
 import type { SubscriptionDiscoveryPlan } from "@/lib/ai";
-import type { SourceType, TaskProfile } from "@/lib/store";
+import type { SourceType, TopicProfile } from "@/lib/store";
 
 export type DiscoveryCategory = {
   id: string;
@@ -15,7 +15,7 @@ export type DiscoveryTagKind =
   | "source_type"
   | "trend"
   | "language"
-  | "task_relevance";
+  | "topic_relevance";
 
 export type DiscoveryTag = {
   id: string;
@@ -51,7 +51,7 @@ export type DiscoverySourceStats = {
 };
 
 export type DiscoveryCatalogContext = {
-  profile?: TaskProfile | null;
+  profile?: TopicProfile | null;
   aiPlan?: SubscriptionDiscoveryPlan | null;
   stats?: DiscoverySourceStats | null;
   categoryId?: string;
@@ -193,8 +193,8 @@ const presetCategoryMap: Record<SourcePresetCategory, string[]> = {
 const baseTags: DiscoveryTag[] = [
   { id: "trend-hot", label: "高热度", categoryId: "all", kind: "trend", weight: 95 },
   { id: "trend-rising", label: "订阅量上升", categoryId: "all", kind: "trend", weight: 88 },
-  { id: "ai-recommended", label: "AI 推荐", categoryId: "all", kind: "task_relevance", weight: 90 },
-  { id: "high-relevance", label: "与目标相关", categoryId: "all", kind: "task_relevance", weight: 92 },
+  { id: "ai-recommended", label: "AI 推荐", categoryId: "all", kind: "topic_relevance", weight: 90 },
+  { id: "high-relevance", label: "与话题相关", categoryId: "all", kind: "topic_relevance", weight: 92 },
   { id: "official", label: "官方源", categoryId: "all", kind: "source_type", weight: 80 },
   { id: "rss", label: "RSS", categoryId: "all", kind: "source_type", weight: 76 },
   { id: "rsshub", label: "RSSHub", categoryId: "all", kind: "source_type", weight: 74 },
@@ -294,7 +294,7 @@ function inferPresetTags(input: {
   return [...tags];
 }
 
-function keywordScore(text: string, profile?: TaskProfile | null) {
+function keywordScore(text: string, profile?: TopicProfile | null) {
   if (!profile) {
     return 0;
   }
@@ -325,22 +325,22 @@ export function getDiscoveryCategories(aiPlan?: SubscriptionDiscoveryPlan | null
 
 export function getDiscoveryTags(
   categoryId: string,
-  profileOrContext?: TaskProfile | DiscoveryCatalogContext | null,
+  profileOrContext?: TopicProfile | DiscoveryCatalogContext | null,
 ): DiscoveryTag[] {
   const context =
     profileOrContext && "profile" in profileOrContext
       ? profileOrContext
-      : { profile: profileOrContext as TaskProfile | null | undefined };
+      : { profile: profileOrContext as TopicProfile | null | undefined };
   const profile = context.profile;
   const categoryTags = baseTags.filter(
     (tag) => tag.categoryId === "all" || tag.categoryId === categoryId,
   );
-  const taskTags =
+  const topicTags =
     profile?.keywords.slice(0, 8).map((keyword, index) => ({
-      id: `task-${keyword.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")}`,
+      id: `topic-${keyword.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, "-")}`,
       label: keyword,
       categoryId,
-      kind: "task_relevance" as const,
+      kind: "topic_relevance" as const,
       weight: 100 - index,
     })) ?? [];
 
@@ -351,11 +351,11 @@ export function getDiscoveryTags(
         id: tag.id,
         label: tag.label,
         categoryId: tag.categoryId,
-        kind: "task_relevance" as const,
+        kind: "topic_relevance" as const,
         weight: tag.weight,
       })) ?? [];
 
-  return [...aiTags, ...taskTags, ...categoryTags].sort(
+  return [...aiTags, ...topicTags, ...categoryTags].sort(
     (a, b) => b.weight - a.weight || a.label.localeCompare(b.label),
   );
 }
@@ -375,12 +375,12 @@ export function getDiscoveryTagBatch(
 }
 
 export function mapSourcePresetsToDiscoveryCandidates(
-  contextOrProfile?: DiscoveryCatalogContext | TaskProfile | null,
+  contextOrProfile?: DiscoveryCatalogContext | TopicProfile | null,
 ): DiscoverySourceCandidate[] {
   const context =
     contextOrProfile && "profile" in contextOrProfile
       ? contextOrProfile
-      : { profile: contextOrProfile as TaskProfile | null | undefined };
+      : { profile: contextOrProfile as TopicProfile | null | undefined };
   const profile = context.profile;
   return sourcePresets.map((preset) => {
     const categoryIds = ["all", ...(presetCategoryMap[preset.category] ?? [])];
@@ -419,7 +419,7 @@ export function mapSourcePresetsToDiscoveryCandidates(
       ...(heatScore >= 70 ? ["高热度"] : []),
       ...(subscriberCount > 0 ? ["已有用户订阅"] : []),
       ...(recentSubscriberGrowth > 0 ? ["订阅量上升"] : []),
-      ...(relevanceScore >= 0.7 ? ["与目标相关"] : []),
+      ...(relevanceScore >= 0.7 ? ["与话题相关"] : []),
       ...(preset.sourceType === "RSS" || preset.sourceType === "UPDATE"
         ? ["官方源"]
         : []),
@@ -445,8 +445,8 @@ export function mapSourcePresetsToDiscoveryCandidates(
   });
 }
 
-export function buildTaskAiCandidates(
-  profile?: TaskProfile | null,
+export function buildTopicAiCandidates(
+  profile?: TopicProfile | null,
 ): DiscoverySourceCandidate[] {
   if (!profile?.keywords.length) {
     return [];
@@ -455,7 +455,7 @@ export function buildTaskAiCandidates(
   return profile.keywords.slice(0, 2).map((keyword, index) => ({
     id: `ai:topic:${index}`,
     title: `${keyword} AI 推荐源`,
-    description: "根据当前监控目标关键词补充的 AI 推荐订阅源。",
+    description: "根据当前话题关键词补充的 AI 推荐订阅源。",
     url: `radar://search-discovery/ai-${index}`,
     sourceType: "SEARCH_DISCOVERY",
     categoryIds: ["all", "technology", "media"],
@@ -463,13 +463,13 @@ export function buildTaskAiCandidates(
     origin: "ai" as const,
     heatScore: 76 - index * 3,
     relevanceScore: 0.86 - index * 0.04,
-    trendLabels: ["AI 推荐", "与目标相关"],
+    trendLabels: ["AI 推荐", "与话题相关"],
     configJson: null,
   }));
 }
 
-export function buildTaskDiscoveryCandidates(
-  profile?: TaskProfile | null,
+export function buildTopicDiscoveryCandidates(
+  profile?: TopicProfile | null,
 ): DiscoverySourceCandidate[] {
   if (!profile?.suggestedQueries.length) {
     return [];
@@ -478,15 +478,15 @@ export function buildTaskDiscoveryCandidates(
   return profile.suggestedQueries.slice(0, 3).map((query, index) => ({
     id: `discovery:search:${index}`,
     title: `${query} 搜索发现`,
-    description: "根据当前监控目标生成的动态搜索发现源。",
-    url: "radar://search-discovery/task",
+    description: "根据当前话题生成的动态搜索发现源。",
+    url: "radar://search-discovery/topic",
     sourceType: "SEARCH_DISCOVERY",
     categoryIds: ["all", "technology", "media"],
     tagIds: ["ai-recommended", "high-relevance", "search", "trend-hot"],
     origin: "discovery" as const,
     heatScore: 82 - index * 4,
     relevanceScore: 0.9 - index * 0.05,
-    trendLabels: ["AI 推荐", "与目标相关", "搜索发现"],
+    trendLabels: ["AI 推荐", "与话题相关", "搜索发现"],
     configJson: null,
   }));
 }
@@ -552,7 +552,7 @@ export function buildContextualDiscoveryCandidates(
       origin: "discovery",
       heatScore: 88,
       relevanceScore: 0.92,
-      trendLabels: ["AI 推荐", "实时发现", "与目标相关", "搜索发现"],
+      trendLabels: ["AI 推荐", "实时发现", "与话题相关", "搜索发现"],
       configJson: {
         providers: ["bing", "hacker-news", "reddit", "product-hunt"],
         queries,
@@ -572,7 +572,7 @@ export function buildContextualDiscoveryCandidates(
       origin: "discovery",
       heatScore: 82,
       relevanceScore: 0.88,
-      trendLabels: ["社区讨论", "与目标相关"],
+      trendLabels: ["社区讨论", "与话题相关"],
       configJson: {
         providers: ["hacker-news", "reddit", "product-hunt"],
         queries,
@@ -604,16 +604,16 @@ export function buildContextualDiscoveryCandidates(
 }
 
 export function getDiscoverySourceCandidates(
-  contextOrProfile?: DiscoveryCatalogContext | TaskProfile | null,
+  contextOrProfile?: DiscoveryCatalogContext | TopicProfile | null,
 ) {
   const context =
     contextOrProfile && "profile" in contextOrProfile
       ? contextOrProfile
-      : { profile: contextOrProfile as TaskProfile | null | undefined };
+      : { profile: contextOrProfile as TopicProfile | null | undefined };
 
   return [
-    ...buildTaskAiCandidates(context.profile),
-    ...buildTaskDiscoveryCandidates(context.profile),
+    ...buildTopicAiCandidates(context.profile),
+    ...buildTopicDiscoveryCandidates(context.profile),
     ...buildContextualDiscoveryCandidates(context),
     ...mapSourcePresetsToDiscoveryCandidates(context),
   ].sort((a, b) => {

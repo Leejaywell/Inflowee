@@ -1,17 +1,17 @@
 import {
   deliverTextToChannel,
-  listDeliveryChannelsForTask,
+  listDeliveryChannelsForTopic,
   type DeliveryChannel,
 } from "@/lib/delivery";
-import { generateTaskReport } from "@/lib/reports";
+import { generateTopicReport } from "@/lib/reports";
 import { syncSourceById, type SyncSourceResult } from "@/lib/source-ingestion";
 import {
   getActiveScheduleWindow,
   shouldCollectForSchedule,
-} from "@/lib/task-schedule";
+} from "@/lib/topic-schedule";
 import {
-  getTaskById,
-  listReportsByTask,
+  getTopicById,
+  listReportsByTopic,
   listDueSources,
   listSources,
   scheduleNextSourceSync,
@@ -40,19 +40,19 @@ export async function syncDueSources(
   options?: {
     now?: string;
     syncSourceByIdImpl?: typeof syncSourceById;
-    generateTaskReportImpl?: typeof generateTaskReport;
+    generateTopicReportImpl?: typeof generateTopicReport;
     deliverTextToChannelImpl?: typeof deliverTextToChannel;
   },
 ): Promise<SyncDueSourcesResult> {
   const now = options?.now ?? new Date().toISOString();
   const dueSources = await listDueSources(store, now);
   const syncImpl = options?.syncSourceByIdImpl ?? syncSourceById;
-  const generateReportImpl = options?.generateTaskReportImpl ?? generateTaskReport;
+  const generateReportImpl = options?.generateTopicReportImpl ?? generateTopicReport;
   const deliverReportImpl =
     options?.deliverTextToChannelImpl ?? deliverTextToChannel;
   const scheduledAt = new Date(now);
   const results: SyncSourceResult[] = [];
-  const syncedTaskIds = new Set<string>();
+  const syncedTopicIds = new Set<string>();
   let synced = 0;
   let failed = 0;
   let skippedBySchedule = 0;
@@ -60,9 +60,9 @@ export async function syncDueSources(
   let reportsDelivered = 0;
 
   for (const source of dueSources) {
-    const task = await getTaskById(store, source.taskId);
+    const topic = await getTopicById(store, source.topicId);
 
-    if (!shouldCollectForSchedule(task?.scheduleProfile, scheduledAt)) {
+    if (!shouldCollectForSchedule(topic?.scheduleProfile, scheduledAt)) {
       skippedBySchedule++;
       continue;
     }
@@ -83,7 +83,7 @@ export async function syncDueSources(
 
     if (result.ok) {
       synced++;
-      syncedTaskIds.add(source.taskId);
+      syncedTopicIds.add(source.topicId);
       await scheduleNextSourceSync(
         store,
         source.id,
@@ -95,15 +95,15 @@ export async function syncDueSources(
     }
   }
 
-  for (const taskId of syncedTaskIds) {
-    const task = await getTaskById(store, taskId);
-    const activeWindow = getActiveScheduleWindow(task?.scheduleProfile, scheduledAt);
+  for (const topicId of syncedTopicIds) {
+    const topic = await getTopicById(store, topicId);
+    const activeWindow = getActiveScheduleWindow(topic?.scheduleProfile, scheduledAt);
 
-    if (!task || !activeWindow?.generateReports) {
+    if (!topic || !activeWindow?.generateReports) {
       continue;
     }
 
-    const recentReports = await listReportsByTask(store, taskId);
+    const recentReports = await listReportsByTopic(store, topicId);
     const reportRecentlyGenerated = recentReports.some((report) => {
       if (report.mode !== activeWindow.reportMode) {
         return false;
@@ -117,7 +117,7 @@ export async function syncDueSources(
       continue;
     }
 
-    const reportId = await generateReportImpl(store, taskId, {
+    const reportId = await generateReportImpl(store, topicId, {
       mode: activeWindow.reportMode,
       now: scheduledAt,
     });
@@ -127,7 +127,7 @@ export async function syncDueSources(
       continue;
     }
 
-    const report = (await listReportsByTask(store, taskId)).find(
+    const report = (await listReportsByTopic(store, topicId)).find(
       (candidate) => candidate.id === reportId,
     );
 
@@ -135,7 +135,7 @@ export async function syncDueSources(
       continue;
     }
 
-    const channels = await listDeliveryChannelsForTask(store, taskId);
+    const channels = await listDeliveryChannelsForTopic(store, topicId);
 
     for (const channel of channels.slice(0, activeWindow.maxPushItems)) {
       const result = await deliverReportImpl(

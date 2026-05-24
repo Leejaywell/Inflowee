@@ -17,7 +17,7 @@ import {
   listRecentSyncRunsBySource,
   listRecentSyncRuns,
   listSources,
-  listTasks,
+  listTopics,
   type SyncRunRecord,
   type SourceRecord,
   type SourceStatus,
@@ -55,35 +55,35 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
     success: t.statusSuccess,
     error: t.statusError,
   };
-  const [tasksRaw, sources, healthSummary, recentRuns, params] = await Promise.all([
-    listTasks(defaultStore, { actorId: actor.id }),
+  const [topicsRaw, sources, healthSummary, recentRuns, params] = await Promise.all([
+    listTopics(defaultStore, { actorId: actor.id }),
     listSources(defaultStore, { actorId: actor.id }),
     getSourceHealthSummary(defaultStore, { actorId: actor.id }),
     listRecentSyncRuns(defaultStore, 10, { actorId: actor.id }),
     searchParams,
   ]);
-  const sourcesByTask = new Map<string, SourceWithRuns[]>();
+  const sourcesByTopic = new Map<string, SourceWithRuns[]>();
   const sourceById = new Map<string, SourceRecord>();
 
   for (const source of sources) {
     sourceById.set(source.id, source);
-    const taskSources = sourcesByTask.get(source.taskId) ?? [];
-    taskSources.push({
+    const topicSources = sourcesByTopic.get(source.topicId) ?? [];
+    topicSources.push({
       ...source,
       recentRuns: await listRecentSyncRunsBySource(defaultStore, source.id),
     });
-    sourcesByTask.set(source.taskId, taskSources);
+    sourcesByTopic.set(source.topicId, topicSources);
   }
 
-  const tasks = tasksRaw.map((task) => ({
-    ...task,
-    sources: sourcesByTask.get(task.id) ?? [],
+  const topics = topicsRaw.map((topic) => ({
+    ...topic,
+    sources: sourcesByTopic.get(topic.id) ?? [],
   }));
   const created = params?.created;
   const error = params?.error;
   const synced = params?.synced;
   const updated = params?.updated;
-  const totalSources = tasks.reduce((count, task) => count + task.sources.length, 0);
+  const totalSources = topics.reduce((count, topic) => count + topic.sources.length, 0);
 
   return (
     <div className="grid gap-5">
@@ -131,16 +131,16 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         <Surface>
           <div className="mb-5 flex items-center justify-between border-b border-stone-100 pb-5">
             <div>
-              <h2 className="text-xl font-semibold">{t.taskSources}</h2>
+              <h2 className="text-xl font-semibold">{t.topicSources}</h2>
               <p className="mt-1 text-sm leading-6 text-stone-500">
-                {t.taskSourcesDescription}
+                {t.topicSourcesDescription}
               </p>
             </div>
             <div className="flex items-center gap-3">
               <span className="text-xs uppercase tracking-[0.14em] text-stone-400">
                 {totalSources} {t.sources}
               </span>
-              {tasks.length > 0 && tasks.some((tk) => tk.sources.length > 0) && (
+              {topics.length > 0 && topics.some((tk) => tk.sources.length > 0) && (
                 <form action={runSyncAll}>
                   <button className="inline-flex h-9 items-center justify-center rounded-xl bg-stone-900 px-4 text-xs font-semibold uppercase tracking-wider text-white transition hover:bg-stone-800">
                     {t.syncAll}
@@ -150,33 +150,33 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             </div>
           </div>
 
-          {tasks.length === 0 ? (
+          {topics.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
-              {t.noTasks}
+              {t.noTopics}
             </div>
           ) : (
             <div className="grid gap-5">
-              {tasks.map((task) => (
-                <div key={task.id}>
+              {topics.map((topic) => (
+                <div key={topic.id}>
                   <div className="mb-3 flex items-center gap-2">
                     <Link
-                      href={`/tasks/${task.id}`}
+                      href={`/topics/${topic.id}`}
                       className="text-base font-semibold text-stone-950 hover:text-[#0057ff]"
                     >
-                      {task.title}
+                      {topic.title}
                     </Link>
                     <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-500">
-                      {task.sources.length} {t.sources}
+                      {topic.sources.length} {t.sources}
                     </span>
                   </div>
 
-                  {task.sources.length === 0 ? (
+                  {topic.sources.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-500">
-                      {t.noSourcesForTask}
+                      {t.noSourcesForTopic}
                     </p>
                   ) : (
                     <div className="grid gap-3">
-                      {task.sources.map((source) => (
+                      {topic.sources.map((source) => (
                         <div
                           key={source.id}
                           className="rounded-2xl bg-stone-50 p-4 shadow-[0_4px_16px_rgba(33,24,9,0.04)]"
@@ -305,19 +305,19 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             <div className="grid gap-3">
               <label className="grid gap-1.5 text-sm">
                 <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {t.task}
+                  {t.topic}
                 </span>
                 <select
-                  name="taskId"
+                  name="topicId"
                   className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
                   defaultValue=""
                 >
                   <option value="" disabled>
-                    {t.selectTask}
+                    {t.selectTopic}
                   </option>
-                  {tasks.map((task) => (
-                    <option key={task.id} value={task.id}>
-                      {task.title}
+                  {topics.map((topic) => (
+                    <option key={topic.id} value={topic.id}>
+                      {topic.title}
                     </option>
                   ))}
                 </select>
@@ -368,7 +368,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
 
               <button
                 className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0057ff] px-4 text-sm font-medium text-white transition hover:bg-[#0049d6] disabled:opacity-50"
-                disabled={tasks.length === 0}
+                disabled={topics.length === 0}
               >
                 {t.saveSource}
               </button>
@@ -387,19 +387,19 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
 
             <label className="mb-4 grid gap-1.5 text-sm">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                {t.task}
+                {t.topic}
               </span>
               <select
-                name="taskId"
+                name="topicId"
                 className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
                 defaultValue=""
               >
                 <option value="" disabled>
-                  {t.selectTask}
+                  {t.selectTopic}
                 </option>
-                {tasks.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.title}
+                {topics.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.title}
                   </option>
                 ))}
               </select>
@@ -430,7 +430,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                       name="presetId"
                       value={preset.id}
                       className="inline-flex h-8 shrink-0 items-center justify-center rounded-xl bg-stone-900 px-3 text-xs font-semibold uppercase tracking-wider text-white transition hover:bg-stone-800 disabled:opacity-40"
-                      disabled={tasks.length === 0}
+                      disabled={topics.length === 0}
                     >
                       {t.add}
                     </button>

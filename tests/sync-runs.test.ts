@@ -3,18 +3,18 @@
 import {
   createSourceRecord,
   createSyncRun,
-  createTaskRecord,
+  createTopicRecord,
   finishSyncRun,
-  listReportsByTask,
+  listReportsByTopic,
   listRecentSyncRuns,
   listRecentSyncRunsBySource,
   markSourceSyncResult,
   saveNtfySettings,
-  updateTaskDeliveryChannels,
-  updateTaskScheduleProfile,
+  updateTopicDeliveryChannels,
+  updateTopicScheduleProfile,
 } from "@/lib/store";
 import { syncDueSources } from "@/lib/sync-runs";
-import { buildSchedulePreset } from "@/lib/task-schedule";
+import { buildSchedulePreset } from "@/lib/topic-schedule";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
 describe("sync run tracking", () => {
@@ -22,14 +22,14 @@ describe("sync run tracking", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents.",
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "Agent feed",
         url: "https://example.com/feed.xml",
@@ -63,23 +63,23 @@ describe("sync run tracking", () => {
     }
   });
 
-  it("skips due sources outside their task schedule window", async () => {
+  it("skips due sources outside their topic schedule window", async () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents.",
       });
-      await updateTaskScheduleProfile(
+      await updateTopicScheduleProfile(
         fixture.store,
-        taskId,
+        topicId,
         buildSchedulePreset("office_hours", "Asia/Shanghai"),
       );
       await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "Agent feed",
         url: "https://example.com/feed.xml",
@@ -105,25 +105,25 @@ describe("sync run tracking", () => {
     }
   });
 
-  it("generates and pushes scheduled task reports after due syncs", async () => {
+  it("generates and pushes scheduled topic reports after due syncs", async () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents.",
       });
-      await updateTaskScheduleProfile(
+      await updateTopicScheduleProfile(
         fixture.store,
-        taskId,
+        topicId,
         buildSchedulePreset("morning_evening", "Asia/Shanghai"),
       );
       await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
-      await updateTaskDeliveryChannels(fixture.store, taskId, ["ntfy"]);
+      await updateTopicDeliveryChannels(fixture.store, topicId, ["ntfy"]);
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "Agent feed",
         url: "https://example.com/feed.xml",
@@ -134,7 +134,7 @@ describe("sync run tracking", () => {
         createdBriefCount: 0,
         source: {
           id: sourceId,
-          taskId,
+          topicId,
           syncIntervalMinutes: 360,
         },
       });
@@ -152,7 +152,7 @@ describe("sync run tracking", () => {
 
       expect(result.reportsGenerated).toBe(1);
       expect(result.reportsDelivered).toBe(1);
-      expect(await listReportsByTask(fixture.store, taskId)).toHaveLength(1);
+      expect(await listReportsByTopic(fixture.store, topicId)).toHaveLength(1);
       expect(deliverTextToChannelImpl).toHaveBeenCalledWith(
         fixture.store,
         "ntfy",

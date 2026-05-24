@@ -8,26 +8,26 @@ import {
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
 } from "@/lib/store";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
 async function seedMcpFixture() {
   const fixture = createSqliteFixture();
-  const taskId = await createTaskRecord(fixture.store, {
+  const topicId = await createTopicRecord(fixture.store, {
     ownerId: "user-1",
     title: "Track agents",
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt: "Track AI coding agents.",
   });
-  await createTaskRecord(fixture.store, {
+  await createTopicRecord(fixture.store, {
     ownerId: "user-2",
-    title: "Other task",
-    taskType: "TOPIC",
+    title: "Other topic",
+    topicType: "TOPIC",
     userPrompt: "Track unrelated updates.",
   });
   const sourceId = await createSourceRecord(fixture.store, {
-    taskId,
+    topicId,
     sourceType: "RSS",
     title: "Agent feed",
     url: "https://example.com/feed.xml",
@@ -41,7 +41,7 @@ async function seedMcpFixture() {
     relevanceScore: 0.9,
   });
   const briefId = await createBriefRecord(fixture.store, {
-    taskId,
+    topicId,
     itemIds: item ? [item.id] : [],
     title: "Agent launch",
     summary: "A new AI coding agent launched.",
@@ -51,14 +51,14 @@ async function seedMcpFixture() {
 
   return {
     fixture,
-    taskId,
+    topicId,
     itemId: item?.id,
     briefId,
   };
 }
 
 describe("MCP tool layer", () => {
-  it("lists actor-scoped tasks and reads briefs", async () => {
+  it("lists actor-scoped topics and reads briefs", async () => {
     const { fixture, briefId } = await seedMcpFixture();
 
     try {
@@ -67,7 +67,7 @@ describe("MCP tool layer", () => {
         actorId: "user-1",
       };
 
-      await expect(runInfloweeMcpTool(context, "list_tasks")).resolves.toEqual(
+      await expect(runInfloweeMcpTool(context, "list_topics")).resolves.toEqual(
         expect.objectContaining({
           success: true,
           data: [expect.objectContaining({ title: "Track agents" })],
@@ -128,14 +128,14 @@ describe("MCP tool layer", () => {
   });
 
   it("rejects action tools unless explicitly enabled", async () => {
-    const { fixture, taskId } = await seedMcpFixture();
+    const { fixture, topicId } = await seedMcpFixture();
 
     try {
       await expect(
         runInfloweeMcpTool(
           { store: fixture.store, actorId: "user-1" },
           "generate_report",
-          { taskId, mode: "current" },
+          { topicId, mode: "current" },
         ),
       ).resolves.toEqual(
         expect.objectContaining({
@@ -149,7 +149,7 @@ describe("MCP tool layer", () => {
   });
 
   it("generates reports when actions are enabled and blocks unconfigured delivery", async () => {
-    const { fixture, taskId } = await seedMcpFixture();
+    const { fixture, topicId } = await seedMcpFixture();
 
     try {
       const context = {
@@ -160,7 +160,7 @@ describe("MCP tool layer", () => {
       const reportResult = await runInfloweeMcpTool(
         context,
         "generate_report",
-        { taskId, mode: "current" },
+        { topicId, mode: "current" },
       );
 
       expect(reportResult.success).toBe(true);
@@ -191,7 +191,7 @@ describe("MCP tool layer", () => {
         actorId: "user-1",
       });
 
-      expect(resources.tasks).toHaveLength(1);
+      expect(resources.topics).toHaveLength(1);
       expect(resources.briefs).toHaveLength(1);
       expect(resources.deliveryChannels).toContainEqual(
         expect.objectContaining({

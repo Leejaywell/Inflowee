@@ -26,7 +26,7 @@ import {
   createSyncRun,
   finishSyncRun,
   getSourceById,
-  getTaskById,
+  getTopicById,
   getTelegramSourceSettings,
   listSources,
   markSourceSyncResult,
@@ -135,7 +135,7 @@ export async function storeSourceItemsAndCreateBriefs(
   store: Store,
   source: {
     id: string;
-    taskId: string;
+    topicId: string;
     sourceType?: SourceType;
     title?: string;
     url?: string;
@@ -143,9 +143,9 @@ export async function storeSourceItemsAndCreateBriefs(
   },
   items: SourceItemCandidate[],
 ) {
-  const task = await getTaskById(store, source.taskId);
-  if (!task) {
-    throw new Error(`Task with ID ${source.taskId} not found.`);
+  const topic = await getTopicById(store, source.topicId);
+  if (!topic) {
+    throw new Error(`Topic with ID ${source.topicId} not found.`);
   }
 
   const enrichedItems = await Promise.all(
@@ -159,7 +159,7 @@ export async function storeSourceItemsAndCreateBriefs(
 
   const storedItems = await Promise.all(
     enrichedItems.map((item) => {
-      const quality = analyzeItemQuality(task, item);
+      const quality = analyzeItemQuality(topic, item);
 
       return createItemRecordResult(store, {
         sourceId: source.id,
@@ -215,14 +215,14 @@ export async function storeSourceItemsAndCreateBriefs(
     };
   }
 
-  const briefs = await generateBriefsFromItems(task, unbriefedItems);
+  const briefs = await generateBriefsFromItems(topic, unbriefedItems);
   const hasDeliveryChannel = (await listConfiguredDeliveryChannels(store)).some(
     (channel) => channel.enabled,
   );
 
   for (const brief of briefs) {
     const briefId = await createBriefRecord(store, {
-      taskId: source.taskId,
+      topicId: source.topicId,
       itemIds: brief.itemIds,
       title: brief.title,
       summary: brief.summary,
@@ -353,13 +353,13 @@ async function syncDiscoverySource(
     fetchImpl?: typeof fetch;
   },
 ) {
-  const task = await getTaskById(store, source.taskId);
+  const topic = await getTopicById(store, source.topicId);
 
-  if (!task) {
-    throw new Error(`Task with ID ${source.taskId} not found.`);
+  if (!topic) {
+    throw new Error(`Topic with ID ${source.topicId} not found.`);
   }
 
-  const result = await discoverRadarCandidates(task, source, options);
+  const result = await discoverRadarCandidates(topic, source, options);
 
   if (result.candidates.length === 0 && result.failures.length > 0) {
     throw new Error(
@@ -377,13 +377,13 @@ async function syncHotlistSource(
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
   },
 ) {
-  const task = await getTaskById(store, source.taskId);
+  const topic = await getTopicById(store, source.topicId);
 
-  if (!task) {
-    throw new Error(`Task with ID ${source.taskId} not found.`);
+  if (!topic) {
+    throw new Error(`Topic with ID ${source.topicId} not found.`);
   }
 
-  const result = await discoverHotlistCandidates(task, source, options);
+  const result = await discoverHotlistCandidates(topic, source, options);
 
   if (result.candidates.length === 0 && result.failures.length > 0) {
     throw new Error(
@@ -396,7 +396,7 @@ async function syncHotlistSource(
 
 async function previewCandidateItems(
   store: Store,
-  taskId: string,
+  topicId: string,
   source: SourceCandidateInput,
   options?: {
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
@@ -406,22 +406,22 @@ async function previewCandidateItems(
   items: SubscriptionPreviewItem[];
   errors: Array<{ sourceTitle: string; error: string }>;
 }> {
-  const task = await getTaskById(store, taskId);
-  if (!task) {
-    throw new Error(`Task with ID ${taskId} not found.`);
+  const topic = await getTopicById(store, topicId);
+  if (!topic) {
+    throw new Error(`Topic with ID ${topicId} not found.`);
   }
 
   const fetchImpl = options?.fetchSourceFeedImpl ?? fetchSourceFeed;
   const sourceRecord: SourceRecord = {
     id: "preview",
-    taskId,
+    topicId,
     title: source.title,
     url: source.url,
     sourceType: source.sourceType,
     configJson: isDiscoverySourceType(source.sourceType)
       ? isHotlistSource(source)
-        ? buildHotlistSourceConfig(task)
-        : buildRadarSourceConfig(task, source.sourceType)
+        ? buildHotlistSourceConfig(topic)
+        : buildRadarSourceConfig(topic, source.sourceType)
       : null,
     status: "idle",
     lastSyncedAt: null,
@@ -468,7 +468,7 @@ async function previewCandidateItems(
 
     return {
       items: enrichedItems.map((item) => {
-        const quality = analyzeItemQuality(task, item);
+        const quality = analyzeItemQuality(topic, item);
 
         return {
           title: item.title,
@@ -502,7 +502,7 @@ async function previewCandidateItems(
 
 export async function previewSubscriptionSources(
   store: Store,
-  taskId: string,
+  topicId: string,
   sources: SourceCandidateInput[],
   options?: {
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
@@ -510,7 +510,7 @@ export async function previewSubscriptionSources(
   },
 ): Promise<SubscriptionPreviewResult> {
   const previews = await Promise.all(
-    sources.map((source) => previewCandidateItems(store, taskId, source, options)),
+    sources.map((source) => previewCandidateItems(store, topicId, source, options)),
   );
   const items = previews.flatMap((preview) => preview.items);
   const acceptedItems = items.filter((item) => item.qualityStatus === "accepted");

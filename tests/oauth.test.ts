@@ -49,13 +49,13 @@ describe("oauth helpers", () => {
       const value = createOAuthStateCookieValue({
         provider: "github",
         state: "state-1",
-        next: "/tasks/task-1",
+        next: "/topics/topic-1",
       });
 
       expect(decodeOAuthStateCookieValue(value)).toEqual({
         provider: "github",
         state: "state-1",
-        next: "/tasks/task-1",
+        next: "/topics/topic-1",
       });
       expect(decodeOAuthStateCookieValue(`${value}tampered`)).toBeNull();
     } finally {

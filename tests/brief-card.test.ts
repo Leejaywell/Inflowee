@@ -13,7 +13,7 @@ describe("BriefCard", () => {
     relevanceScore: 0.5,
     importanceScore: 0.5,
     tags: [],
-    taskTitle: "Agent launches",
+    topicTitle: "Agent launches",
   });
 
   it("returns a valid React element with expected content", () => {

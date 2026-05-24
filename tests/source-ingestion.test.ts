@@ -7,11 +7,11 @@ import {
 } from "@/lib/source-ingestion";
 import {
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
   listBriefsFiltered,
   listItemsBySource,
   listSources,
-  saveTaskProfile,
+  saveTopicProfile,
 } from "@/lib/store";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
@@ -53,20 +53,20 @@ describe("source ingestion quality and preview flow", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Coding agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor Devin coding agent product updates.",
       });
-      await saveTaskProfile(fixture.store, taskId, {
+      await saveTopicProfile(fixture.store, topicId, {
         keywords: ["Devin", "coding agent"],
         suggestedQueries: ["Devin coding agent update"],
       });
 
       const preview = await previewSubscriptionSources(
         fixture.store,
-        taskId,
+        topicId,
         [
           {
             title: "Agent feed",
@@ -93,18 +93,18 @@ describe("source ingestion quality and preview flow", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Coding agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor Devin coding agent product updates.",
       });
-      await saveTaskProfile(fixture.store, taskId, {
+      await saveTopicProfile(fixture.store, topicId, {
         keywords: ["Devin", "coding agent"],
         suggestedQueries: ["Devin coding agent update"],
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "Agent feed",
         url: "https://example.com/feed.xml",
@@ -112,7 +112,7 @@ describe("source ingestion quality and preview flow", () => {
 
       const result = await storeSourceItemsAndCreateBriefs(
         fixture.store,
-        { id: sourceId, taskId },
+        { id: sourceId, topicId },
         [
           {
             title: "Devin coding agent launches product update",
@@ -132,7 +132,7 @@ describe("source ingestion quality and preview flow", () => {
       const items = await listItemsBySource(fixture.store, sourceId);
       const briefs = await listBriefsFiltered(fixture.store, {
         actorId: "user-1",
-        taskId,
+        topicId,
       });
 
       expect(result.insertedItemCount).toBe(2);
@@ -150,18 +150,18 @@ describe("source ingestion quality and preview flow", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Coding agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor Devin coding agent product updates.",
       });
-      await saveTaskProfile(fixture.store, taskId, {
+      await saveTopicProfile(fixture.store, topicId, {
         keywords: ["Devin", "coding agent"],
         suggestedQueries: ["Devin coding agent update"],
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "SEARCH_DISCOVERY",
         title: "Search discovery",
         url: "radar://search-discovery",
@@ -181,7 +181,7 @@ describe("source ingestion quality and preview flow", () => {
       expect(result.ok).toBe(true);
       expect(await listItemsBySource(fixture.store, sourceId)).toHaveLength(2);
       expect(
-        await listBriefsFiltered(fixture.store, { actorId: "user-1", taskId }),
+        await listBriefsFiltered(fixture.store, { actorId: "user-1", topicId }),
       ).toHaveLength(1);
     } finally {
       fixture.cleanup();
@@ -192,18 +192,18 @@ describe("source ingestion quality and preview flow", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Coding agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor Devin coding agent product updates.",
       });
-      await saveTaskProfile(fixture.store, taskId, {
+      await saveTopicProfile(fixture.store, topicId, {
         keywords: ["Devin", "coding agent"],
         suggestedQueries: ["Devin coding agent update"],
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "HOTLIST_DISCOVERY",
         title: "Hotlist discovery",
         url: "radar://hotlist-discovery",
@@ -231,7 +231,7 @@ describe("source ingestion quality and preview flow", () => {
         rank: 1,
       });
       expect(
-        await listBriefsFiltered(fixture.store, { actorId: "user-1", taskId }),
+        await listBriefsFiltered(fixture.store, { actorId: "user-1", topicId }),
       ).toHaveLength(1);
     } finally {
       fixture.cleanup();

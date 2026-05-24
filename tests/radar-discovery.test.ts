@@ -6,20 +6,20 @@ import {
   buildRadarSourceConfig,
   discoverRadarCandidates,
 } from "@/lib/radar-discovery";
-import type { SourceRecord, TaskRecord } from "@/lib/store";
+import type { SourceRecord, TopicRecord } from "@/lib/store";
 
-const task = {
-  id: "task-1",
+const topic = {
+  id: "topic-1",
   title: "AI coding tools",
   userPrompt: "Monitor AI coding tools",
-  taskProfile: {
+  topicProfile: {
     suggestedQueries: ["AI coding agents"],
   },
-} as TaskRecord;
+} as TopicRecord;
 
 describe("radar discovery", () => {
   it("expands community discovery beyond Hacker News", () => {
-    const config = buildRadarSourceConfig(task, "COMMUNITY_DISCOVERY");
+    const config = buildRadarSourceConfig(topic, "COMMUNITY_DISCOVERY");
 
     expect(config.providers).toEqual(["hacker-news", "reddit", "product-hunt"]);
   });
@@ -48,7 +48,7 @@ describe("radar discovery", () => {
         </channel></rss>`;
     });
 
-    const result = await discoverRadarCandidates(task, source, {
+    const result = await discoverRadarCandidates(topic, source, {
       fetchSourceFeedImpl: fetchSourceFeedImpl as never,
     });
 
@@ -90,7 +90,7 @@ describe("radar discovery", () => {
       }),
     }));
 
-    const result = await discoverRadarCandidates(task, source, {
+    const result = await discoverRadarCandidates(topic, source, {
       fetchImpl: fetchImpl as never,
     });
 

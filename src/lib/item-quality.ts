@@ -1,5 +1,5 @@
-import type { TaskProfile } from "@/lib/ai";
-import type { ItemRecord, TaskRecord } from "@/lib/store";
+import type { TopicProfile } from "@/lib/ai";
+import type { ItemRecord, TopicRecord } from "@/lib/store";
 
 export type CandidateHeatMetrics = {
   viewCount?: number | null;
@@ -67,13 +67,13 @@ function tokenize(text: string) {
     .filter((word) => word.length >= 2 && !STOP_WORDS.has(word));
 }
 
-export function expandQualityTerms(task: TaskRecord): string[] {
-  const profile = task.taskProfile as TaskProfile | null | undefined;
+export function expandQualityTerms(topic: TopicRecord): string[] {
+  const profile = topic.topicProfile as TopicProfile | null | undefined;
   const terms = new Set<string>();
 
   for (const term of [
-    task.title,
-    task.userPrompt,
+    topic.title,
+    topic.userPrompt,
     ...(profile?.keywords ?? []),
     ...(profile?.suggestedQueries ?? []),
   ]) {
@@ -126,7 +126,7 @@ export function normalizeHeatMetrics(
 }
 
 export function analyzeItemQuality(
-  task: TaskRecord,
+  topic: TopicRecord,
   candidate: QualityCandidate,
 ): ItemQualityResult {
   const heatMetrics = normalizeHeatMetrics(candidate);
@@ -138,7 +138,7 @@ export function analyzeItemQuality(
     .filter(Boolean)
     .join(" ");
   const normalizedContent = normalizeText(content);
-  const terms = expandQualityTerms(task);
+  const terms = expandQualityTerms(topic);
   const matchedTerms = terms.filter((term) =>
     normalizedContent.includes(normalizeText(term)),
   );

@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import {
   assertBriefAccess,
   assertSourceAccess,
-  assertTaskAccess,
+  assertTopicAccess,
   clearSessionActorCookie,
   createOperatorSessionActor,
   hasConfiguredOperatorLogin,
@@ -22,20 +22,22 @@ import {
 } from "@/lib/delivery";
 import {
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
   defaultStore,
   deleteBrief as deleteBriefRecord,
   deleteSource as deleteSourceRecord,
-  deleteTask as deleteTaskRecord,
+  deleteTopic as deleteTopicRecord,
   getBriefById,
   getFeishuSettings,
   getSlackSettings,
   getTelegramSettings,
   getWebhookSettings,
-  hasTaskRecord,
+  hasTopicRecord,
   listSources,
   markBriefRead,
   markBriefUnread,
+  saveHtmlPushConfig,
+  saveTopicHtmlPushConfig,
   saveBarkSettings,
   saveDefaultDeliveryChannels,
   saveDeliveryTemplate,
@@ -49,19 +51,21 @@ import {
   saveWeComSettings,
   saveWebhookSettings,
   setSourceSchedule,
-  updateTaskDeliveryChannels,
-  updateTaskScheduleProfile,
+  updateTopicDeliveryChannels,
+  updateTopicScheduleProfile,
 } from "@/lib/store";
+import { encryptSecret } from "@/lib/secret-box";
 import { DELIVERY_ADAPTERS } from "@/lib/delivery";
+import { previewTopicHtmlPublication } from "@/lib/html-push";
 import { syncSourceById } from "@/lib/source-ingestion";
 import { getSourcePresetById } from "@/lib/source-presets";
-import { generateTaskReport } from "@/lib/reports";
+import { generateTopicReport } from "@/lib/reports";
 import {
   buildSchedulePreset,
   validateScheduleProfile,
-  type TaskSchedulePreset,
-} from "@/lib/task-schedule";
-import { refreshTaskIntelligence } from "@/lib/task-intelligence";
+  type TopicSchedulePreset,
+} from "@/lib/topic-schedule";
+import { refreshTopicIntelligence } from "@/lib/topic-intelligence";
 import { LOCALE_COOKIE_NAME, normalizeLocale } from "@/lib/i18n";
 import {
   APPEARANCE_COOKIE_NAME,
@@ -71,10 +75,12 @@ import {
 } from "@/lib/theme";
 import {
   createSourceSchema,
-  createTaskSchema,
+  createTopicSchema,
   deliveryEndpointSchema,
   feishuWebhookEndpointSchema,
   ntfyEndpointSchema,
+  saveHtmlPushConfigSchema,
+  saveTopicHtmlPushConfigSchema,
   smtpEndpointSchema,
   slackWebhookEndpointSchema,
   telegramSettingsSchema,
@@ -179,44 +185,44 @@ export async function setThemeAction(formData: FormData) {
   redirect(redirectTo);
 }
 
-export async function createTask(formData: FormData) {
+export async function createTopic(formData: FormData) {
   const actor = await requireSessionActor();
   const userPrompt = getString(formData, "userPrompt");
   const title = getString(formData, "title") || userPrompt.slice(0, 28);
-  const parsed = createTaskSchema.safeParse({
+  const parsed = createTopicSchema.safeParse({
     title,
-    taskType: getString(formData, "taskType") || "TOPIC",
+    topicType: getString(formData, "topicType") || "TOPIC",
     userPrompt,
   });
 
   if (!parsed.success) {
     redirect(
-      `/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid task input.")}`,
+      `/?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid Topic input.")}`,
     );
   }
 
-  const taskId = await createTaskRecord(defaultStore, {
+  const topicId = await createTopicRecord(defaultStore, {
     ...parsed.data,
     ownerId: actor.id,
   });
 
   try {
-    await refreshTaskIntelligence(defaultStore, taskId);
+    await refreshTopicIntelligence(defaultStore, topicId);
   } catch (error) {
-    console.error(`Failed to initialize task intelligence for ${taskId}:`, error);
+    console.error(`Failed to initialize topic intelligence for ${topicId}:`, error);
   }
 
   revalidatePath("/");
-  redirect(`/tasks/${taskId}`);
+  redirect(`/topics/${topicId}`);
 }
 
-export async function refreshStoredTaskIntelligence(taskId: string) {
+export async function refreshStoredTopicIntelligence(topicId: string) {
   const actor = await requireSessionActor();
-  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
 
-  await refreshTaskIntelligence(defaultStore, taskId);
+  await refreshTopicIntelligence(defaultStore, topicId);
 
-  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
 
   return { success: true };
 }
@@ -225,7 +231,7 @@ export async function createSource(formData: FormData) {
   const actor = await requireSessionActor();
   const sourceType = getString(formData, "sourceType");
   const parsed = createSourceSchema.safeParse({
-    taskId: getString(formData, "taskId"),
+    topicId: getString(formData, "topicId"),
     sourceType,
     title: getString(formData, "title"),
     url: normalizeSourceUrl(sourceType, getString(formData, "url")),
@@ -237,13 +243,13 @@ export async function createSource(formData: FormData) {
     );
   }
 
-  if (!(await hasTaskRecord(defaultStore, parsed.data.taskId))) {
-    redirect("/sources?error=Select%20a%20valid%20task.");
+  if (!(await hasTopicRecord(defaultStore, parsed.data.topicId))) {
+    redirect("/sources?error=Select%20a%20valid%20Topic.");
   }
 
-  await assertTaskAccess(defaultStore, {
+  await assertTopicAccess(defaultStore, {
     actorId: actor.id,
-    taskId: parsed.data.taskId,
+    topicId: parsed.data.topicId,
   });
 
   let destination = "/sources?created=source";
@@ -255,13 +261,13 @@ export async function createSource(formData: FormData) {
   }
 
   revalidatePath("/sources");
-  revalidatePath(`/tasks/${parsed.data.taskId}`);
+  revalidatePath(`/topics/${parsed.data.topicId}`);
   redirect(destination);
 }
 
 export async function createPresetSource(formData: FormData) {
   const actor = await requireSessionActor();
-  const taskId = getString(formData, "taskId");
+  const topicId = getString(formData, "topicId");
   const presetId = getString(formData, "presetId");
   const preset = getSourcePresetById(presetId);
 
@@ -269,17 +275,17 @@ export async function createPresetSource(formData: FormData) {
     redirect("/sources?error=Unknown%20built-in%20source.");
   }
 
-  if (!(await hasTaskRecord(defaultStore, taskId))) {
-    redirect("/sources?error=Select%20a%20valid%20task.");
+  if (!(await hasTopicRecord(defaultStore, topicId))) {
+    redirect("/sources?error=Select%20a%20valid%20Topic.");
   }
 
-  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
 
   let destination = "/sources?created=source";
 
   try {
     await createSourceRecord(defaultStore, {
-      taskId,
+      topicId,
       sourceType: preset.sourceType,
       title: preset.title,
       url: preset.url,
@@ -290,7 +296,7 @@ export async function createPresetSource(formData: FormData) {
   }
 
   revalidatePath("/sources");
-  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
   redirect(destination);
 }
 
@@ -306,7 +312,7 @@ export async function runSourceSync(formData: FormData) {
 
   revalidatePath("/sources");
   revalidatePath(`/sources/${sourceId}`);
-  revalidatePath(`/tasks/${result.source.taskId}`);
+  revalidatePath(`/topics/${result.source.topicId}`);
   revalidatePath("/inbox");
 
   if (!result.ok) {
@@ -380,11 +386,11 @@ export async function deleteSource(formData: FormData) {
   redirect("/sources");
 }
 
-export async function deleteTask(formData: FormData) {
+export async function deleteTopic(formData: FormData) {
   const actor = await requireSessionActor();
-  const taskId = getString(formData, "taskId");
-  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
-  await deleteTaskRecord(defaultStore, taskId);
+  const topicId = getString(formData, "topicId");
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+  await deleteTopicRecord(defaultStore, topicId);
 
   revalidatePath("/");
   revalidatePath("/sources");
@@ -433,26 +439,26 @@ export async function runSyncAll() {
 
 export async function generateReportAction(formData: FormData) {
   const actor = await requireSessionActor();
-  const taskId = getString(formData, "taskId");
+  const topicId = getString(formData, "topicId");
   const mode = getString(formData, "mode");
 
   if (mode !== "current" && mode !== "daily" && mode !== "incremental") {
-    redirect(`/tasks/${taskId}?error=Invalid%20report%20mode.`);
+    redirect(`/topics/${topicId}?error=Invalid%20report%20mode.`);
   }
 
-  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
-  await generateTaskReport(defaultStore, taskId, { mode });
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+  await generateTopicReport(defaultStore, topicId, { mode });
 
-  revalidatePath(`/tasks/${taskId}`);
-  redirect(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${topicId}`);
 }
 
-export async function saveTaskSchedulePresetAction(formData: FormData) {
+export async function saveTopicSchedulePresetAction(formData: FormData) {
   const actor = await requireSessionActor();
-  const taskId = getString(formData, "taskId");
-  const preset = getString(formData, "preset") as TaskSchedulePreset;
+  const topicId = getString(formData, "topicId");
+  const preset = getString(formData, "preset") as TopicSchedulePreset;
   const timezone = getString(formData, "timezone") || "Asia/Shanghai";
-  const allowedPresets: TaskSchedulePreset[] = [
+  const allowedPresets: TopicSchedulePreset[] = [
     "always_on",
     "morning_evening",
     "office_hours",
@@ -460,27 +466,27 @@ export async function saveTaskSchedulePresetAction(formData: FormData) {
   ];
 
   if (!allowedPresets.includes(preset)) {
-    redirect(`/tasks/${taskId}?error=Invalid%20schedule%20preset.`);
+    redirect(`/topics/${topicId}?error=Invalid%20schedule%20preset.`);
   }
 
-  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
 
   const profile = buildSchedulePreset(preset, timezone);
   const errors = validateScheduleProfile(profile);
 
   if (errors.length > 0) {
-    redirect(`/tasks/${taskId}?error=${encodeURIComponent(errors[0])}`);
+    redirect(`/topics/${topicId}?error=${encodeURIComponent(errors[0])}`);
   }
 
-  await updateTaskScheduleProfile(defaultStore, taskId, profile);
+  await updateTopicScheduleProfile(defaultStore, topicId, profile);
 
-  revalidatePath(`/tasks/${taskId}`);
-  redirect(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${topicId}`);
 }
 
-export async function saveTaskCustomScheduleAction(formData: FormData) {
+export async function saveTopicCustomScheduleAction(formData: FormData) {
   const actor = await requireSessionActor();
-  const taskId = getString(formData, "taskId");
+  const topicId = getString(formData, "topicId");
   const timezone = getString(formData, "timezone") || "Asia/Shanghai";
   const startMinutes = Number(getString(formData, "startMinutes"));
   const endMinutes = Number(getString(formData, "endMinutes"));
@@ -515,19 +521,19 @@ export async function saveTaskCustomScheduleAction(formData: FormData) {
   const errors = validateScheduleProfile(profile);
 
   if (errors.length > 0) {
-    redirect(`/tasks/${taskId}?error=${encodeURIComponent(errors[0])}`);
+    redirect(`/topics/${topicId}?error=${encodeURIComponent(errors[0])}`);
   }
 
-  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
-  await updateTaskScheduleProfile(defaultStore, taskId, profile);
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+  await updateTopicScheduleProfile(defaultStore, topicId, profile);
 
-  revalidatePath(`/tasks/${taskId}`);
-  redirect(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${topicId}`);
 }
 
-export async function saveTaskDeliveryChannelsAction(formData: FormData) {
+export async function saveTopicDeliveryChannelsAction(formData: FormData) {
   const actor = await requireSessionActor();
-  const taskId = getString(formData, "taskId");
+  const topicId = getString(formData, "topicId");
   const allowedChannels = new Set<string>(
     DELIVERY_ADAPTERS.map((adapter) => adapter.type),
   );
@@ -536,11 +542,73 @@ export async function saveTaskDeliveryChannelsAction(formData: FormData) {
     .map((value) => String(value))
     .filter((value) => allowedChannels.has(value));
 
-  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
-  await updateTaskDeliveryChannels(defaultStore, taskId, channels);
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+  await updateTopicDeliveryChannels(defaultStore, topicId, channels);
 
-  revalidatePath(`/tasks/${taskId}`);
-  redirect(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${topicId}`);
+}
+
+export async function saveTopicHtmlPushConfigAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const parsed = saveTopicHtmlPushConfigSchema.safeParse({
+    topicId: getString(formData, "topicId"),
+    useGlobal: formData.get("useGlobal") === "on",
+    enabled: formData.get("enabled") === "on",
+    stylePreset: getString(formData, "stylePreset"),
+    modulePreset: getString(formData, "modulePreset"),
+    enabledModules: formData.getAll("enabledModules").map(String),
+    customPrompt: getString(formData, "customPrompt") || undefined,
+  });
+
+  if (!parsed.success) {
+    redirect(
+      `/topics/${getString(formData, "topicId")}?section=delivery&error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid topic HTML push settings.")}`,
+    );
+  }
+
+  await assertTopicAccess(defaultStore, {
+    actorId: actor.id,
+    topicId: parsed.data.topicId,
+  });
+  await saveTopicHtmlPushConfig(defaultStore, {
+    topicId: parsed.data.topicId,
+    useGlobal: parsed.data.useGlobal,
+    enabled: parsed.data.enabled,
+    stylePreset: parsed.data.stylePreset,
+    modulePreset: parsed.data.modulePreset,
+    enabledModules: parsed.data.enabledModules,
+    customPrompt: parsed.data.customPrompt ?? null,
+  });
+
+  revalidatePath(`/topics/${parsed.data.topicId}`);
+  redirect(`/topics/${parsed.data.topicId}?section=delivery`);
+}
+
+export async function previewTopicHtmlPushAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const topicId = getString(formData, "topicId");
+
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+
+  let result: Awaited<ReturnType<typeof previewTopicHtmlPublication>>;
+  try {
+    result = await previewTopicHtmlPublication(defaultStore, topicId);
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to generate HTML preview.";
+
+    redirect(`/topics/${topicId}?section=delivery&error=${encodeURIComponent(message)}`);
+  }
+
+  if (result.status === "unavailable") {
+    redirect(
+      `/topics/${topicId}?section=delivery&error=${encodeURIComponent(result.reason)}`,
+    );
+  }
+
+  revalidatePath(`/topics/${topicId}`);
+  redirect(`/topics/${topicId}?section=delivery&preview=${result.publicationId}`);
 }
 
 export async function saveDefaultDeliveryChannelsAction(formData: FormData) {
@@ -571,6 +639,55 @@ export async function saveDeliveryTemplateAction(formData: FormData) {
 
   revalidatePath("/settings");
   redirect("/settings?updated=delivery-template");
+}
+
+export async function saveHtmlPushConfigAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const githubToken = getString(formData, "githubToken").trim();
+  const parsed = saveHtmlPushConfigSchema.safeParse({
+    enabled: formData.get("enabled") === "on",
+    entitlementStatus: getString(formData, "entitlementStatus") || "available",
+    stylePreset: getString(formData, "stylePreset"),
+    modulePreset: getString(formData, "modulePreset"),
+    enabledModules: formData.getAll("enabledModules").map(String),
+    customPrompt: getString(formData, "customPrompt") || undefined,
+    githubToken: githubToken || undefined,
+    githubRepo: getString(formData, "githubRepo") || undefined,
+    githubBranch: getString(formData, "githubBranch") || "main",
+    githubBasePath: getString(formData, "githubBasePath") || "inflowee/html",
+    publicBaseUrl: getString(formData, "publicBaseUrl") || undefined,
+  });
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid HTML push settings.")}`,
+    );
+  }
+
+  try {
+    await saveHtmlPushConfig(defaultStore, {
+      ownerId: actor.id,
+      enabled: parsed.data.enabled,
+      entitlementStatus: parsed.data.entitlementStatus,
+      stylePreset: parsed.data.stylePreset,
+      modulePreset: parsed.data.modulePreset,
+      enabledModules: parsed.data.enabledModules,
+      customPrompt: parsed.data.customPrompt ?? null,
+      githubTokenEncrypted: githubToken ? encryptSecret(githubToken) : undefined,
+      githubRepo: parsed.data.githubRepo ?? null,
+      githubBranch: parsed.data.githubBranch,
+      githubBasePath: parsed.data.githubBasePath,
+      publicBaseUrl: parsed.data.publicBaseUrl || null,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Failed to save HTML push settings.";
+
+    redirect(`/settings?error=${encodeURIComponent(message)}`);
+  }
+
+  revalidatePath("/settings");
+  redirect("/settings?updated=html-push");
 }
 
 export async function saveWebhookEndpoint(formData: FormData) {

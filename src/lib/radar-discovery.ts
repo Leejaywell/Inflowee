@@ -1,6 +1,6 @@
 import { parseFeedItems } from "@/lib/rss";
 import { fetchSourceFeed } from "@/lib/source-sync";
-import type { SourceRecord, TaskRecord } from "@/lib/store";
+import type { SourceRecord, TopicRecord } from "@/lib/store";
 import { expandQualityTerms, type CandidateHeatMetrics } from "@/lib/item-quality";
 
 export type RadarProvider =
@@ -64,24 +64,24 @@ export function buildRadarSourceUrl(sourceType: SourceRecord["sourceType"]) {
   return "radar://search-discovery";
 }
 
-export function expandRadarQueries(task: TaskRecord): string[] {
-  const profile = task.taskProfile;
-  const qualityTerms = expandQualityTerms(task).slice(0, 10);
+export function expandRadarQueries(topic: TopicRecord): string[] {
+  const profile = topic.topicProfile;
+  const qualityTerms = expandQualityTerms(topic).slice(0, 10);
   const profileQueries = Array.isArray(profile?.suggestedQueries)
     ? profile.suggestedQueries
     : [];
 
   return uniqueValues([
     ...profileQueries,
-    task.userPrompt,
-    `${task.title} news`,
-    `${task.title} update`,
+    topic.userPrompt,
+    `${topic.title} news`,
+    `${topic.title} update`,
     qualityTerms.slice(0, 4).join(" "),
   ]).slice(0, 8);
 }
 
 export function buildRadarSourceConfig(
-  task: TaskRecord,
+  topic: TopicRecord,
   sourceType: SourceRecord["sourceType"],
 ): RadarSourceConfig {
   const providers =
@@ -93,15 +93,15 @@ export function buildRadarSourceConfig(
 
   return {
     providers: [...providers],
-    queries: expandRadarQueries(task),
+    queries: expandRadarQueries(topic),
     freshnessDays: 7,
     providerQuota: 10,
     totalQuota: 30,
   };
 }
 
-function getRadarConfig(task: TaskRecord, source: SourceRecord): RadarSourceConfig {
-  const fallback = buildRadarSourceConfig(task, source.sourceType);
+function getRadarConfig(topic: TopicRecord, source: SourceRecord): RadarSourceConfig {
+  const fallback = buildRadarSourceConfig(topic, source.sourceType);
   const raw = source.configJson ?? {};
 
   return {
@@ -324,14 +324,14 @@ async function fetchProviderCandidates(
 }
 
 export async function discoverRadarCandidates(
-  task: TaskRecord,
+  topic: TopicRecord,
   source: SourceRecord,
   options?: {
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
     fetchImpl?: typeof fetch;
   },
 ): Promise<RadarDiscoveryResult> {
-  const config = getRadarConfig(task, source);
+  const config = getRadarConfig(topic, source);
   const fetchSourceFeedImpl = options?.fetchSourceFeedImpl ?? fetchSourceFeed;
   const fetchImpl = options?.fetchImpl ?? fetch;
   const candidates: RadarCandidate[] = [];

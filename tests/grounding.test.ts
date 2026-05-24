@@ -5,20 +5,20 @@ import {
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
 } from "@/lib/store";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
 async function createPersonalGroundingFixture() {
   const fixture = createSqliteFixture();
-  const taskId = await createTaskRecord(fixture.store, {
+  const topicId = await createTopicRecord(fixture.store, {
     ownerId: "user-1",
     title: "Track coding agents",
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt: "Track coding agent launches and funding.",
   });
   const sourceId = await createSourceRecord(fixture.store, {
-    taskId,
+    topicId,
     sourceType: "RSS",
     title: "Agent feed",
     url: "https://example.com/feed.xml",
@@ -36,32 +36,32 @@ async function createPersonalGroundingFixture() {
     matchedTerms: ["coding", "agent"],
   });
   const briefId = await createBriefRecord(fixture.store, {
-    taskId,
+    topicId,
     itemIds: item ? [item.id] : [],
     title: "Agent launch",
     summary: "A relevant coding agent update was found.",
-    whyItMatters: "It matches the personal monitoring goal.",
+    whyItMatters: "It matches the personal topic.",
     sourceCitations: ["https://example.com/devin"],
   });
 
-  return { ...fixture, taskId, briefId };
+  return { ...fixture, topicId, briefId };
 }
 
 describe("personal grounding scopes", () => {
-  it("returns task briefs and source items for a personal task", async () => {
+  it("returns topic briefs and source items for a personal topic", async () => {
     const fixture = await createPersonalGroundingFixture();
 
     try {
       const grounding = await getGroundingForScope(
         fixture.store,
-        "task",
-        fixture.taskId,
+        "topic",
+        fixture.topicId,
         { actorId: "user-1" },
       );
 
       expect(grounding.briefs).toHaveLength(1);
       expect(grounding.items).toHaveLength(1);
-      expect(grounding.briefs[0]?.taskTitle).toBe("Track coding agents");
+      expect(grounding.briefs[0]?.topicTitle).toBe("Track coding agents");
     } finally {
       fixture.cleanup();
     }
@@ -88,10 +88,10 @@ describe("personal grounding scopes", () => {
     const fixture = await createPersonalGroundingFixture();
 
     try {
-      await createTaskRecord(fixture.store, {
+      await createTopicRecord(fixture.store, {
         ownerId: "user-2",
         title: "Other monitor",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track unrelated updates.",
       });
 
@@ -103,7 +103,7 @@ describe("personal grounding scopes", () => {
       );
 
       expect(grounding.briefs).toHaveLength(1);
-      expect(grounding.briefs[0]?.taskId).toBe(fixture.taskId);
+      expect(grounding.briefs[0]?.topicId).toBe(fixture.topicId);
     } finally {
       fixture.cleanup();
     }

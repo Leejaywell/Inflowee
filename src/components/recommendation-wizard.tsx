@@ -1,18 +1,18 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { refreshStoredTaskIntelligence } from "@/app/actions";
+import { refreshStoredTopicIntelligence } from "@/app/actions";
 import {
   previewRecommendedSources,
   subscribeRecommendedSources,
 } from "@/app/actions-chat";
-import { SourceBundle, SourceRecommendation, TaskProfile } from "@/lib/ai";
+import { SourceBundle, SourceRecommendation, TopicProfile } from "@/lib/ai";
 import type { SourceType } from "@/lib/store";
 import type { SubscriptionPreviewResult } from "@/lib/source-ingestion";
 
 type RecommendationWizardProps = {
-  taskId: string;
-  taskProfile: TaskProfile | null;
+  topicId: string;
+  topicProfile: TopicProfile | null;
   recommendedBundles: SourceBundle[];
   labels?: RecommendationWizardLabels;
 };
@@ -52,9 +52,9 @@ export type RecommendationWizardLabels = {
 };
 
 const defaultLabels: RecommendationWizardLabels = {
-  noRecommendations: "No stored recommendations are available for this task yet.",
-  noIntelligence: "This task has no stored intelligence yet.",
-  refreshHint: "Refresh to regenerate source bundles from the saved task profile.",
+  noRecommendations: "No stored recommendations are available for this Topic yet.",
+  noIntelligence: "This Topic has no stored intelligence yet.",
+  refreshHint: "Refresh to regenerate source bundles from the saved Topic profile.",
   refreshIntelligence: "Refresh intelligence",
   refreshingIntelligence: "Refreshing intelligence...",
   refreshError: "Unable to refresh recommendations right now.",
@@ -95,8 +95,8 @@ type SelectedSource = {
 type WizardStep = "select" | "preview" | "confirm";
 
 export function RecommendationWizard({
-  taskId,
-  taskProfile,
+  topicId,
+  topicProfile,
   recommendedBundles,
   labels: labelsProp,
 }: RecommendationWizardProps) {
@@ -148,7 +148,7 @@ export function RecommendationWizard({
     setSuccess(false);
     startTransition(async () => {
       try {
-        await subscribeRecommendedSources(taskId, list);
+        await subscribeRecommendedSources(topicId, list);
         setSuccess(true);
         // Clear selection map after subscribing
         setSelectedMap({});
@@ -166,7 +166,7 @@ export function RecommendationWizard({
     setPreviewError(null);
     startPreviewTransition(async () => {
       try {
-        const result = await previewRecommendedSources(taskId, list);
+        const result = await previewRecommendedSources(topicId, list);
         setPreview(result);
         setStep("confirm");
       } catch (err) {
@@ -183,7 +183,7 @@ export function RecommendationWizard({
     setRefreshError(null);
     startRefreshTransition(async () => {
       try {
-        await refreshStoredTaskIntelligence(taskId);
+        await refreshStoredTopicIntelligence(topicId);
       } catch (error) {
         setRefreshError(
           error instanceof Error
@@ -207,11 +207,11 @@ export function RecommendationWizard({
         <div className="space-y-4">
           <div className="space-y-2">
             <p className="text-sm text-stone-500 font-medium">
-              {taskProfile
+              {topicProfile
                 ? labels.noRecommendations
                 : labels.noIntelligence}
             </p>
-            {taskProfile ? (
+            {topicProfile ? (
               <p className="text-xs text-stone-400">
                 {labels.refreshHint}
               </p>

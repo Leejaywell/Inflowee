@@ -1,11 +1,11 @@
 import type { GroundingResult } from "./grounding";
 import { fetchLiveContext, type LiveFetchResult } from "./live-fetch";
-import { TaskRecord, ItemRecord, BriefRecord, type SourceType } from "./store";
+import { TopicRecord, ItemRecord, BriefRecord, type SourceType } from "./store";
 import { clusterItemsForBriefs } from "./brief-clustering";
 import { deriveTopicTags } from "./topic-tags";
 import { getAiProviderConfig } from "./ai-config";
 
-export type TaskProfile = {
+export type TopicProfile = {
   keywords: string[];
   suggestedQueries: string[];
 };
@@ -118,8 +118,14 @@ async function callOpenAIChatCompletion(
   return choice;
 }
 
-// 2.1: understandTaskIntent
-export async function understandTaskIntent(prompt: string): Promise<TaskProfile> {
+export async function callOpenAIJsonCompletion(
+  messages: Array<{ role: "system" | "user"; content: string }>,
+): Promise<string> {
+  return callOpenAIChatCompletion(messages, true);
+}
+
+// 2.1: understandTopicIntent
+export async function understandTopicIntent(prompt: string): Promise<TopicProfile> {
   if (hasLiveAiProvider()) {
     try {
       const systemPrompt = `Analyze the user's intent from their information tracking prompt.
@@ -134,9 +140,9 @@ Respond in strict JSON format:
         { role: "user", content: prompt },
       ], true);
 
-      return JSON.parse(responseText) as TaskProfile;
+      return JSON.parse(responseText) as TopicProfile;
     } catch (e) {
-      console.warn("Real OpenAI failed in understandTaskIntent, falling back to mock", e);
+      console.warn("Real OpenAI failed in understandTopicIntent, falling back to mock", e);
     }
   }
 
@@ -210,7 +216,7 @@ function normalizePlanId(value: string) {
 function buildFallbackSubscriptionDiscoveryPlan(input: {
   title: string;
   prompt: string;
-  profile?: TaskProfile | null;
+  profile?: TopicProfile | null;
 }): SubscriptionDiscoveryPlan {
   const keywords = input.profile?.keywords.length
     ? input.profile.keywords
@@ -243,7 +249,7 @@ function buildFallbackSubscriptionDiscoveryPlan(input: {
 export async function planSubscriptionDiscovery(input: {
   title: string;
   prompt: string;
-  profile?: TaskProfile | null;
+  profile?: TopicProfile | null;
   bypassCache?: boolean;
 }): Promise<SubscriptionDiscoveryPlan> {
   const cacheKey = JSON.stringify({
@@ -276,12 +282,12 @@ export async function planSubscriptionDiscovery(input: {
 async function generateSubscriptionDiscoveryPlan(input: {
   title: string;
   prompt: string;
-  profile?: TaskProfile | null;
+  profile?: TopicProfile | null;
 }): Promise<SubscriptionDiscoveryPlan> {
   if (hasLiveAiProvider()) {
     try {
       const systemPrompt = `You plan a personal subscription discovery surface.
-Given a monitoring goal, generate broad source-discovery tags and query phrases.
+Given a topic, generate broad source-discovery tags and query phrases.
 Keep categories broad and compatible with these ids when possible: technology, finance, lifestyle, programming, design, games, reading, science, hiring, social, media, forums, blogs, audio-video, images, updates.
 Return strict JSON:
 {
@@ -512,7 +518,7 @@ Respond in strict JSON format:
 
 // 2.2: generateBriefsFromItems (tf-idf/keyword clustering and synthesis)
 export async function generateBriefsFromItems(
-  task: TaskRecord,
+  topic: TopicRecord,
   items: ItemRecord[]
 ): Promise<BriefCandidate[]> {
   if (items.length === 0) return [];
@@ -529,21 +535,21 @@ export async function generateBriefsFromItems(
 
     if (hasLiveAiProvider()) {
       try {
-        const systemPrompt = `You are Inflowee AI Synthesizer. You synthesize a set of clustered articles/updates into a single cohesive Brief for the user's tracking task.
-Task Title: "${task.title}"
-Task Prompt: "${task.userPrompt}"
+        const systemPrompt = `You are Inflowee AI Synthesizer. You synthesize a set of clustered articles/updates into a single cohesive Brief for the user's tracking topic.
+Topic Title: "${topic.title}"
+Topic Prompt: "${topic.userPrompt}"
 
 Given the titles and summaries in this cluster, generate:
 1. A concise, engaging synthesized Title (max 10 words).
 2. A single comprehensive Summary paragraph digesting the unified update (max 120 words).
-3. A brief "Why it Matters" paragraph explaining its context relative to the task (max 60 words).
+3. A brief "Why it Matters" paragraph explaining its context relative to the topic (max 60 words).
 4. A topical tag list with 5 to 15 concise tags. Prefer subject tags like remote, part-time, java, rust, ai, funding, changelog, api.
 
 Respond in strict JSON format:
 {
   "title": "Synthesized Title",
   "summary": "Full summary paragraph details...",
-  "whyItMatters": "Why this update is highly relevant to tracking task...",
+  "whyItMatters": "Why this update is highly relevant to tracking topic...",
   "tags": ["tag-1", "tag-2", "tag-3", "tag-4", "tag-5"]
 }`;
         const clusterDetails = clusterItems.map((c) => `- TITLE: "${c.title}"\n  SUMMARY: "${c.summary || "No summary available"}"`).join("\n");
@@ -554,7 +560,7 @@ Respond in strict JSON format:
 
         const data = JSON.parse(responseText);
         const tags = deriveTopicTags({
-          task,
+          topic,
           items: clusterItems,
           title: data.title || clusterItems[0].title,
           summary:
@@ -568,7 +574,7 @@ Respond in strict JSON format:
         candidates.push({
           title: data.title || clusterItems[0].title,
           summary: data.summary || `Synthesized update regarding ${clusterItems[0].title}.`,
-          whyItMatters: data.whyItMatters || `Directly relates to your monitoring goal: "${task.title}".`,
+          whyItMatters: data.whyItMatters || `Directly relates to your topic: "${topic.title}".`,
           sourceCitations: citations,
           itemIds,
           relevanceScore,
@@ -597,7 +603,7 @@ Respond in strict JSON format:
     }
 
     // Construct relevance analysis
-    let whyItMatters = `This provides immediate data points for your task: "${task.title}".`;
+    let whyItMatters = `This provides immediate data points for your topic: "${topic.title}".`;
     const textLower = (lead.title + " " + (lead.summary ?? "")).toLowerCase();
     
     if (textLower.includes("devin") || textLower.includes("agent") || textLower.includes("cursor")) {
@@ -609,7 +615,7 @@ Respond in strict JSON format:
     }
 
     const tags = deriveTopicTags({
-      task,
+      topic,
       items: clusterItems,
       title: synthesizedTitle,
       summary: summaryText,
@@ -686,7 +692,7 @@ ${JSON.stringify(items.map((i) => ({ title: i.title, summary: i.summary, url: i.
 
   if (queryLower.includes("devin") || queryLower.includes("cognition")) {
     const matchingUrl = allCitations.find((c) => c.includes("cognition") || c.includes("blog")) || "https://cognition.labs/blog/introducing-devin";
-    responseContent = `Based on the latest reports in this monitoring goal, **Cognition Labs** has announced significant updates regarding **Devin**, their autonomous software engineering agent.
+    responseContent = `Based on the latest reports in this topic, **Cognition Labs** has announced significant updates regarding **Devin**, their autonomous software engineering agent.
 
 ### Key Points Grounded in Feeds:
 * **Autonomy**: Devin operates inside a secure sandbox, writing, testing, and deploying full code bases.

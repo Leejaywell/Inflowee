@@ -1,25 +1,25 @@
 /// <reference types="vitest/globals" />
 
 import {
-  understandTaskIntent,
+  understandTopicIntent,
   recommendSourceBundles,
   generateBriefsFromItems,
   generateChatResponse,
   answerGroundedQuestion,
 } from "@/lib/ai";
 import { ItemRecord, BriefRecord } from "@/lib/store";
-import { makeBriefRecord, makeItemRecord, makeTaskRecord } from "./helpers/records";
+import { makeBriefRecord, makeItemRecord, makeTopicRecord } from "./helpers/records";
 
 describe("Core AI Orchestration layer", () => {
-  it("extracts task profiles from prompt text via intent mock", async () => {
-    const profile = await understandTaskIntent("Track OpenAI ChatGPT launches and Claude API updates");
+  it("extracts topic profiles from prompt text via intent mock", async () => {
+    const profile = await understandTopicIntent("Track OpenAI ChatGPT launches and Claude API updates");
     
     expect(profile.keywords).toContain("frontier LLMs");
     expect(profile.suggestedQueries[0]).toContain("OpenAI developer blog");
   });
 
-  it("extracts coding agent task profiles via intent mock", async () => {
-    const profile = await understandTaskIntent("Monitor autonomous coding agents devin cursor");
+  it("extracts coding agent topic profiles via intent mock", async () => {
+    const profile = await understandTopicIntent("Monitor autonomous coding agents devin cursor");
     
     expect(profile.keywords).toContain("coding agents");
     expect(profile.suggestedQueries).toContain("Devin AI vs open source alternatives");
@@ -51,7 +51,7 @@ describe("Core AI Orchestration layer", () => {
   });
 
   it("clusters feed items by Jaccard title-similarity and generates synthesized brief candidates", async () => {
-    const mockTask = makeTaskRecord({
+    const mockTopic = makeTopicRecord({
       title: "Monitor Devin releases",
       userPrompt: "Follow autonomous software developers",
     });
@@ -84,7 +84,7 @@ describe("Core AI Orchestration layer", () => {
       })
     ];
 
-    const briefs = await generateBriefsFromItems(mockTask, mockItems);
+    const briefs = await generateBriefsFromItems(mockTopic, mockItems);
 
     // Should create 2 clusters:
     // Cluster 1: item-1 and item-2 (Devin updates, Jaccard title similarity > 0.25)

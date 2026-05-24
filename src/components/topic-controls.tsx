@@ -1,19 +1,19 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { updateTaskControlSettings } from "@/app/actions-chat";
+import { updateTopicControlSettings } from "@/app/actions-chat";
 
-type TaskControlsProps = {
-  taskId: string;
+type TopicControlsProps = {
+  topicId: string;
   initialRelevanceLevel: number;
   initialSummaryPreference: string;
 };
 
-export function TaskControls({
-  taskId,
+export function TopicControls({
+  topicId,
   initialRelevanceLevel,
   initialSummaryPreference,
-}: TaskControlsProps) {
+}: TopicControlsProps) {
   const [relevance, setRelevance] = useState(initialRelevanceLevel);
   const [pref, setPref] = useState(initialSummaryPreference);
   const [isPending, startTransition] = useTransition();
@@ -23,11 +23,11 @@ export function TaskControls({
     setSaved(false);
     startTransition(async () => {
       try {
-        await updateTaskControlSettings(taskId, newRelevance, newPref);
+        await updateTopicControlSettings(topicId, newRelevance, newPref);
         setSaved(true);
         setTimeout(() => setSaved(false), 3000);
       } catch (err) {
-        console.error("Failed to update task controls:", err);
+        console.error("Failed to update topic controls:", err);
       }
     });
   };

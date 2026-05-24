@@ -2,25 +2,25 @@
 CREATE SCHEMA IF NOT EXISTS "public";
 
 -- CreateTable
-CREATE TABLE "Task" (
+CREATE TABLE "Topic" (
     "id" TEXT NOT NULL,
     "ownerId" TEXT NOT NULL DEFAULT 'local-user',
     "title" TEXT NOT NULL,
-    "taskType" TEXT NOT NULL,
+    "topicType" TEXT NOT NULL,
     "userPrompt" TEXT NOT NULL,
     "relevanceLevel" INTEGER NOT NULL DEFAULT 3,
     "summaryPreference" TEXT NOT NULL DEFAULT 'balanced',
-    "taskProfile" JSONB,
+    "topicProfile" JSONB,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updatedAt" TIMESTAMP(3) NOT NULL,
 
-    CONSTRAINT "Task_pkey" PRIMARY KEY ("id")
+    CONSTRAINT "Topic_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
 CREATE TABLE "Source" (
     "id" TEXT NOT NULL,
-    "taskId" TEXT NOT NULL,
+    "topicId" TEXT NOT NULL,
     "sourceType" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "url" TEXT NOT NULL,
@@ -76,7 +76,7 @@ CREATE TABLE "Item" (
 -- CreateTable
 CREATE TABLE "Brief" (
     "id" TEXT NOT NULL,
-    "taskId" TEXT NOT NULL,
+    "topicId" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "summary" TEXT NOT NULL,
     "whyItMatters" TEXT NOT NULL,
@@ -149,7 +149,7 @@ CREATE TABLE "DeliveryLog" (
 -- CreateTable
 CREATE TABLE "RecommendationBundle" (
     "id" TEXT NOT NULL,
-    "taskId" TEXT NOT NULL,
+    "topicId" TEXT NOT NULL,
     "position" INTEGER NOT NULL,
     "bundleJson" JSONB NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -182,10 +182,10 @@ CREATE TABLE "ChatMessage" (
 );
 
 -- CreateIndex
-CREATE INDEX "Task_ownerId_createdAt_idx" ON "Task"("ownerId", "createdAt");
+CREATE INDEX "Topic_ownerId_createdAt_idx" ON "Topic"("ownerId", "createdAt");
 
 -- CreateIndex
-CREATE INDEX "Source_taskId_createdAt_idx" ON "Source"("taskId", "createdAt");
+CREATE INDEX "Source_topicId_createdAt_idx" ON "Source"("topicId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "Source_nextSyncAt_status_idx" ON "Source"("nextSyncAt", "status");
@@ -197,7 +197,7 @@ CREATE INDEX "Item_sourceId_publishedAt_idx" ON "Item"("sourceId", "publishedAt"
 CREATE UNIQUE INDEX "Item_sourceId_contentHash_key" ON "Item"("sourceId", "contentHash");
 
 -- CreateIndex
-CREATE INDEX "Brief_taskId_createdAt_idx" ON "Brief"("taskId", "createdAt");
+CREATE INDEX "Brief_topicId_createdAt_idx" ON "Brief"("topicId", "createdAt");
 
 -- CreateIndex
 CREATE INDEX "BriefRead_actorId_readAt_idx" ON "BriefRead"("actorId", "readAt");
@@ -209,7 +209,7 @@ CREATE INDEX "SyncRun_sourceId_startedAt_idx" ON "SyncRun"("sourceId", "startedA
 CREATE INDEX "DeliveryLog_briefId_startedAt_idx" ON "DeliveryLog"("briefId", "startedAt");
 
 -- CreateIndex
-CREATE INDEX "RecommendationBundle_taskId_position_idx" ON "RecommendationBundle"("taskId", "position");
+CREATE INDEX "RecommendationBundle_topicId_position_idx" ON "RecommendationBundle"("topicId", "position");
 
 -- CreateIndex
 CREATE UNIQUE INDEX "ChatThread_scopeType_scopeId_key" ON "ChatThread"("scopeType", "scopeId");
@@ -218,13 +218,13 @@ CREATE UNIQUE INDEX "ChatThread_scopeType_scopeId_key" ON "ChatThread"("scopeTyp
 CREATE INDEX "ChatMessage_threadId_createdAt_idx" ON "ChatMessage"("threadId", "createdAt");
 
 -- AddForeignKey
-ALTER TABLE "Source" ADD CONSTRAINT "Source_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Source" ADD CONSTRAINT "Source_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "Topic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Item" ADD CONSTRAINT "Item_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES "Source"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "Brief" ADD CONSTRAINT "Brief_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Brief" ADD CONSTRAINT "Brief_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "Topic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "BriefRead" ADD CONSTRAINT "BriefRead_briefId_fkey" FOREIGN KEY ("briefId") REFERENCES "Brief"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -242,7 +242,7 @@ ALTER TABLE "SyncRun" ADD CONSTRAINT "SyncRun_sourceId_fkey" FOREIGN KEY ("sourc
 ALTER TABLE "DeliveryLog" ADD CONSTRAINT "DeliveryLog_briefId_fkey" FOREIGN KEY ("briefId") REFERENCES "Brief"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
-ALTER TABLE "RecommendationBundle" ADD CONSTRAINT "RecommendationBundle_taskId_fkey" FOREIGN KEY ("taskId") REFERENCES "Task"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "RecommendationBundle" ADD CONSTRAINT "RecommendationBundle_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "Topic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_threadId_fkey" FOREIGN KEY ("threadId") REFERENCES "ChatThread"("id") ON DELETE CASCADE ON UPDATE CASCADE;

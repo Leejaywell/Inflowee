@@ -5,8 +5,8 @@ import { cookies, headers } from "next/headers";
 import {
   defaultStore,
   hasBriefOwner,
-  getTaskBySourceId,
-  hasTaskOwner,
+  getTopicBySourceId,
+  hasTopicOwner,
   type Store,
 } from "./store";
 import {
@@ -28,9 +28,9 @@ export type SessionUser = {
 
 export type SessionActor = SessionUser;
 
-type TaskAccessInput = {
+type TopicAccessInput = {
   actorId: string;
-  taskId: string;
+  topicId: string;
   minimumRole?: "viewer" | "editor" | "owner";
 };
 
@@ -301,19 +301,19 @@ export function getActorScopedChatScopeId(actorId: string, scopeId: string) {
   return `${scopeId}:actor:${actorId}`;
 }
 
-export async function assertTaskAccess(input: TaskAccessInput): Promise<void>;
-export async function assertTaskAccess(
+export async function assertTopicAccess(input: TopicAccessInput): Promise<void>;
+export async function assertTopicAccess(
   store: Store,
-  input: TaskAccessInput,
+  input: TopicAccessInput,
 ): Promise<void>;
-export async function assertTaskAccess(
-  storeOrInput: Store | TaskAccessInput,
-  maybeInput?: TaskAccessInput,
+export async function assertTopicAccess(
+  storeOrInput: Store | TopicAccessInput,
+  maybeInput?: TopicAccessInput,
 ): Promise<void> {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
-  const input = maybeInput ?? (storeOrInput as TaskAccessInput);
+  const input = maybeInput ?? (storeOrInput as TopicAccessInput);
 
-  if (!(await hasTaskOwner(store, input.actorId, input.taskId))) {
+  if (!(await hasTopicOwner(store, input.actorId, input.topicId))) {
     throw new Error("Forbidden");
   }
 }
@@ -331,15 +331,15 @@ export async function assertSourceAccess(
 ): Promise<void> {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
   const input = maybeInput ?? (storeOrInput as SourceAccessInput);
-  const task = await getTaskBySourceId(store, input.sourceId);
+  const topic = await getTopicBySourceId(store, input.sourceId);
 
-  if (!task) {
+  if (!topic) {
     throw new Error("Forbidden");
   }
 
-  await assertTaskAccess(store, {
+  await assertTopicAccess(store, {
     actorId: input.actorId,
-    taskId: task.id,
+    topicId: topic.id,
   });
 }
 

@@ -9,10 +9,10 @@ describe("extractUpdateEntries", () => {
         <head><title>Changelog</title></head>
         <body>
           <section>
-            <h2>Added task intelligence refresh</h2>
+            <h2>Added topic intelligence refresh</h2>
             <a href="#2026-05-22">Permalink</a>
             <time datetime="2026-05-22T00:00:00.000Z"></time>
-            <p>Task recommendations can now be refreshed on demand.</p>
+            <p>Topic recommendations can now be refreshed on demand.</p>
           </section>
         </body>
       </html>
@@ -21,9 +21,9 @@ describe("extractUpdateEntries", () => {
     const entries = extractUpdateEntries(html, "https://example.com/changelog");
 
     expect(entries[0]).toMatchObject({
-      title: "Added task intelligence refresh",
+      title: "Added topic intelligence refresh",
       canonicalUrl: "https://example.com/changelog#2026-05-22",
-      summary: "Task recommendations can now be refreshed on demand.",
+      summary: "Topic recommendations can now be refreshed on demand.",
       publishedAt: "2026-05-22T00:00:00.000Z",
     });
   });

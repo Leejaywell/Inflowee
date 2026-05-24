@@ -7,14 +7,14 @@ import { getRequestLocale } from "@/lib/i18n-server";
 import {
   defaultStore,
   listBriefsFiltered,
-  listTasks,
+  listTopics,
 } from "@/lib/store";
 
 export const dynamic = "force-dynamic";
 
 type InboxPageProps = {
   searchParams?: Promise<{
-    taskId?: string;
+    topicId?: string;
     unread?: string;
   }>;
 };
@@ -26,12 +26,12 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
   ]);
   const t = getDictionary(locale).inbox;
   const params = await searchParams;
-  const taskId = params?.taskId || undefined;
+  const topicId = params?.topicId || undefined;
   const unreadOnly = params?.unread === "1";
 
-  const [briefs, tasks] = await Promise.all([
-    listBriefsFiltered(defaultStore, { actorId: actor.id, taskId, unreadOnly }),
-    listTasks(defaultStore, { actorId: actor.id }),
+  const [briefs, topics] = await Promise.all([
+    listBriefsFiltered(defaultStore, { actorId: actor.id, topicId, unreadOnly }),
+    listTopics(defaultStore, { actorId: actor.id }),
   ]);
 
   return (
@@ -59,7 +59,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
         <Link
           href="/inbox"
           className={`inline-flex h-9 items-center rounded-full px-3.5 text-sm font-medium transition ${
-            !taskId && !unreadOnly
+            !topicId && !unreadOnly
               ? "bg-stone-950 text-white"
               : "bg-stone-100 text-stone-600 hover:bg-stone-200"
           }`}
@@ -68,7 +68,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
         </Link>
 
         <Link
-          href={taskId ? `/inbox?taskId=${taskId}&unread=1` : "/inbox?unread=1"}
+          href={topicId ? `/inbox?topicId=${topicId}&unread=1` : "/inbox?unread=1"}
           className={`inline-flex h-9 items-center rounded-full px-3.5 text-sm font-medium transition ${
             unreadOnly
               ? "bg-[#0057ff] text-white"
@@ -80,21 +80,21 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
 
         <span className="mx-1 h-5 w-px bg-stone-200" />
 
-        {tasks.map((task) => (
+        {topics.map((topic) => (
           <Link
-            key={task.id}
+            key={topic.id}
             href={
               unreadOnly
-                ? `/inbox?taskId=${task.id}&unread=1`
-                : `/inbox?taskId=${task.id}`
+                ? `/inbox?topicId=${topic.id}&unread=1`
+                : `/inbox?topicId=${topic.id}`
             }
             className={`inline-flex h-9 items-center rounded-full px-3.5 text-sm font-medium transition ${
-              taskId === task.id
+              topicId === topic.id
                 ? "bg-stone-950 text-white"
                 : "bg-stone-100 text-stone-600 hover:bg-stone-200"
             }`}
           >
-            {task.title}
+            {topic.title}
           </Link>
         ))}
 
@@ -105,7 +105,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
 
       {briefs.length === 0 ? (
         <section className="rounded-[24px] border border-dashed border-stone-200 bg-white px-6 py-10 text-sm text-stone-500 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-          {taskId || unreadOnly
+          {topicId || unreadOnly
             ? t.emptyFiltered
             : t.empty}
         </section>
@@ -126,7 +126,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
                   )}
                   <div className="space-y-2">
                     <p className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-                      {brief.taskTitle}
+                      {brief.topicTitle}
                     </p>
                     <h2 className="text-2xl font-semibold text-stone-950">
                       <Link

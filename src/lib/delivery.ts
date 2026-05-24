@@ -1,6 +1,10 @@
 import { renderBriefHtmlDigest } from "@/lib/brief-render";
 import nodemailer from "nodemailer";
 import {
+  maybeCreateHtmlPublicationForDelivery,
+  type HtmlPushDeliveryResult,
+} from "@/lib/html-push";
+import {
   createDeliveryLog,
   getBarkSettings,
   getDefaultDeliveryChannels,
@@ -13,7 +17,7 @@ import {
   getTelegramSettings,
   finishDeliveryLog,
   getBriefById,
-  getTaskById,
+  getTopicById,
   getWeComSettings,
   getWebhookSettings,
   listItemsByBriefId,
@@ -26,6 +30,7 @@ export type DeliveryPayload = {
   format: "html";
   title: string;
   html: string;
+  htmlUrl?: string;
 };
 
 export type DeliveryChannel =
@@ -115,6 +120,7 @@ type DeliveryAdapter = {
     html: string;
     store: Store;
     contentType?: "brief" | "report" | "message";
+    htmlUrl?: string | null;
   }): Promise<DeliveryPayloadUnion[]>;
   missingConfigurationMessage: string;
 };
@@ -172,6 +178,23 @@ function renderTemplate(
     .replaceAll("{{summary}}", input.summary)
     .replaceAll("{{contentType}}", input.contentType ?? "brief")
     .trim();
+}
+
+export function appendHtmlUrlToDeliveryText(input: {
+  text: string;
+  htmlUrl?: string | null;
+  locale?: "zh" | "en";
+}) {
+  if (!input.htmlUrl) {
+    return input.text;
+  }
+
+  const label =
+    input.locale === "en"
+      ? "View full HTML summary:"
+      : "查看完整 HTML 摘要：";
+
+  return `${input.text.trim()}\n\n${label}${input.locale === "en" ? " " : ""}${input.htmlUrl}`;
 }
 
 async function deliverEmailSmtp(
@@ -264,6 +287,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<DeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "slack";
@@ -273,6 +297,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<SlackDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "telegram";
@@ -283,6 +308,7 @@ export async function buildDeliveryPayload(input: {
   };
   chatId: string;
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<TelegramDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "feishu";
@@ -292,6 +318,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<FeishuDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "ntfy";
@@ -301,6 +328,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<NtfyDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "dingtalk";
@@ -310,6 +338,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<DingTalkDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "wecom";
@@ -319,6 +348,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<WeComDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "bark";
@@ -328,6 +358,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<BarkDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: "email";
@@ -337,6 +368,7 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<EmailDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
   channel: DeliveryChannel;
@@ -347,11 +379,17 @@ export async function buildDeliveryPayload(input: {
   };
   chatId?: string;
   html?: string;
+  htmlUrl?: string | null;
 }): Promise<DeliveryPayloadUnion> {
+  const summary = appendHtmlUrlToDeliveryText({
+    text: input.brief.summary,
+    htmlUrl: input.htmlUrl,
+  });
+
   switch (input.channel) {
     case "slack":
       return {
-        text: `${input.brief.title}\n${input.brief.summary}`,
+        text: `${input.brief.title}\n${summary}`,
         blocks: [
           {
             type: "header",
@@ -364,7 +402,7 @@ export async function buildDeliveryPayload(input: {
             type: "section",
             text: {
               type: "mrkdwn",
-              text: input.brief.summary,
+              text: summary,
             },
           },
         ],
@@ -372,44 +410,44 @@ export async function buildDeliveryPayload(input: {
     case "telegram":
       return {
         chat_id: input.chatId ?? "",
-        text: `<b>${input.brief.title}</b>\n${input.brief.summary}`,
+        text: `<b>${input.brief.title}</b>\n${summary}`,
         parse_mode: "HTML",
       };
     case "feishu":
       return {
         msg_type: "text",
         content: {
-          text: `${input.brief.title}\n${input.brief.summary}`,
+          text: `${input.brief.title}\n${summary}`,
         },
       };
     case "ntfy":
       return {
         title: input.brief.title,
-        message: input.brief.summary,
+        message: summary,
       };
     case "dingtalk":
       return {
         msgtype: "text",
         text: {
-          content: `${input.brief.title}\n${input.brief.summary}`,
+          content: `${input.brief.title}\n${summary}`,
         },
       };
     case "wecom":
       return {
         msgtype: "text",
         text: {
-          content: `${input.brief.title}\n${input.brief.summary}`,
+          content: `${input.brief.title}\n${summary}`,
         },
       };
     case "bark":
       return {
         title: input.brief.title,
-        body: input.brief.summary,
+        body: summary,
       };
     case "email":
       return {
         subject: input.brief.title,
-        text: input.brief.summary,
+        text: summary,
         html: input.html,
       };
     default:
@@ -418,6 +456,7 @@ export async function buildDeliveryPayload(input: {
         format: "html" as const,
         title: input.brief.title,
         html: input.html ?? "",
+        ...(input.htmlUrl ? { htmlUrl: input.htmlUrl } : {}),
       };
   }
 }
@@ -505,8 +544,10 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getWebhookSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, html }) {
-      return [await buildDeliveryPayload({ channel: "webhook", brief, html })];
+    async buildPayloads({ brief, html, htmlUrl }) {
+      return [
+        await buildDeliveryPayload({ channel: "webhook", brief, html, htmlUrl }),
+      ];
     },
     missingConfigurationMessage: "Configure a webhook endpoint first.",
   },
@@ -525,12 +566,13 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getSlackSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, store, contentType }) {
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
       return [
         await buildDeliveryPayload({
           channel: "slack",
           brief: { ...brief, summary },
+          htmlUrl,
         }),
       ];
     },
@@ -554,7 +596,7 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
         ? `https://api.telegram.org/bot${settings.botToken}/sendMessage`
         : null;
     },
-    async buildPayloads({ brief, store, contentType }) {
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
       const settings = await getTelegramSettings(store);
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
       return [
@@ -562,6 +604,7 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
           channel: "telegram",
           brief: { ...brief, summary },
           chatId: settings.chatId ?? "",
+          htmlUrl,
         }),
       ];
     },
@@ -582,12 +625,13 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getFeishuSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, store, contentType }) {
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
       return [
         await buildDeliveryPayload({
           channel: "feishu",
           brief: { ...brief, summary },
+          htmlUrl,
         }),
       ];
     },
@@ -608,9 +652,10 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getNtfySettings(store)).endpoint;
     },
-    async buildPayloads({ brief, store, contentType }) {
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
-      return splitDeliveryText(summary, 4_000).map((message) => ({
+      const text = appendHtmlUrlToDeliveryText({ text: summary, htmlUrl });
+      return splitDeliveryText(text, 4_000).map((message) => ({
         title: brief.title,
         message,
       }));
@@ -632,12 +677,13 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getDingTalkSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, store, contentType }) {
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
       return [
         await buildDeliveryPayload({
           channel: "dingtalk",
           brief: { ...brief, summary },
+          htmlUrl,
         }),
       ];
     },
@@ -658,12 +704,13 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getWeComSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, store, contentType }) {
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
       return [
         await buildDeliveryPayload({
           channel: "wecom",
           brief: { ...brief, summary },
+          htmlUrl,
         }),
       ];
     },
@@ -684,9 +731,10 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getBarkSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, store, contentType }) {
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
-      return splitDeliveryText(summary, 4_000).map((body) => ({
+      const text = appendHtmlUrlToDeliveryText({ text: summary, htmlUrl });
+      return splitDeliveryText(text, 4_000).map((body) => ({
         title: brief.title,
         body,
       }));
@@ -708,13 +756,14 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     async getEndpoint(store) {
       return (await getEmailSettings(store)).endpoint;
     },
-    async buildPayloads({ brief, html, store, contentType }) {
+    async buildPayloads({ brief, html, store, contentType, htmlUrl }) {
       const summary = await renderDeliveryBody(store, { ...brief, contentType });
       return [
         await buildDeliveryPayload({
           channel: "email",
           brief: { ...brief, summary },
           html,
+          htmlUrl,
         }),
       ];
     },
@@ -730,6 +779,37 @@ function getDeliveryAdapter(channel: DeliveryChannel) {
   }
 
   return adapter;
+}
+
+function getHtmlPushLogFields(result?: HtmlPushDeliveryResult): {
+  htmlPublicationId?: string | null;
+  htmlUrl?: string | null;
+  htmlStatus?: "skipped" | "pending" | "published" | "failed" | null;
+} {
+  if (!result) {
+    return {};
+  }
+
+  if (result.status === "published") {
+    return {
+      htmlPublicationId: result.publicationId,
+      htmlUrl: result.htmlUrl,
+      htmlStatus: "published",
+    };
+  }
+
+  if (result.status === "failed") {
+    return {
+      htmlPublicationId: result.publicationId ?? null,
+      htmlStatus: "failed",
+    };
+  }
+
+  return { htmlStatus: "skipped" };
+}
+
+function getHtmlUrlFromPushResult(result?: HtmlPushDeliveryResult) {
+  return result?.status === "published" ? result.htmlUrl : null;
 }
 
 async function getDeliveryChannelSettings(
@@ -795,18 +875,18 @@ export async function listConfiguredDeliveryChannels(store: Store) {
   return configured;
 }
 
-export async function listDeliveryChannelsForTask(
+export async function listDeliveryChannelsForTopic(
   store: Store,
-  taskId: string | null | undefined,
+  topicId: string | null | undefined,
 ) {
   const channels = await listConfiguredDeliveryChannels(store);
 
-  if (!taskId) {
+  if (!topicId) {
     return channels.filter((channel) => channel.enabled);
   }
 
-  const task = await getTaskById(store, taskId);
-  const overrides = task?.deliveryChannels?.filter(Boolean) ?? [];
+  const topic = await getTopicById(store, topicId);
+  const overrides = topic?.deliveryChannels?.filter(Boolean) ?? [];
 
   if (overrides.length === 0) {
     const defaults = await getDefaultDeliveryChannels(store);
@@ -832,6 +912,7 @@ export async function deliverStoredBriefToChannel(
   channel: DeliveryChannel,
   options?: {
     fetchImpl?: FetchLike;
+    htmlPushResult?: HtmlPushDeliveryResult;
     maxAttempts?: number;
     sleepImpl?: SleepLike;
   },
@@ -851,6 +932,13 @@ export async function deliverStoredBriefToChannel(
     throw new Error(adapter.missingConfigurationMessage);
   }
 
+  const htmlPushResult =
+    options?.htmlPushResult ??
+    (await maybeCreateHtmlPublicationForDelivery(
+      store,
+      { contentType: "brief", briefId },
+      { fetchImpl: options?.fetchImpl },
+    ));
   const payloads = await adapter.buildPayloads({
     brief: {
       id: briefId,
@@ -860,11 +948,13 @@ export async function deliverStoredBriefToChannel(
     html,
     store,
     contentType: "brief",
+    htmlUrl: getHtmlUrlFromPushResult(htmlPushResult),
   });
   const logId = await createDeliveryLog(store, {
     briefId,
     endpoint,
     payloadType: adapter.payloadType,
+    ...getHtmlPushLogFields(htmlPushResult),
   });
   let attempts = 0;
   let responseStatus: number | undefined;
@@ -886,6 +976,7 @@ export async function deliverStoredBriefToChannel(
         status: "error",
         attemptCount: attempts,
         error: result.error,
+        ...getHtmlPushLogFields(htmlPushResult),
       });
 
       return {
@@ -903,6 +994,7 @@ export async function deliverStoredBriefToChannel(
     status: "success",
     attemptCount: attempts,
     responseStatus,
+    ...getHtmlPushLogFields(htmlPushResult),
   });
 
   return {
@@ -918,6 +1010,7 @@ export async function deliverStoredBrief(
   briefId: string,
   options?: {
     fetchImpl?: FetchLike;
+    htmlPushResult?: HtmlPushDeliveryResult;
     maxAttempts?: number;
     sleepImpl?: SleepLike;
   },
@@ -936,6 +1029,7 @@ export async function deliverTextToChannel(
   },
   options?: {
     fetchImpl?: FetchLike;
+    htmlPushResult?: HtmlPushDeliveryResult;
     maxAttempts?: number;
     sleepImpl?: SleepLike;
   },
@@ -947,6 +1041,21 @@ export async function deliverTextToChannel(
     throw new Error(adapter.missingConfigurationMessage);
   }
 
+  const htmlPushResult =
+    input.contentType === "report"
+      ? (options?.htmlPushResult ??
+        (await maybeCreateHtmlPublicationForDelivery(
+          store,
+          { contentType: "report", reportId: input.id },
+          { fetchImpl: options?.fetchImpl },
+        ).catch((error) => ({
+          status: "failed" as const,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Unknown HTML publish failure.",
+        }))))
+      : undefined;
   const payloads = await adapter.buildPayloads({
     brief: {
       id: input.id,
@@ -956,12 +1065,14 @@ export async function deliverTextToChannel(
     html: input.body,
     store,
     contentType: input.contentType ?? "message",
+    htmlUrl: getHtmlUrlFromPushResult(htmlPushResult),
   });
   const logId = await createDeliveryLog(store, {
     contentType: input.contentType ?? "message",
     contentId: input.id,
     endpoint,
     payloadType: adapter.payloadType,
+    ...getHtmlPushLogFields(htmlPushResult),
   });
   let attempts = 0;
   let responseStatus = 0;
@@ -983,6 +1094,7 @@ export async function deliverTextToChannel(
         status: "error",
         attemptCount: attempts,
         error: result.error,
+        ...getHtmlPushLogFields(htmlPushResult),
       });
 
       return {
@@ -1000,6 +1112,7 @@ export async function deliverTextToChannel(
     status: "success",
     attemptCount: attempts,
     responseStatus,
+    ...getHtmlPushLogFields(htmlPushResult),
   });
 
   return {
@@ -1020,7 +1133,7 @@ export async function deliverStoredBriefToConfiguredChannels(
   },
 ) {
   const brief = await getBriefById(store, briefId);
-  const channels = (await listDeliveryChannelsForTask(store, brief?.taskId)).map(
+  const channels = (await listDeliveryChannelsForTopic(store, brief?.topicId)).map(
     (channel) => channel.type,
   );
 
@@ -1029,10 +1142,18 @@ export async function deliverStoredBriefToConfiguredChannels(
   }
 
   const deliveries = [];
+  const htmlPushResult = await maybeCreateHtmlPublicationForDelivery(
+    store,
+    { contentType: "brief", briefId },
+    { fetchImpl: options?.fetchImpl },
+  );
 
   for (const channel of channels) {
     deliveries.push(
-      await deliverStoredBriefToChannel(store, briefId, channel, options),
+      await deliverStoredBriefToChannel(store, briefId, channel, {
+        ...options,
+        htmlPushResult,
+      }),
     );
   }
 

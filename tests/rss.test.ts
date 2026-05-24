@@ -15,9 +15,9 @@ import {
   createItemRecord,
   createSourceRecord,
   createStore,
-  createTaskRecord,
+  createTopicRecord,
   listItemsBySource,
-  listSourcesByTask,
+  listSourcesByTopic,
   markSourceSyncResult,
 } from "@/lib/store";
 
@@ -217,14 +217,14 @@ describe("parseFeedItems", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const taskId = await createTaskRecord(store, {
+      const topicId = await createTopicRecord(store, {
         ownerId: "user-1",
         title: "Monitor feed",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
       const sourceId = await createSourceRecord(store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "OpenAI News",
         url: "https://example.com/feed.xml",
@@ -285,14 +285,14 @@ describe("parseFeedItems", () => {
     const store = createStore(join(tempDirectory, "store.sqlite"));
 
     try {
-      const taskId = await createTaskRecord(store, {
+      const topicId = await createTopicRecord(store, {
         ownerId: "user-1",
         title: "Monitor feed",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track RSS updates",
       });
       const sourceId = await createSourceRecord(store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "OpenAI News",
         url: "https://example.com/feed.xml",
@@ -304,7 +304,7 @@ describe("parseFeedItems", () => {
         error: "Feed request failed with 500",
       });
 
-      expect(await listSourcesByTask(store, taskId)).toEqual([
+      expect(await listSourcesByTopic(store, topicId)).toEqual([
         expect.objectContaining({
           id: sourceId,
           status: "error",

@@ -5,7 +5,7 @@ import { deriveTopicTags } from "@/lib/topic-tags";
 describe("deriveTopicTags", () => {
   it("extracts deeper hiring and language topic tags", () => {
     const tags = deriveTopicTags({
-      task: {
+      topic: {
         title: "Track remote backend jobs",
         userPrompt: "Monitor remote and part-time Java or Rust openings",
       },

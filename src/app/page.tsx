@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { createTask, deleteTask } from "@/app/actions";
+import { createTopic, deleteTopic } from "@/app/actions";
 import { ChatConsole } from "@/components/chat-console";
 import {
   MetricPill,
@@ -23,8 +23,8 @@ import {
   listChatMessages,
   listRecentSyncRuns,
   listSources,
-  listTasks,
-  type TaskType,
+  listTopics,
+  type TopicType,
 } from "@/lib/store";
 
 type HomeProps = {
@@ -46,13 +46,13 @@ export default async function Home({ searchParams }: HomeProps) {
   const t = getDictionary(locale).home;
   const isZh = locale === "zh";
   const chatLabels = getDictionary(locale).chat;
-  const taskTypeLabels: Record<TaskType, string> = {
-    TOPIC: t.taskTypeTopic,
-    QUESTION: t.taskTypeQuestion,
+  const topicTypeLabels: Record<TopicType, string> = {
+    TOPIC: t.topicTypeTopic,
+    QUESTION: t.topicTypeQuestion,
   };
   const actorScopeId = getActorScopedChatScopeId(actor.id, "home");
   const [
-    tasks,
+    topics,
     sources,
     briefs,
     unreadCount,
@@ -61,7 +61,7 @@ export default async function Home({ searchParams }: HomeProps) {
     params,
     globalThread,
   ] = await Promise.all([
-    listTasks(defaultStore, { actorId: actor.id }),
+    listTopics(defaultStore, { actorId: actor.id }),
     listSources(defaultStore, { actorId: actor.id }),
     listBriefsFiltered(defaultStore, { actorId: actor.id }),
     countUnreadBriefs(defaultStore, { actorId: actor.id }),
@@ -73,9 +73,9 @@ export default async function Home({ searchParams }: HomeProps) {
   const globalMessages = await listChatMessages(defaultStore, globalThread.id);
   const recentBriefs = briefs.slice(0, 6);
 
-  const sourceCountByTask = new Map<string, number>();
+  const sourceCountByTopic = new Map<string, number>();
   for (const source of sources) {
-    sourceCountByTask.set(source.taskId, (sourceCountByTask.get(source.taskId) ?? 0) + 1);
+    sourceCountByTopic.set(source.topicId, (sourceCountByTopic.get(source.topicId) ?? 0) + 1);
   }
 
   return (
@@ -96,7 +96,7 @@ export default async function Home({ searchParams }: HomeProps) {
         }
         metrics={
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
-            <MetricPill value={tasks.length} label={t.goals} />
+            <MetricPill value={topics.length} label={t.topicsLabel} />
             <MetricPill
               value={unreadCount}
               label={t.unreadBriefs}
@@ -124,58 +124,58 @@ export default async function Home({ searchParams }: HomeProps) {
       ) : null}
 
       <div className="grid gap-5 lg:grid-cols-[1.15fr_0.85fr]">
-        {/* Left column: Monitoring goals + create form */}
+        {/* Left column: Topics + create form */}
         <Surface>
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold">{t.goalListTitle}</h2>
-              <p className="text-sm leading-6 text-stone-500">{t.goalListDescription}</p>
+              <h2 className="text-xl font-semibold">{t.topicListTitle}</h2>
+              <p className="text-sm leading-6 text-stone-500">{t.topicListDescription}</p>
             </div>
             <span className="text-xs uppercase tracking-[0.12em] text-stone-400">
-              {tasks.length} {t.goalCount}
+              {topics.length} {t.topicCount}
             </span>
           </div>
 
-          {tasks.length === 0 ? (
+          {topics.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
-              {t.emptyGoals}
+              {t.emptyTopics}
             </div>
           ) : (
             <div className="grid gap-3">
-              {tasks.map((task) => (
+              {topics.map((topic) => (
                 <article
-                  key={task.id}
+                  key={topic.id}
                   className="rounded-2xl border border-stone-200 bg-stone-50/80 p-5"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="rounded-full bg-stone-200 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-stone-600">
-                          {taskTypeLabels[task.taskType]}
+                          {topicTypeLabels[topic.topicType]}
                         </span>
-                        {(sourceCountByTask.get(task.id) ?? 0) > 0 && (
+                        {(sourceCountByTopic.get(topic.id) ?? 0) > 0 && (
                           <span className="text-xs text-stone-400">
-                            {sourceCountByTask.get(task.id)}{" "}
+                            {sourceCountByTopic.get(topic.id)}{" "}
                             {isZh ? "个来源" : "sources"}
                           </span>
                         )}
                       </div>
                       <h3 className="text-base font-semibold text-stone-950 hover:text-[#0057ff]">
-                        <Link href={`/tasks/${task.id}`}>{task.title}</Link>
+                        <Link href={`/topics/${topic.id}`}>{topic.title}</Link>
                       </h3>
                       <p className="line-clamp-2 text-sm leading-6 text-stone-600">
-                        {task.userPrompt}
+                        {topic.userPrompt}
                       </p>
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-2">
                       <Link
-                        href={`/tasks/${task.id}`}
+                        href={`/topics/${topic.id}`}
                         className="inline-flex h-8 items-center rounded-lg bg-[#0057ff] px-3 text-xs font-semibold text-white transition hover:bg-[#0049d6]"
                       >
                         {isZh ? "查看" : "View"}
                       </Link>
-                      <form action={deleteTask}>
-                        <input name="taskId" type="hidden" value={task.id} />
+                      <form action={deleteTopic}>
+                        <input name="topicId" type="hidden" value={topic.id} />
                         <button className="inline-flex h-8 items-center rounded-lg border border-rose-200 px-3 text-xs font-medium text-rose-600 transition hover:border-rose-300 hover:bg-rose-50">
                           {t.delete}
                         </button>
@@ -188,7 +188,7 @@ export default async function Home({ searchParams }: HomeProps) {
           )}
 
           <div className="mt-5 border-t border-stone-100 pt-5">
-            <form action={createTask} className="grid gap-3">
+            <form action={createTopic} className="grid gap-3">
               <div className="space-y-0.5">
                 <h3 className="text-sm font-semibold text-stone-800">{t.createTitle}</h3>
                 <p className="text-xs leading-5 text-stone-500">{t.createDescription}</p>
@@ -201,7 +201,7 @@ export default async function Home({ searchParams }: HomeProps) {
                   className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
                 />
               </label>
-              <input name="taskType" type="hidden" value="TOPIC" />
+              <input name="topicType" type="hidden" value="TOPIC" />
               <label className="grid gap-1.5 text-sm">
                 <span className="font-medium text-stone-700">{t.promptLabel}</span>
                 <textarea
@@ -260,7 +260,7 @@ export default async function Home({ searchParams }: HomeProps) {
                       )}
                       <div className="min-w-0">
                         <p className="text-[11px] font-medium uppercase tracking-[0.1em] text-stone-400">
-                          {brief.taskTitle}
+                          {brief.topicTitle}
                         </p>
                         <div className="mt-0.5 text-sm font-semibold text-stone-950">
                           {brief.title}

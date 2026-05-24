@@ -2,15 +2,15 @@
 
 import { describe, expect, it } from "vitest";
 
-import { generateTaskReport } from "@/lib/reports";
+import { generateTopicReport } from "@/lib/reports";
 import {
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
   getReportById,
-  listReportsByTask,
-  saveTaskProfile,
+  listReportsByTopic,
+  saveTopicProfile,
 } from "@/lib/store";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
@@ -19,18 +19,18 @@ describe("trend reports", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Coding agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor Devin coding agent product updates.",
       });
-      await saveTaskProfile(fixture.store, taskId, {
+      await saveTopicProfile(fixture.store, topicId, {
         keywords: ["Devin", "coding agent"],
         suggestedQueries: ["Devin coding agent update"],
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "Agent feed",
         url: "https://example.com/feed.xml",
@@ -47,7 +47,7 @@ describe("trend reports", () => {
       });
       expect(item).not.toBeNull();
       const briefId = await createBriefRecord(fixture.store, {
-        taskId,
+        topicId,
         itemIds: item ? [item.id] : [],
         title: "Devin workflow update",
         summary: "Devin shipped a workflow update.",
@@ -58,14 +58,14 @@ describe("trend reports", () => {
         tags: ["coding-agent", "workflow"],
       });
 
-      const reportId = await generateTaskReport(fixture.store, taskId, {
+      const reportId = await generateTopicReport(fixture.store, topicId, {
         mode: "current",
         now: new Date("2030-05-24T12:00:00.000Z"),
       });
       const report = await getReportById(fixture.store, reportId);
 
       expect(report).toMatchObject({
-        taskId,
+        topicId,
         mode: "current",
         briefIds: [briefId],
         sourceCitations: ["https://example.com/devin"],
@@ -73,7 +73,7 @@ describe("trend reports", () => {
       });
       expect(report?.markdown).toContain("Core Trends");
       expect(report?.markdown).toContain("coding-agent");
-      expect(await listReportsByTask(fixture.store, taskId)).toHaveLength(1);
+      expect(await listReportsByTopic(fixture.store, topicId)).toHaveLength(1);
     } finally {
       fixture.cleanup();
     }

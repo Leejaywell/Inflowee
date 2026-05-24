@@ -127,7 +127,7 @@ export default async function BriefDetailPage({
             </Link>
             <span className="text-stone-300">/</span>
             <span className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-              {brief.taskTitle}
+              {brief.topicTitle}
             </span>
           </div>
 

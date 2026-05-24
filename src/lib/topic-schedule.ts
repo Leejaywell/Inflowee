@@ -1,11 +1,11 @@
-export type TaskSchedulePreset =
+export type TopicSchedulePreset =
   | "always_on"
   | "morning_evening"
   | "office_hours"
   | "nightly_summary"
   | "custom";
 
-export type TaskScheduleWindow = {
+export type TopicScheduleWindow = {
   id: string;
   days: number[];
   startMinutes: number;
@@ -19,10 +19,10 @@ export type TaskScheduleWindow = {
   maxPushItems: number;
 };
 
-export type TaskScheduleProfile = {
-  preset: TaskSchedulePreset;
+export type TopicScheduleProfile = {
+  preset: TopicSchedulePreset;
   timezone: string;
-  windows: TaskScheduleWindow[];
+  windows: TopicScheduleWindow[];
 };
 
 const allDays = [0, 1, 2, 3, 4, 5, 6];
@@ -33,8 +33,8 @@ function windowOf(
   days: number[],
   startMinutes: number,
   endMinutes: number,
-  overrides: Partial<TaskScheduleWindow> = {},
-): TaskScheduleWindow {
+  overrides: Partial<TopicScheduleWindow> = {},
+): TopicScheduleWindow {
   return {
     id,
     days,
@@ -52,9 +52,9 @@ function windowOf(
 }
 
 export function buildSchedulePreset(
-  preset: TaskSchedulePreset,
+  preset: TopicSchedulePreset,
   timezone = "Asia/Shanghai",
-): TaskScheduleProfile {
+): TopicScheduleProfile {
   if (preset === "morning_evening") {
     return {
       preset,
@@ -106,7 +106,7 @@ export function buildSchedulePreset(
   };
 }
 
-export function validateScheduleProfile(profile: TaskScheduleProfile): string[] {
+export function validateScheduleProfile(profile: TopicScheduleProfile): string[] {
   const errors: string[] = [];
 
   for (const window of profile.windows) {
@@ -162,7 +162,7 @@ function minutesInTimezone(now: Date, timezone: string) {
 }
 
 export function getActiveScheduleWindow(
-  profile: TaskScheduleProfile | null | undefined,
+  profile: TopicScheduleProfile | null | undefined,
   now = new Date(),
 ) {
   if (!profile) {
@@ -187,7 +187,7 @@ export function getActiveScheduleWindow(
 }
 
 export function shouldCollectForSchedule(
-  profile: TaskScheduleProfile | null | undefined,
+  profile: TopicScheduleProfile | null | undefined,
   now = new Date(),
 ) {
   return getActiveScheduleWindow(profile, now)?.collect ?? false;

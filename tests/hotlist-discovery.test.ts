@@ -6,20 +6,20 @@ import {
   buildHotlistSourceConfig,
   discoverHotlistCandidates,
 } from "@/lib/hotlist-discovery";
-import type { SourceRecord, TaskRecord } from "@/lib/store";
+import type { SourceRecord, TopicRecord } from "@/lib/store";
 
-const task = {
-  id: "task-1",
+const topic = {
+  id: "topic-1",
   title: "AI coding tools",
   userPrompt: "Monitor AI coding tools",
-  taskProfile: {
+  topicProfile: {
     suggestedQueries: ["AI coding agents"],
   },
-} as TaskRecord;
+} as TopicRecord;
 
 describe("hotlist discovery", () => {
-  it("builds default hotlist provider config from the task", () => {
-    const config = buildHotlistSourceConfig(task);
+  it("builds default hotlist provider config from the topic", () => {
+    const config = buildHotlistSourceConfig(topic);
 
     expect(config.providers).toEqual(["baidu", "weibo", "zhihu", "bilibili"]);
     expect(config.queries).toContain("AI coding agents");
@@ -55,7 +55,7 @@ describe("hotlist discovery", () => {
         </body></html>`;
     });
 
-    const result = await discoverHotlistCandidates(task, source, {
+    const result = await discoverHotlistCandidates(topic, source, {
       fetchSourceFeedImpl: fetchSourceFeedImpl as never,
     });
 
@@ -99,7 +99,7 @@ describe("hotlist discovery", () => {
       return `<html><body><li><a href="/a">AI 热点</a><span>42</span></li></body></html>`;
     });
 
-    const result = await discoverHotlistCandidates(task, source, {
+    const result = await discoverHotlistCandidates(topic, source, {
       fetchSourceFeedImpl: fetchSourceFeedImpl as never,
     });
 

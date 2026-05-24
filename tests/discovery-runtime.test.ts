@@ -2,19 +2,19 @@
 
 import {
   buildGenericDiscoveryExperience,
-  buildTaskDiscoveryExperience,
+  buildTopicDiscoveryExperience,
 } from "@/lib/discovery-runtime";
 import {
   createItemRecordResult,
   createSourceRecord,
-  createTaskRecord,
-  getTaskById,
-  saveTaskProfile,
+  createTopicRecord,
+  getTopicById,
+  saveTopicProfile,
 } from "@/lib/store";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
-describe("task discovery runtime", () => {
-  it("builds a browsable generic discovery experience without a task", () => {
+describe("topic discovery runtime", () => {
+  it("builds a browsable generic discovery experience without a topic", () => {
     const experience = buildGenericDiscoveryExperience();
 
     expect(experience.categories.length).toBeGreaterThan(0);
@@ -26,18 +26,18 @@ describe("task discovery runtime", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "AI tools",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor AI coding tools.",
       });
-      await saveTaskProfile(fixture.store, taskId, {
+      await saveTopicProfile(fixture.store, topicId, {
         keywords: ["Agent IDE"],
         suggestedQueries: ["Agent IDE funding"],
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         title: "OpenAI Blog",
         url: "https://openai.com/blog/rss.xml",
         sourceType: "RSS",
@@ -52,10 +52,10 @@ describe("task discovery runtime", () => {
         sourceNativeScore: 100,
       });
 
-      const record = await getTaskById(fixture.store, taskId);
+      const record = await getTopicById(fixture.store, topicId);
       expect(record).not.toBeNull();
 
-      const experience = await buildTaskDiscoveryExperience(fixture.store, record!, {
+      const experience = await buildTopicDiscoveryExperience(fixture.store, record!, {
         categoryId: "technology",
         selectedTagIds: ["ai"],
       });

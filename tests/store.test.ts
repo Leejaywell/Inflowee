@@ -10,17 +10,17 @@ import {
   createItemRecordResult,
   createSourceRecord,
   createStore,
-  createTaskRecord,
+  createTopicRecord,
   getBriefById,
   getSourceById,
-  getTaskById,
+  getTopicById,
   getOrCreateChatThread,
   hasBriefOwner,
-  hasTaskOwner,
+  hasTopicOwner,
   listBriefsFiltered,
   listItemsBySource,
-  listSourcesByTask,
-  listTasks,
+  listSourcesByTopic,
+  listTopics,
   markBriefRead,
 } from "@/lib/store";
 
@@ -38,32 +38,32 @@ function withSqliteStore() {
 }
 
 describe("personal store model", () => {
-  it("creates owner-scoped monitoring goals", async () => {
+  it("creates owner-scoped monitoring topicsLabel", async () => {
     const fixture = withSqliteStore();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents and product updates.",
       });
 
-      await createTaskRecord(fixture.store, {
+      await createTopicRecord(fixture.store, {
         ownerId: "user-2",
-        title: "Other task",
-        taskType: "TOPIC",
+        title: "Other topic",
+        topicType: "TOPIC",
         userPrompt: "Track unrelated updates.",
       });
 
-      const tasks = await listTasks(fixture.store, { actorId: "user-1" });
+      const topics = await listTopics(fixture.store, { actorId: "user-1" });
 
-      expect(tasks).toHaveLength(1);
-      expect(tasks[0]?.id).toBe(taskId);
-      expect(tasks[0]?.ownerId).toBe("user-1");
-      expect(await hasTaskOwner(fixture.store, "user-1", taskId)).toBe(true);
-      expect(await hasTaskOwner(fixture.store, "user-2", taskId)).toBe(false);
-      expect(await getTaskById(fixture.store, taskId)).toEqual(
+      expect(topics).toHaveLength(1);
+      expect(topics[0]?.id).toBe(topicId);
+      expect(topics[0]?.ownerId).toBe("user-1");
+      expect(await hasTopicOwner(fixture.store, "user-1", topicId)).toBe(true);
+      expect(await hasTopicOwner(fixture.store, "user-2", topicId)).toBe(false);
+      expect(await getTopicById(fixture.store, topicId)).toEqual(
         expect.objectContaining({ title: "Track agents" }),
       );
     } finally {
@@ -75,14 +75,14 @@ describe("personal store model", () => {
     const fixture = withSqliteStore();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents and product updates.",
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "Agent feed",
         url: "https://example.com/feed.xml",
@@ -104,7 +104,7 @@ describe("personal store model", () => {
       expect(item?.matchedTerms).toEqual(["coding", "agent"]);
 
       const briefId = await createBriefRecord(fixture.store, {
-        taskId,
+        topicId,
         itemIds: item ? [item.id] : [],
         title: "Agent update",
         summary: "Devin launched a relevant update.",
@@ -113,9 +113,9 @@ describe("personal store model", () => {
       });
 
       expect(await getSourceById(fixture.store, sourceId)).toEqual(
-        expect.objectContaining({ taskId }),
+        expect.objectContaining({ topicId }),
       );
-      expect(await listSourcesByTask(fixture.store, taskId)).toHaveLength(1);
+      expect(await listSourcesByTopic(fixture.store, topicId)).toHaveLength(1);
       expect(await listItemsBySource(fixture.store, sourceId)).toHaveLength(1);
       expect(await hasBriefOwner(fixture.store, "user-1", briefId)).toBe(true);
       expect(await hasBriefOwner(fixture.store, "user-2", briefId)).toBe(false);
@@ -124,21 +124,21 @@ describe("personal store model", () => {
       await markBriefRead(fixture.store, briefId, "user-1");
 
       expect(await getBriefById(fixture.store, briefId, { actorId: "user-1" })).toEqual(
-        expect.objectContaining({ isRead: true, taskTitle: "Track agents" }),
+        expect.objectContaining({ isRead: true, topicTitle: "Track agents" }),
       );
-      expect(await listBriefsFiltered(fixture.store, { actorId: "user-1", taskId })).toHaveLength(1);
+      expect(await listBriefsFiltered(fixture.store, { actorId: "user-1", topicId })).toHaveLength(1);
     } finally {
       fixture.cleanup();
     }
   });
 
-  it("supports global, task, and brief chat scopes only", async () => {
+  it("supports global, topic, and brief chat scopes only", async () => {
     const fixture = withSqliteStore();
 
     try {
-      const thread = await getOrCreateChatThread(fixture.store, "task", "task-1");
+      const thread = await getOrCreateChatThread(fixture.store, "topic", "topic-1");
 
-      expect(thread.scopeType).toBe("task");
+      expect(thread.scopeType).toBe("topic");
       await expect(
         getOrCreateChatThread(
           fixture.store,

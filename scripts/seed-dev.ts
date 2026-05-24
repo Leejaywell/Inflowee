@@ -2,9 +2,9 @@ import {
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
   createStore,
-  listTasks,
+  listTopics,
   markBriefRead,
   markSourceSyncResult,
 } from "../src/lib/store.ts";
@@ -15,90 +15,90 @@ loadDevEnv();
 async function main() {
   const store = createStore();
 
-  if ((await listTasks(store)).length > 0) {
+  if ((await listTopics(store)).length > 0) {
     console.log("Database already has data. Skip seeding.");
     process.exit(0);
   }
 
-  const taskModelsId = await createTaskRecord(store, {
+  const topicModelsId = await createTopicRecord(store, {
     title: "Frontier Model Launches",
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt:
       "Monitor new model releases, pricing adjustments, and API benchmarks from OpenAI and Anthropic.",
   });
 
   const srcOpenAi = await createSourceRecord(store, {
-    taskId: taskModelsId,
+    topicId: topicModelsId,
     sourceType: "PAGE",
     title: "OpenAI Newsroom",
     url: "https://openai.com/newsroom",
   });
 
   const srcAnthropic = await createSourceRecord(store, {
-    taskId: taskModelsId,
+    topicId: topicModelsId,
     sourceType: "PAGE",
     title: "Anthropic News & Insights",
     url: "https://www.anthropic.com/news",
   });
 
-  const taskOpenSourceAiId = await createTaskRecord(store, {
+  const topicOpenSourceAiId = await createTopicRecord(store, {
     title: "Open Source AI & Research",
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt:
       "Track academic research publications and open weights model releases (Llama, Gemma).",
   });
 
   const srcDeepMind = await createSourceRecord(store, {
-    taskId: taskOpenSourceAiId,
+    topicId: topicOpenSourceAiId,
     sourceType: "PAGE",
     title: "Google DeepMind Discover",
     url: "https://deepmind.google/discover/blog",
   });
 
   const srcMetaAi = await createSourceRecord(store, {
-    taskId: taskOpenSourceAiId,
+    topicId: topicOpenSourceAiId,
     sourceType: "PAGE",
     title: "Meta AI Blog",
     url: "https://ai.meta.com/blog",
   });
 
-  const taskTrendsId = await createTaskRecord(store, {
+  const topicTrendsId = await createTopicRecord(store, {
     title: "Venture Trends & Dev Sentiment",
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt:
       "Track venture capital trends and developer reactions to coding agents and toolchains.",
   });
 
   const srcHackerNews = await createSourceRecord(store, {
-    taskId: taskTrendsId,
+    topicId: topicTrendsId,
     sourceType: "RSS",
     title: "Hacker News Feed",
     url: "https://news.ycombinator.com/rss",
   });
 
   const srcTechCrunch = await createSourceRecord(store, {
-    taskId: taskTrendsId,
+    topicId: topicTrendsId,
     sourceType: "RSS",
     title: "TechCrunch Startups",
     url: "https://techcrunch.com/feed/",
   });
 
-  const taskLaunchesId = await createTaskRecord(store, {
+  const topicLaunchesId = await createTopicRecord(store, {
     title: "Product Launches & Tools",
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt:
       "Scan launch platforms for new independent software tools and developer accessories.",
   });
 
   const srcProductHunt = await createSourceRecord(store, {
-    taskId: taskLaunchesId,
+    topicId: topicLaunchesId,
     sourceType: "STRUCTURED",
     title: "Product Hunt",
     url: "https://www.producthunt.com/",
   });
 
   const srcYCombinator = await createSourceRecord(store, {
-    taskId: taskLaunchesId,
+    topicId: topicLaunchesId,
     sourceType: "STRUCTURED",
     title: "YC Startup Launches",
     url: "https://www.ycombinator.com/launches",
@@ -153,10 +153,10 @@ async function main() {
 
   if (itemGpt4o && itemClaude35) {
     await createBriefRecord(store, {
-      taskId: taskModelsId,
+      topicId: topicModelsId,
       title: "Frontier AI Pricing Wars & Performance Milestones",
       summary:
-        "OpenAI and Anthropic have simultaneously updated their product lineups. OpenAI released GPT-4o-mini to establish pricing supremacy in cost-efficient APIs, while Anthropic launched Claude 3.5 Sonnet, setting new quality benchmarks for autonomous coding tasks.",
+        "OpenAI and Anthropic have simultaneously updated their product lineups. OpenAI released GPT-4o-mini to establish pricing supremacy in cost-efficient APIs, while Anthropic launched Claude 3.5 Sonnet, setting new quality benchmarks for autonomous coding topics.",
       whyItMatters:
         "Developers now have access to cheaper, faster planning intelligence, making high-volume agentic loops highly viable from both performance and margin standpoints.",
       sourceCitations: [itemGpt4o.canonicalUrl, itemClaude35.canonicalUrl],
@@ -166,7 +166,7 @@ async function main() {
 
   if (itemDevinFunding && itemHnDevin) {
     await createBriefRecord(store, {
-      taskId: taskTrendsId,
+      topicId: topicTrendsId,
       title: "Autonomous Coding Agents Attract Capital Amid Community Debate",
       summary:
         "Cognition Labs locked in a major financing round valuing the startup at $2B, following the rollout of Devin. Hacker News threads show intense debate, with engineers analyzing product capabilities while raising long-term concerns over career paths.",
@@ -182,7 +182,7 @@ async function main() {
 
   if (itemProductHuntAi) {
     const briefId = await createBriefRecord(store, {
-      taskId: taskLaunchesId,
+      topicId: topicLaunchesId,
       title: "Fullstack Sandbox-in-Browser Tech Gains Ground",
       summary:
         "Bolt.new topped Product Hunt rankings, highlighting a growing trend towards complete in-browser sandboxed development platforms that run complete node servers inside the user browser.",
@@ -213,7 +213,7 @@ async function main() {
   }
 
   console.log(
-    "Seeded personal monitoring goals, sources, and grounded briefs successfully.",
+    "Seeded personal topics, sources, and grounded briefs successfully.",
   );
 }
 

@@ -3,7 +3,7 @@ import { clusterItemsForBriefs } from "@/lib/brief-clustering";
 import { deriveTopicTags } from "@/lib/topic-tags";
 
 export type BriefCandidate = {
-  taskId: string;
+  topicId: string;
   itemIds: string[];
   title: string;
   summary: string;
@@ -15,7 +15,7 @@ export type BriefCandidate = {
 };
 
 export function buildBriefsFromItems(
-  taskId: string,
+  topicId: string,
   items: Pick<
     ItemRecord,
     "id" | "title" | "canonicalUrl" | "summary" | "publishedAt"
@@ -34,7 +34,7 @@ export function buildBriefsFromItems(
       const sourceCount = cluster.items.length;
 
       return {
-        taskId,
+        topicId,
         itemIds: cluster.itemIds,
         title: cluster.representativeTitle,
         summary,

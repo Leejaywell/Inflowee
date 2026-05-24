@@ -84,14 +84,14 @@ describe("category tag subscription discovery catalog", () => {
     );
   });
 
-  it("ranks task-relevant and high-trend sources first", () => {
+  it("ranks topic-relevant and high-trend sources first", () => {
     const candidates = getDiscoverySourceCandidates({
       keywords: ["OpenAI"],
       suggestedQueries: ["OpenAI product updates"],
     });
 
     expect(candidates[0]?.trendLabels).toEqual(
-      expect.arrayContaining(["AI 推荐", "与目标相关"]),
+      expect.arrayContaining(["AI 推荐", "与话题相关"]),
     );
   });
 

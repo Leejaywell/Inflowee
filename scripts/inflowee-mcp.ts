@@ -69,7 +69,7 @@ server.registerResource(
   "inflowee://resources",
   {
     title: "Inflowee resources",
-    description: "Actor-scoped tasks, sources, briefs, reports, and delivery channel status.",
+    description: "Actor-scoped topics, sources, briefs, reports, and delivery channel status.",
     mimeType: "application/json",
   },
   async (uri) => {

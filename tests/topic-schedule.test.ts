@@ -5,10 +5,10 @@ import {
   getActiveScheduleWindow,
   shouldCollectForSchedule,
   validateScheduleProfile,
-  type TaskScheduleProfile,
-} from "@/lib/task-schedule";
+  type TopicScheduleProfile,
+} from "@/lib/topic-schedule";
 
-describe("task schedule profiles", () => {
+describe("topic schedule profiles", () => {
   it("builds preset windows and matches the active collection window", () => {
     const profile = buildSchedulePreset("office_hours", "Asia/Shanghai");
 
@@ -22,7 +22,7 @@ describe("task schedule profiles", () => {
   });
 
   it("supports cross-midnight windows", () => {
-    const profile: TaskScheduleProfile = {
+    const profile: TopicScheduleProfile = {
       preset: "custom",
       timezone: "Asia/Shanghai",
       windows: [
@@ -49,7 +49,7 @@ describe("task schedule profiles", () => {
   });
 
   it("rejects overlapping same-day windows", () => {
-    const profile: TaskScheduleProfile = {
+    const profile: TopicScheduleProfile = {
       preset: "custom",
       timezone: "Asia/Shanghai",
       windows: [

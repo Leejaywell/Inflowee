@@ -5,15 +5,15 @@ import { SubscriptionDiscovery } from "@/components/subscription-discovery";
 import { getSessionUser } from "@/lib/auth";
 import {
   buildGenericDiscoveryExperience,
-  buildTaskDiscoveryExperience,
+  buildTopicDiscoveryExperience,
 } from "@/lib/discovery-runtime";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
-import { defaultStore, listTasks } from "@/lib/store";
+import { defaultStore, listTopics } from "@/lib/store";
 
 type DiscoverPageProps = {
   searchParams?: Promise<{
-    taskId?: string;
+    topicId?: string;
   }>;
 };
 
@@ -30,12 +30,12 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
     redirect("/login");
   }
 
-  const tasks = await listTasks(defaultStore, { actorId: actor.id });
-  const selectedTask = params?.taskId
-    ? tasks.find((task) => task.id === params.taskId) ?? null
+  const topics = await listTopics(defaultStore, { actorId: actor.id });
+  const selectedTopic = params?.topicId
+    ? topics.find((topic) => topic.id === params.topicId) ?? null
     : null;
-  const experience = selectedTask
-    ? await buildTaskDiscoveryExperience(defaultStore, selectedTask)
+  const experience = selectedTopic
+    ? await buildTopicDiscoveryExperience(defaultStore, selectedTopic)
     : buildGenericDiscoveryExperience();
   const isZh = locale === "zh";
   const dict = getDictionary(locale);
@@ -53,8 +53,8 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
               {isZh
-                ? "发现路线用于先浏览分类、标签和订阅源；添加时保存到已有 Topic，或新建 Topic。AI 目标路线则从一句目标生成推荐源。"
-                : "Discovery lets you browse categories, tags, and sources first. Save sources to an existing Topic, or create a new Topic. The AI goal route generates recommendations from one sentence."}
+                ? "发现路线用于先浏览分类、标签和订阅源；添加时保存到已有话题，或新建话题。智能创建路线则从一句关注方向生成推荐源。"
+                : "Discovery lets you browse categories, tags, and sources first. Save sources to an existing Topic, or create a new Topic. The AI creation route generates recommendations from one sentence."}
             </p>
           </div>
           <Link
@@ -66,34 +66,34 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
         </div>
       </section>
 
-      {tasks.length > 0 ? (
+      {topics.length > 0 ? (
         <>
           <section className="rounded-[18px] border border-stone-900/10 bg-white p-4">
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/discover"
                 className={`inline-flex min-h-10 items-center rounded-xl border px-3 text-sm font-semibold transition ${
-                  selectedTask
+                  selectedTopic
                     ? "border-stone-200 bg-stone-50 text-stone-700 hover:bg-white"
                     : "border-[#0057ff] bg-[#0057ff] text-white"
                 }`}
               >
                 {isZh ? "全部发现" : "All discovery"}
               </Link>
-              {tasks.map((task) => {
-                const active = task.id === selectedTask?.id;
+              {topics.map((topic) => {
+                const active = topic.id === selectedTopic?.id;
 
                 return (
                   <Link
-                    key={task.id}
-                    href={`/discover?taskId=${task.id}`}
+                    key={topic.id}
+                    href={`/discover?topicId=${topic.id}`}
                     className={`inline-flex min-h-10 items-center rounded-xl border px-3 text-sm font-semibold transition ${
                       active
                         ? "border-[#0057ff] bg-[#0057ff] text-white"
                         : "border-stone-200 bg-stone-50 text-stone-700 hover:bg-white"
                     }`}
                   >
-                    {task.title}
+                    {topic.title}
                   </Link>
                 );
               })}
@@ -103,10 +103,10 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
       ) : null}
 
       <SubscriptionDiscovery
-        taskId={selectedTask?.id ?? null}
-        taskOptions={tasks.map((task) => ({
-          id: task.id,
-          title: task.title,
+        topicId={selectedTopic?.id ?? null}
+        topicOptions={topics.map((topic) => ({
+          id: topic.id,
+          title: topic.title,
         }))}
         categories={experience.categories}
         tags={experience.tags}
@@ -116,7 +116,7 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
 
       <section className="rounded-[18px] border border-stone-900/10 bg-white p-6 text-sm leading-6 text-stone-500">
         {isZh
-          ? `发现页添加的来源会保存到 Topic，并和 ${dict.shell.sources} 页面里的自定义来源进入同一个 Source 模型。每个 Topic 后续可以配置独立同步、报告和投递策略。`
+          ? `发现页添加的来源会保存到话题，并和 ${dict.shell.sources} 页面里的自定义来源进入同一个 Source 模型。每个话题后续可以配置独立同步、报告和投递策略。`
           : `Sources added here are saved to Topics and use the same Source model as ${dict.shell.sources}. Each Topic can later have its own sync, report, and delivery strategy.`}
       </section>
     </div>

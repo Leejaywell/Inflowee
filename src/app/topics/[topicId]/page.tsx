@@ -3,40 +3,50 @@ import { notFound } from "next/navigation";
 
 import {
   generateReportAction,
-  saveTaskCustomScheduleAction,
-  saveTaskDeliveryChannelsAction,
-  saveTaskSchedulePresetAction,
+  previewTopicHtmlPushAction,
+  saveTopicHtmlPushConfigAction,
+  saveTopicCustomScheduleAction,
+  saveTopicDeliveryChannelsAction,
+  saveTopicSchedulePresetAction,
 } from "@/app/actions";
-import { TaskControls } from "@/components/task-controls";
+import { TopicControls } from "@/components/topic-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
 import { SubscriptionDiscovery } from "@/components/subscription-discovery";
 import { ChatConsole } from "@/components/chat-console";
 import { PageHeader, SectionNav } from "@/components/ui-shell";
 import {
-  assertTaskAccess,
+  assertTopicAccess,
   getActorScopedChatScopeId,
   requireSessionActor,
 } from "@/lib/auth";
 import {
   defaultStore,
   findChatThread,
-  getTaskById,
+  getTopicById,
+  getTopicHtmlPushConfig,
   listBriefsFiltered,
   listChatMessages,
-  listRecommendationBundlesByTask,
-  listReportsByTask,
-  listSourcesByTask,
+  listRecommendationBundlesByTopic,
+  listRecentHtmlPublications,
+  listReportsByTopic,
+  listSourcesByTopic,
 } from "@/lib/store";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import { listConfiguredDeliveryChannels } from "@/lib/delivery";
-import { buildTaskDiscoveryExperience } from "@/lib/discovery-runtime";
+import { buildTopicDiscoveryExperience } from "@/lib/discovery-runtime";
+import {
+  getDefaultHtmlPushModules,
+  HTML_PUSH_MODULE_PRESETS,
+  HTML_PUSH_MODULES,
+  HTML_PUSH_STYLE_PRESETS,
+} from "@/lib/html-push-config";
 
 export const dynamic = "force-dynamic";
 
-type TaskDetailPageProps = {
-  params: Promise<{ taskId: string }>;
-  searchParams?: Promise<{ section?: string }>;
+type TopicDetailPageProps = {
+  params: Promise<{ topicId: string }>;
+  searchParams?: Promise<{ section?: string; error?: string; preview?: string }>;
 };
 
 function getReportMetric(content: Record<string, unknown>, key: string) {
@@ -85,25 +95,27 @@ function normalizeSection(value: string | undefined): Section {
   return SECTIONS.includes(value as Section) ? (value as Section) : "overview";
 }
 
-export default async function TaskDetailPage({ params, searchParams }: TaskDetailPageProps) {
-  const { taskId } = await params;
+export default async function TopicDetailPage({ params, searchParams }: TopicDetailPageProps) {
+  const { topicId } = await params;
   const sParams = await searchParams;
   const section = normalizeSection(sParams?.section);
+  const pageError = sParams?.error;
+  const previewPublicationId = sParams?.preview;
   const store = defaultStore;
   const [actor, locale] = await Promise.all([
     requireSessionActor(),
     getRequestLocale(),
   ]);
   const dict = getDictionary(locale);
-  const t = dict.task;
-  const task = await getTaskById(store, taskId);
+  const t = dict.topic;
+  const topic = await getTopicById(store, topicId);
 
-  if (!task) {
+  if (!topic) {
     notFound();
   }
 
   try {
-    await assertTaskAccess(store, { actorId: actor.id, taskId });
+    await assertTopicAccess(store, { actorId: actor.id, topicId });
   } catch {
     notFound();
   }
@@ -114,26 +126,30 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
     recentBriefs,
     reports,
     deliveryChannels,
+    topicHtmlPushConfig,
+    recentHtmlPublications,
   ] = await Promise.all([
-    listSourcesByTask(store, taskId),
-    listRecommendationBundlesByTask(store, taskId),
-    listBriefsFiltered(store, { actorId: actor.id, taskId }),
-    listReportsByTask(store, taskId),
+    listSourcesByTopic(store, topicId),
+    listRecommendationBundlesByTopic(store, topicId),
+    listBriefsFiltered(store, { actorId: actor.id, topicId }),
+    listReportsByTopic(store, topicId),
     listConfiguredDeliveryChannels(store),
+    getTopicHtmlPushConfig(store, topicId),
+    listRecentHtmlPublications(store, 5, { topicId }),
   ]);
   const recommendationStateKey = JSON.stringify({
-    taskProfile: task.taskProfile ?? null,
+    topicProfile: topic.topicProfile ?? null,
     recommendedBundles,
   });
-  const discoveryExperience = await buildTaskDiscoveryExperience(defaultStore, task);
-  const actorScopeId = getActorScopedChatScopeId(actor.id, taskId);
-  const chatThread = await findChatThread(store, "task", actorScopeId);
+  const discoveryExperience = await buildTopicDiscoveryExperience(defaultStore, topic);
+  const actorScopeId = getActorScopedChatScopeId(actor.id, topicId);
+  const chatThread = await findChatThread(store, "topic", actorScopeId);
   const chatMessages = chatThread
     ? await listChatMessages(store, chatThread.id)
     : [];
-  const schedulePreset = task.scheduleProfile?.preset ?? "always_on";
-  const scheduleTimezone = task.scheduleProfile?.timezone ?? "Asia/Shanghai";
-  const currentWindow = task.scheduleProfile?.windows[0];
+  const schedulePreset = topic.scheduleProfile?.preset ?? "always_on";
+  const scheduleTimezone = topic.scheduleProfile?.timezone ?? "Asia/Shanghai";
+  const currentWindow = topic.scheduleProfile?.windows[0];
   const isZh = locale === "zh";
   const latestReport = reports[0];
   const previousReport = reports[1];
@@ -175,21 +191,21 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
   };
 
   const sectionHref = (s: Section) =>
-    s === "overview" ? `/tasks/${taskId}` : `/tasks/${taskId}?section=${s}`;
+    s === "overview" ? `/topics/${topicId}` : `/topics/${topicId}?section=${s}`;
 
   return (
     <div className="grid gap-5">
       <PageHeader
         eyebrow={t.badge}
-        title={task.title}
-        description={`${t.monitoringGoal} ${task.userPrompt}`}
+        title={topic.title}
+        description={`${t.focusLabel} ${topic.userPrompt}`}
         metrics={
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-stone-950 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-stone-50">
-              {task.taskType}
+              {topic.topicType}
             </span>
             <span className="rounded-full bg-[#0057ff]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#0057ff]">
-              {t.level} {task.relevanceLevel}
+              {t.level} {topic.relevanceLevel}
             </span>
           </div>
         }
@@ -200,7 +216,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
         </Link>
         <span className="text-stone-300">/</span>
         <span className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
-          {task.title}
+          {topic.title}
         </span>
       </div>
       {/* Section navigation */}
@@ -210,6 +226,23 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
         getHref={sectionHref}
         getLabel={(item) => sectionLabels[item]}
       />
+      {pageError ? (
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {decodeURIComponent(pageError)}
+        </div>
+      ) : null}
+      {previewPublicationId ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+          {isZh ? "HTML 预览已生成：" : "HTML preview generated: "}
+          <Link
+            href={`/topics/${topicId}/html/${previewPublicationId}`}
+            className="font-semibold underline"
+            target="_blank"
+          >
+            {isZh ? "打开预览" : "Open preview"}
+          </Link>
+        </div>
+      ) : null}
 
       {/* Main content */}
       <div className="grid gap-5 lg:grid-cols-[1.25fr_0.75fr]">
@@ -217,10 +250,10 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
         <div className="space-y-5">
           {section === "overview" && (
             <>
-              <TaskControls
-                taskId={taskId}
-                initialRelevanceLevel={task.relevanceLevel}
-                initialSummaryPreference={task.summaryPreference}
+              <TopicControls
+                topicId={topicId}
+                initialRelevanceLevel={topic.relevanceLevel}
+                initialSummaryPreference={topic.summaryPreference}
               />
 
               <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
@@ -280,7 +313,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
                     {t.recentBriefs}
                   </h2>
                   <Link
-                    href={`/inbox?taskId=${taskId}`}
+                    href={`/inbox?topicId=${topicId}`}
                     className="text-xs font-bold text-[#0057ff] hover:underline"
                   >
                     {t.openInbox}
@@ -358,14 +391,14 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
             <>
               <RecommendationWizard
                 key={recommendationStateKey}
-                taskId={taskId}
-                taskProfile={task.taskProfile ?? null}
+                topicId={topicId}
+                topicProfile={topic.topicProfile ?? null}
                 recommendedBundles={recommendedBundles}
                 labels={dict.recommendation}
               />
 
               <SubscriptionDiscovery
-                taskId={taskId}
+                topicId={topicId}
                 categories={discoveryExperience.categories}
                 tags={discoveryExperience.tags}
                 candidates={discoveryExperience.candidates}
@@ -382,16 +415,16 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
                 </h2>
                 <p className="mt-1 text-sm text-stone-500">
                   {isZh
-                    ? "控制这个监控目标何时抓取、生成报告和推送。"
-                    : "Control when this monitoring goal collects, reports, and pushes."}
+                    ? "控制这个话题何时抓取、生成报告和推送。"
+                    : "Control when this Topic collects, reports, and pushes."}
                 </p>
               </div>
 
               <form
-                action={saveTaskSchedulePresetAction}
+                action={saveTopicSchedulePresetAction}
                 className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]"
               >
-                <input name="taskId" type="hidden" value={taskId} />
+                <input name="topicId" type="hidden" value={topicId} />
                 <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
                   {isZh ? "预设" : "Preset"}
                   <select
@@ -425,7 +458,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
               </form>
 
               <form
-                action={saveTaskCustomScheduleAction}
+                action={saveTopicCustomScheduleAction}
                 className="mt-6 grid gap-4 border-t border-stone-100 pt-6"
               >
                 <div>
@@ -438,7 +471,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
                       : "Fine-tune the daily collection window and actions."}
                   </p>
                 </div>
-                <input name="taskId" type="hidden" value={taskId} />
+                <input name="topicId" type="hidden" value={topicId} />
                 <input name="timezone" type="hidden" value={scheduleTimezone} />
                 <div className="grid gap-3 sm:grid-cols-3">
                   <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
@@ -547,8 +580,8 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
                   {isZh ? "在设置中配置通道端点 →" : "Configure channel endpoints in Settings →"}
                 </Link>
               </div>
-              <form action={saveTaskDeliveryChannelsAction} className="grid gap-4">
-                <input name="taskId" type="hidden" value={taskId} />
+              <form action={saveTopicDeliveryChannelsAction} className="grid gap-4">
+                <input name="topicId" type="hidden" value={topicId} />
                 <div className="grid gap-2 sm:grid-cols-2">
                   {deliveryChannels.map((channel) => (
                     <label
@@ -576,7 +609,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
                         type="checkbox"
                         value={channel.type}
                         defaultChecked={
-                          task.deliveryChannels?.includes(channel.type) ?? false
+                          topic.deliveryChannels?.includes(channel.type) ?? false
                         }
                         disabled={!channel.enabled}
                         className="size-4"
@@ -586,6 +619,129 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
                 </div>
                 <button className="h-11 justify-self-start rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
                   {isZh ? "保存通道" : "Save channels"}
+                </button>
+              </form>
+
+              <form
+                action={saveTopicHtmlPushConfigAction}
+                className="mt-6 grid gap-4 border-t border-stone-100 pt-6"
+              >
+                <input name="topicId" type="hidden" value={topicId} />
+                <div>
+                  <h3 className="text-sm font-semibold text-stone-900">
+                    {isZh ? "HTML 摘要覆盖设置" : "HTML summary override"}
+                  </h3>
+                  <p className="mt-1 text-xs leading-5 text-stone-500">
+                    {isZh
+                      ? "默认使用全局 HTML 推送设置；也可以为这个话题单独指定风格和内容模块。"
+                      : "Use global HTML push settings by default, or override style and content modules for this topic."}
+                  </p>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm">
+                    <input
+                      name="useGlobal"
+                      type="checkbox"
+                      defaultChecked={topicHtmlPushConfig?.useGlobal ?? true}
+                      className="size-4"
+                    />
+                    <span>{isZh ? "使用全局设置" : "Use global settings"}</span>
+                  </label>
+                  <label className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm">
+                    <input
+                      name="enabled"
+                      type="checkbox"
+                      defaultChecked={topicHtmlPushConfig?.enabled ?? false}
+                      className="size-4"
+                    />
+                    <span>{isZh ? "启用话题覆盖" : "Enable topic override"}</span>
+                  </label>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    {isZh ? "风格" : "Style"}
+                    <select
+                      name="stylePreset"
+                      defaultValue={topicHtmlPushConfig?.stylePreset ?? "minimal_news"}
+                      className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
+                    >
+                      {HTML_PUSH_STYLE_PRESETS.map((preset) => (
+                        <option key={preset} value={preset}>
+                          {preset.replaceAll("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                    {isZh ? "内容预设" : "Module preset"}
+                    <select
+                      name="modulePreset"
+                      defaultValue={
+                        topicHtmlPushConfig?.modulePreset ?? "standard_summary"
+                      }
+                      className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
+                    >
+                      {HTML_PUSH_MODULE_PRESETS.map((preset) => (
+                        <option key={preset} value={preset}>
+                          {preset.replaceAll("_", " ")}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {HTML_PUSH_MODULES.map((module) => (
+                    <label
+                      key={module}
+                      className="flex items-center gap-2 rounded-xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm"
+                    >
+                      <input
+                        name="enabledModules"
+                        type="checkbox"
+                        value={module}
+                        defaultChecked={(
+                          topicHtmlPushConfig?.enabledModules ??
+                          getDefaultHtmlPushModules("standard_summary")
+                        ).includes(module)}
+                        className="size-4"
+                      />
+                      <span>{module.replaceAll("_", " ")}</span>
+                    </label>
+                  ))}
+                </div>
+                <textarea
+                  name="customPrompt"
+                  rows={3}
+                  maxLength={1000}
+                  defaultValue={topicHtmlPushConfig?.customPrompt ?? ""}
+                  placeholder={
+                    isZh
+                      ? "例如：强调这个话题里的商业影响。"
+                      : "Example: emphasize business impact for this topic."
+                  }
+                  className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 outline-none transition focus:border-stone-400 focus:bg-white"
+                />
+                {recentHtmlPublications.length > 0 ? (
+                  <div className="rounded-2xl border border-stone-200 bg-stone-50 px-4 py-3 text-xs leading-5 text-stone-600">
+                    <div className="mb-2 font-semibold text-stone-800">
+                      {isZh ? "最近 HTML 发布" : "Recent HTML publications"}
+                    </div>
+                    {recentHtmlPublications.map((publication) => (
+                      <div key={publication.id}>
+                        {publication.status} · {publication.contentType} ·{" "}
+                        {publication.htmlUrl ?? publication.error ?? publication.contentId}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <button className="h-11 justify-self-start rounded-xl border border-stone-200 px-4 text-sm font-semibold text-stone-800 transition hover:bg-stone-50">
+                  {isZh ? "保存 HTML 摘要设置" : "Save HTML summary settings"}
+                </button>
+              </form>
+              <form action={previewTopicHtmlPushAction} className="mt-3">
+                <input name="topicId" type="hidden" value={topicId} />
+                <button className="h-10 rounded-xl bg-[#0057ff] px-4 text-sm font-semibold text-white transition hover:bg-[#0047d6]">
+                  {isZh ? "生成测试预览" : "Generate test preview"}
                 </button>
               </form>
             </section>
@@ -607,7 +763,7 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
                 <div className="flex flex-wrap gap-2">
                   {(["current", "daily", "incremental"] as const).map((mode) => (
                     <form key={mode} action={generateReportAction}>
-                      <input name="taskId" type="hidden" value={taskId} />
+                      <input name="topicId" type="hidden" value={topicId} />
                       <input name="mode" type="hidden" value={mode} />
                       <button className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-xs font-semibold uppercase text-stone-700 transition hover:bg-stone-50">
                         {mode}
@@ -736,10 +892,10 @@ export default async function TaskDetailPage({ params, searchParams }: TaskDetai
 
         {/* Right: Chat (always visible) */}
         <ChatConsole
-          scopeType="task"
-          scopeId={taskId}
+          scopeType="topic"
+          scopeId={topicId}
           initialMessages={chatMessages}
-          title={`${task.title} ${t.assistantSuffix}`}
+          title={`${topic.title} ${t.assistantSuffix}`}
           subtitle={t.assistantSubtitle}
           labels={dict.chat}
         />

@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  createTaskAndSubscribeDiscoverySources,
+  createTopicAndSubscribeDiscoverySources,
   previewRecommendedSources,
   subscribeDiscoverySources,
 } from "@/app/actions-chat";
@@ -20,8 +20,8 @@ import {
 import type { SubscriptionPreviewResult } from "@/lib/source-ingestion";
 
 type SubscriptionDiscoveryProps = {
-  taskId?: string | null;
-  taskOptions?: Array<{ id: string; title: string }>;
+  topicId?: string | null;
+  topicOptions?: Array<{ id: string; title: string }>;
   categories: DiscoveryCategory[];
   tags: DiscoveryTag[];
   candidates: DiscoverySourceCandidate[];
@@ -29,17 +29,17 @@ type SubscriptionDiscoveryProps = {
 };
 
 export function SubscriptionDiscovery({
-  taskId,
-  taskOptions = [],
+  topicId,
+  topicOptions = [],
   categories,
   tags,
   candidates,
   isZh,
 }: SubscriptionDiscoveryProps) {
   const router = useRouter();
-  const [selectedTaskId, setSelectedTaskId] = useState(taskId ?? taskOptions[0]?.id ?? "");
-  const [newTaskTitle, setNewTaskTitle] = useState("");
-  const [newTaskPrompt, setNewTaskPrompt] = useState("");
+  const [selectedTopicId, setSelectedTopicId] = useState(topicId ?? topicOptions[0]?.id ?? "");
+  const [newTopicTitle, setNewTopicTitle] = useState("");
+  const [newTopicPrompt, setNewTopicPrompt] = useState("");
   const [categoryId, setCategoryId] = useState("all");
   const [batchIndex, setBatchIndex] = useState(0);
   const [shuffleSeed, setShuffleSeed] = useState(0);
@@ -81,8 +81,8 @@ export function SubscriptionDiscovery({
   const selectedCandidates = visibleCandidates.filter((candidate) =>
     selectedCandidateIds.includes(candidate.id),
   );
-  const effectiveTaskId = taskId ?? selectedTaskId;
-  const shouldCreateTopicForSelection = !taskId && !effectiveTaskId;
+  const effectiveTopicId = topicId ?? selectedTopicId;
+  const shouldCreateTopicForSelection = !topicId && !effectiveTopicId;
 
   const resetForCategory = (nextCategoryId: string) => {
     setCategoryId(nextCategoryId);
@@ -130,17 +130,17 @@ export function SubscriptionDiscovery({
     setError(null);
     startPreviewTransition(async () => {
       try {
-        if (!effectiveTaskId) {
+        if (!effectiveTopicId) {
           setError(
             isZh
-              ? "预览需要先选择已有 Topic；新 Topic 添加后会直接同步并生成首批简报。"
+              ? "预览需要先选择已有话题；新话题添加后会直接同步并生成首批简报。"
               : "Preview requires an existing Topic. New Topics sync and create the first briefs after adding.",
           );
           return;
         }
 
         const result = await previewRecommendedSources(
-          effectiveTaskId,
+          effectiveTopicId,
           selectedCandidates.map((candidate) => ({
             title: candidate.title,
             url: candidate.url,
@@ -169,14 +169,14 @@ export function SubscriptionDiscovery({
     setError(null);
     startAddTransition(async () => {
       try {
-        const result = effectiveTaskId
-          ? await subscribeDiscoverySources(effectiveTaskId, selectedCandidateIds, {
+        const result = effectiveTopicId
+          ? await subscribeDiscoverySources(effectiveTopicId, selectedCandidateIds, {
               categoryId,
               selectedTagIds,
             })
-          : await createTaskAndSubscribeDiscoverySources({
-              title: newTaskTitle,
-              userPrompt: newTaskPrompt,
+          : await createTopicAndSubscribeDiscoverySources({
+              title: newTopicTitle,
+              userPrompt: newTopicPrompt,
               candidateIds: selectedCandidateIds,
               categoryId,
               selectedTagIds,
@@ -188,8 +188,8 @@ export function SubscriptionDiscovery({
         );
         setCreatedBriefCount(result.createdBriefCount);
         setSelectedCandidateIds([]);
-        if ("taskId" in result && typeof result.taskId === "string") {
-          setSelectedTaskId(result.taskId);
+        if ("topicId" in result && typeof result.topicId === "string") {
+          setSelectedTopicId(result.topicId);
         }
         setPreview(null);
         router.refresh();
@@ -378,25 +378,25 @@ export function SubscriptionDiscovery({
         )}
       </div>
 
-      {!taskId ? (
+      {!topicId ? (
         <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 p-4">
           <h3 className="text-sm font-semibold text-stone-950">
-            {isZh ? "保存到 Topic" : "Save to Topic"}
+            {isZh ? "保存到话题" : "Save to Topic"}
           </h3>
-          {taskOptions.length > 0 ? (
+          {topicOptions.length > 0 ? (
             <label className="mt-3 grid gap-1.5 text-sm">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                {isZh ? "已有 Topic" : "Existing Topic"}
+                {isZh ? "已有话题" : "Existing Topic"}
               </span>
               <select
-                value={selectedTaskId}
-                onChange={(event) => setSelectedTaskId(event.currentTarget.value)}
+                value={selectedTopicId}
+                onChange={(event) => setSelectedTopicId(event.currentTarget.value)}
                 className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
               >
-                <option value="">{isZh ? "新建 Topic" : "Create new Topic"}</option>
-                {taskOptions.map((task) => (
-                  <option key={task.id} value={task.id}>
-                    {task.title}
+                <option value="">{isZh ? "新建话题" : "Create new Topic"}</option>
+                {topicOptions.map((topic) => (
+                  <option key={topic.id} value={topic.id}>
+                    {topic.title}
                   </option>
                 ))}
               </select>
@@ -406,11 +406,11 @@ export function SubscriptionDiscovery({
             <div className="mt-3 grid gap-3">
               <label className="grid gap-1.5 text-sm">
                 <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {isZh ? "Topic 名称" : "Topic name"}
+                  {isZh ? "话题名称" : "Topic name"}
                 </span>
                 <input
-                  value={newTaskTitle}
-                  onChange={(event) => setNewTaskTitle(event.currentTarget.value)}
+                  value={newTopicTitle}
+                  onChange={(event) => setNewTopicTitle(event.currentTarget.value)}
                   placeholder={isZh ? "AI 编程工具动向" : "AI coding tools"}
                   className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
                 />
@@ -420,8 +420,8 @@ export function SubscriptionDiscovery({
                   {isZh ? "关注重点（可选）" : "Focus note (optional)"}
                 </span>
                 <textarea
-                  value={newTaskPrompt}
-                  onChange={(event) => setNewTaskPrompt(event.currentTarget.value)}
+                  value={newTopicPrompt}
+                  onChange={(event) => setNewTopicPrompt(event.currentTarget.value)}
                   rows={3}
                   placeholder={
                     isZh
@@ -435,8 +435,8 @@ export function SubscriptionDiscovery({
           ) : null}
           <p className="mt-3 text-xs leading-5 text-stone-500">
             {isZh
-              ? "发现路线可以先浏览和勾选来源；添加时保存为 Topic。AI 目标路线则从一句目标生成推荐源，最终也落到 Topic。"
-              : "Discovery lets you browse and select sources first, then save them as a Topic. The AI goal route also ends in a Topic after generating recommended sources from one sentence."}
+              ? "发现路线可以先浏览和勾选来源；添加时保存为话题。智能创建路线则从一句关注方向生成推荐源，最终也落到话题。"
+              : "Discovery lets you browse and select sources first, then save them as a Topic. The AI creation route also ends in a Topic after generating recommended sources from one sentence."}
           </p>
         </div>
       ) : null}
@@ -487,7 +487,7 @@ export function SubscriptionDiscovery({
           disabled={
             selectedCandidateIds.length === 0 ||
             isAdding ||
-            (!effectiveTaskId && newTaskTitle.trim().length < 2)
+            (!effectiveTopicId && newTopicTitle.trim().length < 2)
           }
           className="h-11 rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
         >
@@ -502,7 +502,7 @@ export function SubscriptionDiscovery({
         <button
           type="button"
           onClick={previewSelected}
-          disabled={selectedCandidateIds.length === 0 || isPreviewing || !effectiveTaskId}
+          disabled={selectedCandidateIds.length === 0 || isPreviewing || !effectiveTopicId}
           className="h-11 rounded-xl border border-stone-200 px-4 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
         >
           {isPreviewing ? (isZh ? "预览中..." : "Previewing...") : isZh ? "预览已选" : "Preview selected"}

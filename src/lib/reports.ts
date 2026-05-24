@@ -1,10 +1,10 @@
 import {
   createReportRecord,
-  getTaskById,
+  getTopicById,
   listBriefsFiltered,
   listItemsBySource,
-  listReportsByTask,
-  listSourcesByTask,
+  listReportsByTopic,
+  listSourcesByTopic,
   type BriefRecord,
   type ItemRecord,
   type ReportMode,
@@ -104,22 +104,22 @@ function buildMarkdown(input: {
   ].join("\n");
 }
 
-export async function generateTaskReport(
+export async function generateTopicReport(
   store: Store,
-  taskId: string,
+  topicId: string,
   options: GenerateReportOptions,
 ) {
-  const task = await getTaskById(store, taskId);
-  if (!task) {
-    throw new Error("Task not found.");
+  const topic = await getTopicById(store, topicId);
+  if (!topic) {
+    throw new Error("Topic not found.");
   }
 
-  const previousReports = await listReportsByTask(store, taskId);
+  const previousReports = await listReportsByTopic(store, topicId);
   const now = options.now ?? new Date();
   const window = getReportWindow(options.mode, previousReports, now);
   const [briefs, sources] = await Promise.all([
-    listBriefsFiltered(store, { taskId }),
-    listSourcesByTask(store, taskId),
+    listBriefsFiltered(store, { topicId }),
+    listSourcesByTopic(store, topicId),
   ]);
   const sourceItems = await Promise.all(
     sources.map((source) => listItemsBySource(store, source.id)),
@@ -138,7 +138,7 @@ export async function generateTaskReport(
       ...topItems.map((item) => item.canonicalUrl),
     ]),
   ].slice(0, 12);
-  const reportTitle = `${task.title} ${options.mode} trend report`;
+  const reportTitle = `${topic.title} ${options.mode} trend report`;
   const summary =
     topBriefs.length > 0
       ? `Found ${topBriefs.length} briefs and ${items.length} accepted items for this report window.`
@@ -155,7 +155,7 @@ export async function generateTaskReport(
   const nextWatch =
     tags.length > 0
       ? tags.slice(0, 3).map((tag) => `Track whether "${tag.tag}" keeps appearing in new sources.`)
-      : [`Add or sync more sources for "${task.title}" to establish a clearer trend baseline.`];
+      : [`Add or sync more sources for "${topic.title}" to establish a clearer trend baseline.`];
   const content = {
     mode: options.mode,
     trends,
@@ -176,7 +176,7 @@ export async function generateTaskReport(
     citations,
   });
   const reportId = await createReportRecord(store, {
-    taskId,
+    topicId,
     mode: options.mode,
     title: reportTitle,
     summary,

@@ -1,27 +1,27 @@
 /// <reference types="vitest/globals" />
 
-import { refreshTaskIntelligence } from "@/lib/task-intelligence";
+import { refreshTopicIntelligence } from "@/lib/topic-intelligence";
 import {
-  createTaskRecord,
-  getTaskProfile,
-  listRecommendationBundlesByTask,
+  createTopicRecord,
+  getTopicProfile,
+  listRecommendationBundlesByTopic,
 } from "@/lib/store";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
-describe("task intelligence for personal monitoring goals", () => {
-  it("stores a task profile and source bundles for a task", async () => {
+describe("topic intelligence for personal monitoring topicsLabel", () => {
+  it("stores a topic profile and source bundles for a topic", async () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track coding agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor Devin and Cursor coding agent updates.",
       });
 
-      await refreshTaskIntelligence(fixture.store, taskId, {
-        understandTaskIntentImpl: vi.fn().mockResolvedValue({
+      await refreshTopicIntelligence(fixture.store, topicId, {
+        understandTopicIntentImpl: vi.fn().mockResolvedValue({
           keywords: ["Devin", "Cursor", "coding agent"],
           suggestedQueries: ["Devin Cursor coding agent updates"],
         }),
@@ -53,11 +53,11 @@ describe("task intelligence for personal monitoring goals", () => {
         ]),
       });
 
-      expect(await getTaskProfile(fixture.store, taskId)).toEqual({
+      expect(await getTopicProfile(fixture.store, topicId)).toEqual({
         keywords: ["Devin", "Cursor", "coding agent"],
         suggestedQueries: ["Devin Cursor coding agent updates"],
       });
-      expect(await listRecommendationBundlesByTask(fixture.store, taskId)).toEqual([
+      expect(await listRecommendationBundlesByTopic(fixture.store, topicId)).toEqual([
         expect.objectContaining({ title: "Official sources" }),
         expect.objectContaining({ title: "Search discovery" }),
       ]);
@@ -66,12 +66,12 @@ describe("task intelligence for personal monitoring goals", () => {
     }
   });
 
-  it("throws for missing tasks", async () => {
+  it("throws for missing topics", async () => {
     const fixture = createSqliteFixture();
 
     try {
-      await expect(refreshTaskIntelligence(fixture.store, "missing")).rejects.toThrow(
-        "Task missing not found.",
+      await expect(refreshTopicIntelligence(fixture.store, "missing")).rejects.toThrow(
+        "Topic missing not found.",
       );
     } finally {
       fixture.cleanup();

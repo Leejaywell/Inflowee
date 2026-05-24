@@ -1,7 +1,7 @@
 import {
   createSourceRecord,
-  getTaskById,
-  listSourcesByTask,
+  getTopicById,
+  listSourcesByTopic,
   type Store,
 } from "@/lib/store";
 import { buildHotlistSourceConfig, buildHotlistSourceUrl } from "@/lib/hotlist-discovery";
@@ -29,19 +29,19 @@ function sourceDedupKey(input: {
   return normalizeUrl(input.url);
 }
 
-export async function createDiscoverySourcesForTask(
+export async function createDiscoverySourcesForTopic(
   store: Store,
-  taskId: string,
+  topicId: string,
   candidates: DiscoverySourceCandidate[],
   options: { syncImmediately?: boolean } = {},
 ) {
-  const task = await getTaskById(store, taskId);
+  const topic = await getTopicById(store, topicId);
 
-  if (!task) {
-    throw new Error("Task not found.");
+  if (!topic) {
+    throw new Error("Topic not found.");
   }
 
-  const existingSources = await listSourcesByTask(store, taskId);
+  const existingSources = await listSourcesByTopic(store, topicId);
   const knownUrls = new Set(
     existingSources.map((source) =>
       sourceDedupKey({
@@ -57,7 +57,7 @@ export async function createDiscoverySourcesForTask(
 
   for (const candidate of candidates) {
     const parsed = createSourceSchema.safeParse({
-      taskId,
+      topicId,
       sourceType: candidate.sourceType,
       title: candidate.title,
       url: candidate.url,
@@ -80,9 +80,9 @@ export async function createDiscoverySourcesForTask(
         ? (candidate.url || buildRadarSourceUrl(parsed.data.sourceType))
         : parsed.data.url;
     const configJson = isHotlist
-      ? (candidate.configJson ?? buildHotlistSourceConfig(task))
+      ? (candidate.configJson ?? buildHotlistSourceConfig(topic))
       : isDiscovery
-        ? (candidate.configJson ?? buildRadarSourceConfig(task, parsed.data.sourceType))
+        ? (candidate.configJson ?? buildRadarSourceConfig(topic, parsed.data.sourceType))
         : candidate.configJson ?? null;
     const normalizedUrl = sourceDedupKey({
       sourceType: parsed.data.sourceType,
@@ -96,7 +96,7 @@ export async function createDiscoverySourcesForTask(
     }
 
     const sourceId = await createSourceRecord(store, {
-      taskId,
+      topicId,
       sourceType: parsed.data.sourceType,
       title: parsed.data.title,
       url,

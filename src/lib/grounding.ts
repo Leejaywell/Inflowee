@@ -4,12 +4,12 @@ import {
   listBriefsFiltered,
   listItemsByBriefId,
   listItemsBySource,
-  listSourcesByTask,
+  listSourcesByTopic,
   type ItemRecord,
   type Store,
 } from "@/lib/store";
 
-export type GroundingScopeType = "brief" | "task";
+export type GroundingScopeType = "brief" | "topic";
 
 export type GroundingResult = {
   briefs: BriefRecord[];
@@ -83,16 +83,16 @@ export async function getGroundingForScope(
     };
   }
 
-  if (scopeType === "task") {
+  if (scopeType === "topic") {
     const briefs = await listBriefsFiltered(store, {
-      taskId: scopeId,
+      topicId: scopeId,
       actorId: options.actorId,
     });
     const items = includeItems
       ? dedupeAndSortItems(
           (
             await Promise.all(
-              (await listSourcesByTask(store, scopeId)).map((source) =>
+              (await listSourcesByTopic(store, scopeId)).map((source) =>
                 listItemsBySource(store, source.id),
               ),
             )
@@ -112,9 +112,9 @@ export async function getGroundingForScope(
       return { briefs, items: [] };
     }
 
-    const taskIds = [...new Set(briefs.map((brief) => brief.taskId))];
+    const topicIds = [...new Set(briefs.map((brief) => brief.topicId))];
     const sourceGroups = await Promise.all(
-      taskIds.map((taskId) => listSourcesByTask(store, taskId)),
+      topicIds.map((topicId) => listSourcesByTopic(store, topicId)),
     );
     const items = (
       await Promise.all(

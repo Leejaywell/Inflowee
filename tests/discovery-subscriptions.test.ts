@@ -1,11 +1,11 @@
 /// <reference types="vitest/globals" />
 
-import { createDiscoverySourcesForTask } from "@/lib/discovery-subscriptions";
+import { createDiscoverySourcesForTopic } from "@/lib/discovery-subscriptions";
 import {
   createSourceRecord,
-  createTaskRecord,
-  listSourcesByTask,
-  saveTaskProfile,
+  createTopicRecord,
+  listSourcesByTopic,
+  saveTopicProfile,
 } from "@/lib/store";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
@@ -14,18 +14,18 @@ describe("discovery source subscriptions", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "AI tools",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor AI coding tools.",
       });
-      await saveTaskProfile(fixture.store, taskId, {
+      await saveTopicProfile(fixture.store, topicId, {
         keywords: ["OpenAI"],
         suggestedQueries: ["OpenAI coding agent"],
       });
 
-      const result = await createDiscoverySourcesForTask(fixture.store, taskId, [
+      const result = await createDiscoverySourcesForTopic(fixture.store, topicId, [
         {
           id: "candidate-1",
           title: "OpenAI Blog",
@@ -40,7 +40,7 @@ describe("discovery source subscriptions", () => {
       ]);
 
       expect(result.createdSourceIds).toHaveLength(1);
-      expect(await listSourcesByTask(fixture.store, taskId)).toContainEqual(
+      expect(await listSourcesByTopic(fixture.store, topicId)).toContainEqual(
         expect.objectContaining({
           title: "OpenAI Blog",
           url: "https://openai.com/blog/rss.xml",
@@ -56,20 +56,20 @@ describe("discovery source subscriptions", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "AI tools",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor AI coding tools.",
       });
       await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         title: "OpenAI Blog",
         url: "https://openai.com/blog/rss.xml",
         sourceType: "RSS",
       });
 
-      const result = await createDiscoverySourcesForTask(fixture.store, taskId, [
+      const result = await createDiscoverySourcesForTopic(fixture.store, topicId, [
         {
           id: "duplicate",
           title: "OpenAI Blog",
@@ -96,7 +96,7 @@ describe("discovery source subscriptions", () => {
 
       expect(result.createdSourceIds).toHaveLength(0);
       expect(result.skippedCandidateIds).toEqual(["duplicate", "invalid"]);
-      expect(await listSourcesByTask(fixture.store, taskId)).toHaveLength(1);
+      expect(await listSourcesByTopic(fixture.store, topicId)).toHaveLength(1);
     } finally {
       fixture.cleanup();
     }
@@ -106,14 +106,14 @@ describe("discovery source subscriptions", () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "AI tools",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Monitor AI coding tools.",
       });
       await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         title: "AI search",
         url: "radar://search-discovery",
         sourceType: "SEARCH_DISCOVERY",
@@ -126,7 +126,7 @@ describe("discovery source subscriptions", () => {
         },
       });
 
-      const result = await createDiscoverySourcesForTask(fixture.store, taskId, [
+      const result = await createDiscoverySourcesForTopic(fixture.store, topicId, [
         {
           id: "different-query",
           title: "Agent search",
@@ -148,7 +148,7 @@ describe("discovery source subscriptions", () => {
       ]);
 
       expect(result.createdSourceIds).toHaveLength(1);
-      expect(await listSourcesByTask(fixture.store, taskId)).toHaveLength(2);
+      expect(await listSourcesByTopic(fixture.store, topicId)).toHaveLength(2);
     } finally {
       fixture.cleanup();
     }

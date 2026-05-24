@@ -5,7 +5,7 @@ import { submitChatMessage, clearChatThread } from "@/app/actions-chat";
 import { ChatMessageRecord } from "@/lib/store";
 
 type ChatConsoleProps = {
-  scopeType: "global" | "task" | "brief";
+  scopeType: "global" | "topic" | "brief";
   scopeId: string;
   initialMessages: ChatMessageRecord[];
   title?: string;
@@ -39,7 +39,7 @@ const defaultLabels: ChatConsoleLabels = {
   loading: "AI is synthesizing grounding context",
   placeholder: "Ask a clarifying or follow-up question...",
   send: "Send",
-  fallbackHint: "Empty task scopes can fall back to bounded live fetch.",
+  fallbackHint: "Empty Topic scopes can fall back to bounded live fetch.",
 };
 
 export function ChatConsole({
@@ -47,7 +47,7 @@ export function ChatConsole({
   scopeId,
   initialMessages,
   title = "AI Contextual Assistant",
-  subtitle = "Grounded on active monitoring goals and briefs.",
+  subtitle = "Grounded on active Topics and briefs.",
   labels: labelsProp,
 }: ChatConsoleProps) {
   const labels = { ...defaultLabels, ...labelsProp };

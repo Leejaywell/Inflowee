@@ -5,7 +5,7 @@ import {
   createBriefRecord,
   createItemRecordResult,
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
   deleteBrief,
   getBriefById,
   listBriefItemIds,
@@ -16,24 +16,24 @@ import {
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
 describe("personal briefs", () => {
-  it("lists and filters briefs by personal task owner", async () => {
+  it("lists and filters briefs by personal topic owner", async () => {
     const fixture = createSqliteFixture();
 
     try {
-      const taskId = await createTaskRecord(fixture.store, {
+      const topicId = await createTopicRecord(fixture.store, {
         ownerId: "user-1",
         title: "Track agents",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track coding agents.",
       });
-      const otherTaskId = await createTaskRecord(fixture.store, {
+      const otherTopicId = await createTopicRecord(fixture.store, {
         ownerId: "user-2",
         title: "Other",
-        taskType: "TOPIC",
+        topicType: "TOPIC",
         userPrompt: "Track other updates.",
       });
       const sourceId = await createSourceRecord(fixture.store, {
-        taskId,
+        topicId,
         sourceType: "RSS",
         title: "Agent feed",
         url: "https://example.com/feed.xml",
@@ -45,15 +45,15 @@ describe("personal briefs", () => {
         qualityStatus: "accepted",
       });
       const briefId = await createBriefRecord(fixture.store, {
-        taskId,
+        topicId,
         itemIds: item ? [item.id] : [],
         title: "Agent launch",
         summary: "A new agent launched.",
-        whyItMatters: "It matches the monitoring goal.",
+        whyItMatters: "It matches the topic.",
         sourceCitations: ["https://example.com/agent"],
       });
       await createBriefRecord(fixture.store, {
-        taskId: otherTaskId,
+        topicId: otherTopicId,
         itemIds: [],
         title: "Other launch",
         summary: "Other content.",
@@ -62,7 +62,7 @@ describe("personal briefs", () => {
       });
 
       expect(await listBriefsFiltered(fixture.store, { actorId: "user-1" })).toEqual([
-        expect.objectContaining({ id: briefId, taskTitle: "Track agents" }),
+        expect.objectContaining({ id: briefId, topicTitle: "Track agents" }),
       ]);
       expect(await listBriefItemIds(fixture.store, briefId)).toEqual([item?.id]);
       expect(await countUnreadBriefs(fixture.store, { actorId: "user-1" })).toBe(1);

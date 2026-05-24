@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import {
   assertBriefAccess,
-  assertTaskAccess,
+  assertTopicAccess,
   getActorScopedChatScopeId,
   requireSessionActor,
 } from "@/lib/auth";
@@ -12,17 +12,17 @@ import {
   defaultStore,
   createChatMessage,
   createSourceRecord,
-  createTaskRecord,
+  createTopicRecord,
   getOrCreateChatThread,
-  getTaskById,
+  getTopicById,
   listChatMessages,
-  updateTaskControls,
+  updateTopicControls,
 } from "@/lib/store";
 import { answerGroundedQuestion } from "@/lib/ai";
 import { getGroundingForScope, type GroundingResult } from "@/lib/grounding";
 import { fetchLiveContext } from "@/lib/live-fetch";
-import { createSourceSchema, createTaskSchema } from "@/lib/validation";
-import { refreshTaskIntelligence } from "@/lib/task-intelligence";
+import { createSourceSchema, createTopicSchema } from "@/lib/validation";
+import { refreshTopicIntelligence } from "@/lib/topic-intelligence";
 import {
   previewSubscriptionSources,
   syncSourceById,
@@ -41,11 +41,11 @@ import {
 } from "@/lib/discovery-catalog";
 import {
   buildGenericDiscoveryExperience,
-  buildTaskDiscoveryExperience,
+  buildTopicDiscoveryExperience,
 } from "@/lib/discovery-runtime";
-import { createDiscoverySourcesForTask } from "@/lib/discovery-subscriptions";
+import { createDiscoverySourcesForTopic } from "@/lib/discovery-subscriptions";
 
-type ChatScope = "global" | "task" | "brief";
+type ChatScope = "global" | "topic" | "brief";
 
 export async function submitChatMessage(
   scopeType: ChatScope,
@@ -59,10 +59,10 @@ export async function submitChatMessage(
   const store = defaultStore;
   const actor = await requireSessionActor();
 
-  if (scopeType === "task") {
-    await assertTaskAccess(store, {
+  if (scopeType === "topic") {
+    await assertTopicAccess(store, {
       actorId: actor.id,
-      taskId: scopeId,
+      topicId: scopeId,
     });
   } else if (scopeType === "brief") {
     await assertBriefAccess(store, {
@@ -133,8 +133,8 @@ export async function submitChatMessage(
   // 7. Revalidate relevant path
   if (scopeType === "brief") {
     revalidatePath(`/inbox/${scopeId}`);
-  } else if (scopeType === "task") {
-    revalidatePath(`/tasks/${scopeId}`);
+  } else if (scopeType === "topic") {
+    revalidatePath(`/topics/${scopeId}`);
   }
 
   return {
@@ -148,10 +148,10 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
   const store = defaultStore;
   const actor = await requireSessionActor();
 
-  if (scopeType === "task") {
-    await assertTaskAccess(store, {
+  if (scopeType === "topic") {
+    await assertTopicAccess(store, {
       actorId: actor.id,
-      taskId: scopeId,
+      topicId: scopeId,
     });
   } else if (scopeType === "brief") {
     await assertBriefAccess(store, {
@@ -167,27 +167,27 @@ export async function clearChatThread(scopeType: ChatScope, scopeId: string) {
 
   if (scopeType === "brief") {
     revalidatePath(`/inbox/${scopeId}`);
-  } else if (scopeType === "task") {
-    revalidatePath(`/tasks/${scopeId}`);
+  } else if (scopeType === "topic") {
+    revalidatePath(`/topics/${scopeId}`);
   }
 
   return { success: true };
 }
 
 export async function subscribeRecommendedSources(
-  taskId: string,
+  topicId: string,
   sources: SourceCandidateInput[],
 ) {
   const store = defaultStore;
   const actor = await requireSessionActor();
-  await assertTaskAccess(store, {
+  await assertTopicAccess(store, {
     actorId: actor.id,
-    taskId,
+    topicId,
   });
   const parsedSources = sources.map((source, index) => ({
     index,
     result: createSourceSchema.safeParse({
-      taskId,
+      topicId,
       sourceType: source.sourceType,
       title: source.title,
       url: source.url,
@@ -203,10 +203,10 @@ export async function subscribeRecommendedSources(
   }
 
   const createdSourceIds: string[] = [];
-  const task = await getTaskById(store, taskId);
+  const topic = await getTopicById(store, topicId);
 
-  if (!task) {
-    throw new Error("Task not found.");
+  if (!topic) {
+    throw new Error("Topic not found.");
   }
 
   for (const { result } of parsedSources) {
@@ -221,7 +221,7 @@ export async function subscribeRecommendedSources(
       result.data.sourceType === "HOTLIST_DISCOVERY";
     const isHotlist = result.data.sourceType === "HOTLIST_DISCOVERY";
     const sourceId = await createSourceRecord(store, {
-      taskId: result.data.taskId,
+      topicId: result.data.topicId,
       sourceType: result.data.sourceType,
       title: result.data.title,
       url: isHotlist
@@ -230,9 +230,9 @@ export async function subscribeRecommendedSources(
         ? buildRadarSourceUrl(result.data.sourceType)
         : result.data.url,
       configJson: isHotlist
-        ? buildHotlistSourceConfig(task)
+        ? buildHotlistSourceConfig(topic)
         : isDiscovery
-        ? buildRadarSourceConfig(task, result.data.sourceType)
+        ? buildRadarSourceConfig(topic, result.data.sourceType)
         : null,
     });
     createdSourceIds.push(sourceId);
@@ -242,8 +242,8 @@ export async function subscribeRecommendedSources(
     await syncSourceById(store, sourceId);
   }
 
-  if (task) {
-    revalidatePath(`/tasks/${taskId}`);
+  if (topic) {
+    revalidatePath(`/topics/${topicId}`);
     revalidatePath("/sources");
     revalidatePath("/inbox");
   }
@@ -252,25 +252,25 @@ export async function subscribeRecommendedSources(
 }
 
 export async function subscribeDiscoverySources(
-  taskId: string,
+  topicId: string,
   candidateIds: string[],
   context: { categoryId?: string; selectedTagIds?: string[] } = {},
 ) {
   const store = defaultStore;
   const actor = await requireSessionActor();
-  await assertTaskAccess(store, {
+  await assertTopicAccess(store, {
     actorId: actor.id,
-    taskId,
+    topicId,
   });
 
-  const task = await getTaskById(store, taskId);
+  const topic = await getTopicById(store, topicId);
 
-  if (!task) {
-    throw new Error("Task not found.");
+  if (!topic) {
+    throw new Error("Topic not found.");
   }
 
   const allowedIds = new Set(candidateIds);
-  const discoveryExperience = await buildTaskDiscoveryExperience(store, task, context);
+  const discoveryExperience = await buildTopicDiscoveryExperience(store, topic, context);
   let candidates: DiscoverySourceCandidate[] =
     discoveryExperience.candidates.filter((candidate) => allowedIds.has(candidate.id));
 
@@ -284,11 +284,11 @@ export async function subscribeDiscoverySources(
     throw new Error("Select at least one valid discovery source.");
   }
 
-  const result = await createDiscoverySourcesForTask(store, taskId, candidates, {
+  const result = await createDiscoverySourcesForTopic(store, topicId, candidates, {
     syncImmediately: true,
   });
 
-  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
   revalidatePath("/discover");
   revalidatePath("/sources");
   revalidatePath("/inbox");
@@ -299,7 +299,7 @@ export async function subscribeDiscoverySources(
   };
 }
 
-export async function createTaskAndSubscribeDiscoverySources(input: {
+export async function createTopicAndSubscribeDiscoverySources(input: {
   title: string;
   userPrompt?: string;
   candidateIds: string[];
@@ -320,40 +320,40 @@ export async function createTaskAndSubscribeDiscoverySources(input: {
   const title =
     input.title.trim() ||
     candidates[0]?.title?.slice(0, 28) ||
-    (input.categoryId ? `${input.categoryId} Topic` : "Discovery Topic");
+    (input.categoryId ? `${input.categoryId} 话题` : "发现话题");
   const userPrompt =
     input.userPrompt?.trim() ||
-    `订阅 Topic「${title}」，关注来源：${candidates
+    `订阅话题「${title}」，关注来源：${candidates
       .slice(0, 5)
       .map((candidate) => candidate.title)
       .join("、")}。`;
-  const parsed = createTaskSchema.safeParse({
+  const parsed = createTopicSchema.safeParse({
     title,
-    taskType: "TOPIC",
+    topicType: "TOPIC",
     userPrompt,
   });
 
   if (!parsed.success) {
-    throw new Error(parsed.error.issues[0]?.message ?? "Invalid task input.");
+    throw new Error(parsed.error.issues[0]?.message ?? "Invalid Topic input.");
   }
 
-  const taskId = await createTaskRecord(store, {
+  const topicId = await createTopicRecord(store, {
     ...parsed.data,
     ownerId: actor.id,
   });
 
   try {
-    await refreshTaskIntelligence(store, taskId);
+    await refreshTopicIntelligence(store, topicId);
   } catch (error) {
-    console.error(`Failed to initialize task intelligence for ${taskId}:`, error);
+    console.error(`Failed to initialize topic intelligence for ${topicId}:`, error);
   }
 
-  const task = await getTaskById(store, taskId);
-  if (!task) {
-    throw new Error("Task not found after creation.");
+  const topic = await getTopicById(store, topicId);
+  if (!topic) {
+    throw new Error("Topic not found after creation.");
   }
 
-  const discoveryExperience = await buildTaskDiscoveryExperience(store, task, {
+  const discoveryExperience = await buildTopicDiscoveryExperience(store, topic, {
     categoryId: input.categoryId,
     selectedTagIds: input.selectedTagIds,
   });
@@ -370,38 +370,38 @@ export async function createTaskAndSubscribeDiscoverySources(input: {
     throw new Error("Select at least one valid discovery source.");
   }
 
-  const result = await createDiscoverySourcesForTask(store, taskId, candidates, {
+  const result = await createDiscoverySourcesForTopic(store, topicId, candidates, {
     syncImmediately: true,
   });
 
   revalidatePath("/");
-  revalidatePath(`/tasks/${taskId}`);
+  revalidatePath(`/topics/${topicId}`);
   revalidatePath("/discover");
   revalidatePath("/sources");
   revalidatePath("/inbox");
 
   return {
     success: true,
-    taskId,
+    topicId,
     ...result,
   };
 }
 
 export async function previewRecommendedSources(
-  taskId: string,
+  topicId: string,
   sources: SourceCandidateInput[],
 ) {
   const store = defaultStore;
   const actor = await requireSessionActor();
-  await assertTaskAccess(store, {
+  await assertTopicAccess(store, {
     actorId: actor.id,
-    taskId,
+    topicId,
   });
 
   const parsedSources = sources.map((source, index) => ({
     index,
     result: createSourceSchema.safeParse({
-      taskId,
+      topicId,
       sourceType: source.sourceType,
       title: source.title,
       url: source.url,
@@ -418,7 +418,7 @@ export async function previewRecommendedSources(
 
   return previewSubscriptionSources(
     store,
-    taskId,
+    topicId,
     parsedSources
       .filter(({ result }) => result.success)
       .map(({ result }) => {
@@ -435,27 +435,27 @@ export async function previewRecommendedSources(
   );
 }
 
-export async function updateTaskControlSettings(
-  taskId: string,
+export async function updateTopicControlSettings(
+  topicId: string,
   relevanceLevel: number,
   summaryPreference: string,
 ) {
   const actor = await requireSessionActor();
-  await assertTaskAccess(defaultStore, {
+  await assertTopicAccess(defaultStore, {
     actorId: actor.id,
-    taskId,
+    topicId,
   });
 
-  await updateTaskControls(
+  await updateTopicControls(
     defaultStore,
-    taskId,
+    topicId,
     relevanceLevel,
     summaryPreference,
   );
 
-  const task = await getTaskById(defaultStore, taskId);
-  if (task) {
-    revalidatePath(`/tasks/${taskId}`);
+  const topic = await getTopicById(defaultStore, topicId);
+  if (topic) {
+    revalidatePath(`/topics/${topicId}`);
   }
 
   return { success: true };

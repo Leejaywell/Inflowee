@@ -119,7 +119,7 @@ export const sourcePresets: SourcePreset[] = [
   {
     id: "hacker-news-discovery",
     title: "Hacker News Search",
-    description: "HN discussion discovery using the task's monitoring queries.",
+    description: "HN discussion discovery using the Topic's focus queries.",
     url: "radar://community-discovery/hacker-news",
     sourceType: "COMMUNITY_DISCOVERY",
     category: "community",
@@ -128,7 +128,7 @@ export const sourcePresets: SourcePreset[] = [
   {
     id: "product-hunt-discovery",
     title: "Product Hunt Discovery",
-    description: "Product Hunt launch discovery using the task's monitoring queries.",
+    description: "Product Hunt launch discovery using the Topic's focus queries.",
     url: "radar://community-discovery/product-hunt",
     sourceType: "COMMUNITY_DISCOVERY",
     category: "community",
@@ -137,7 +137,7 @@ export const sourcePresets: SourcePreset[] = [
   {
     id: "reddit-discovery",
     title: "Reddit Search",
-    description: "Reddit discussion discovery using the task's monitoring queries.",
+    description: "Reddit discussion discovery using the Topic's focus queries.",
     url: "radar://community-discovery/reddit",
     sourceType: "COMMUNITY_DISCOVERY",
     category: "community",
@@ -242,7 +242,7 @@ export const sourcePresets: SourcePreset[] = [
   {
     id: "bilibili-discovery",
     title: "B站搜索发现",
-    description: "Bilibili discovery using the task's monitoring queries.",
+    description: "Bilibili discovery using the Topic's focus queries.",
     url: "radar://social-discovery/bilibili",
     sourceType: "SOCIAL_DISCOVERY",
     category: "content-social",
@@ -251,7 +251,7 @@ export const sourcePresets: SourcePreset[] = [
   {
     id: "china-hotlist-discovery",
     title: "全网热榜发现",
-    description: "Baidu, Weibo, Zhihu, and Bilibili hotlist discovery for a monitoring goal.",
+    description: "Baidu, Weibo, Zhihu, and Bilibili hotlist discovery for a Topic.",
     url: "radar://hotlist-discovery/china",
     sourceType: "HOTLIST_DISCOVERY",
     category: "hotlist",
@@ -269,7 +269,7 @@ export const sourcePresets: SourcePreset[] = [
   {
     id: "weibo-discovery",
     title: "微博搜索发现",
-    description: "Weibo discovery using the task's monitoring queries.",
+    description: "Weibo discovery using the Topic's focus queries.",
     url: "radar://social-discovery/weibo",
     sourceType: "SOCIAL_DISCOVERY",
     category: "content-social",

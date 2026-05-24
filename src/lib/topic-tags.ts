@@ -1,4 +1,4 @@
-import type { ItemRecord, TaskRecord } from "@/lib/store";
+import type { ItemRecord, TopicRecord } from "@/lib/store";
 
 const STOP_WORDS = new Set([
   "the",
@@ -129,7 +129,7 @@ function normalizeOpenAiTags(tags: string[] | null | undefined) {
     .filter((tag) => tag.length >= 2);
 }
 
-function inferBaseTags(text: string, task?: Pick<TaskRecord, "title" | "userPrompt"> | null) {
+function inferBaseTags(text: string, topic?: Pick<TopicRecord, "title" | "userPrompt"> | null) {
   const tags: string[] = [];
 
   for (const rule of KEYWORD_TAGS) {
@@ -138,8 +138,8 @@ function inferBaseTags(text: string, task?: Pick<TaskRecord, "title" | "userProm
     }
   }
 
-  if (task) {
-    for (const token of tokenize(`${task.title} ${task.userPrompt}`)) {
+  if (topic) {
+    for (const token of tokenize(`${topic.title} ${topic.userPrompt}`)) {
       if (token.length >= 4) {
         addTag(tags, token.replace(/\./g, "").replace(/\s+/g, "-"));
       }
@@ -175,13 +175,13 @@ function inferBaseTags(text: string, task?: Pick<TaskRecord, "title" | "userProm
 }
 
 export function deriveTopicTags({
-  task,
+  topic,
   items,
   title,
   summary,
   aiTags,
 }: {
-  task?: Pick<TaskRecord, "title" | "userPrompt"> | null;
+  topic?: Pick<TopicRecord, "title" | "userPrompt"> | null;
   items: Array<
     Pick<
       ItemRecord,
@@ -203,14 +203,14 @@ export function deriveTopicTags({
     )
     .join(" ");
 
-  const fullText = `${title} ${summary} ${clusterText} ${task?.title ?? ""} ${task?.userPrompt ?? ""}`.toLowerCase();
+  const fullText = `${title} ${summary} ${clusterText} ${topic?.title ?? ""} ${topic?.userPrompt ?? ""}`.toLowerCase();
   const merged: string[] = [];
 
   for (const tag of normalizeOpenAiTags(aiTags)) {
     addTag(merged, tag);
   }
 
-  for (const tag of inferBaseTags(fullText, task ?? null)) {
+  for (const tag of inferBaseTags(fullText, topic ?? null)) {
     addTag(merged, tag);
   }
 

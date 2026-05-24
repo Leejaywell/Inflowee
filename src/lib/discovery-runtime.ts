@@ -13,7 +13,7 @@ import {
   listItemsBySource,
   listSources,
   type Store,
-  type TaskRecord,
+  type TopicRecord,
 } from "@/lib/store";
 
 export type DiscoveryExperience = {
@@ -80,9 +80,9 @@ export async function buildDiscoverySourceStats(
   };
 }
 
-export async function buildTaskDiscoveryContext(
+export async function buildTopicDiscoveryContext(
   store: Store,
-  task: TaskRecord,
+  topic: TopicRecord,
   options: {
     categoryId?: string;
     selectedTagIds?: string[];
@@ -92,15 +92,15 @@ export async function buildTaskDiscoveryContext(
   const [stats, aiPlan] = await Promise.all([
     buildDiscoverySourceStats(store),
     planSubscriptionDiscovery({
-      title: task.title,
-      prompt: task.userPrompt,
-      profile: task.taskProfile ?? null,
+      title: topic.title,
+      prompt: topic.userPrompt,
+      profile: topic.topicProfile ?? null,
       bypassCache: options.bypassAiCache,
     }),
   ]);
 
   return {
-    profile: task.taskProfile ?? null,
+    profile: topic.topicProfile ?? null,
     aiPlan,
     stats,
     categoryId: options.categoryId,
@@ -108,16 +108,16 @@ export async function buildTaskDiscoveryContext(
   };
 }
 
-export async function buildTaskDiscoveryExperience(
+export async function buildTopicDiscoveryExperience(
   store: Store,
-  task: TaskRecord,
+  topic: TopicRecord,
   options: {
     categoryId?: string;
     selectedTagIds?: string[];
     bypassAiCache?: boolean;
   } = {},
 ): Promise<DiscoveryExperience> {
-  const context = await buildTaskDiscoveryContext(store, task, options);
+  const context = await buildTopicDiscoveryContext(store, topic, options);
   const categories = getDiscoveryCategories(context.aiPlan);
   const tags = [
     ...new Map(
