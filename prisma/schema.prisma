@@ -20,6 +20,7 @@ model Task {
   updatedAt             DateTime               @updatedAt
   sources               Source[]
   briefs                Brief[]
+  reports               Report[]
   recommendationBundles RecommendationBundle[]
 
   @@index([ownerId, createdAt])
@@ -102,6 +103,25 @@ model Brief {
   briefItems      BriefItem[]
   briefReads      BriefRead[]
   deliveryLogs    DeliveryLog[]
+
+  @@index([taskId, createdAt])
+}
+
+model Report {
+  id              String   @id @default(uuid())
+  taskId          String
+  mode            String
+  title           String
+  summary         String
+  contentJson     Json
+  markdown        String
+  itemIds         Json
+  briefIds        Json
+  sourceCitations Json
+  periodStart     DateTime?
+  periodEnd       DateTime?
+  createdAt       DateTime @default(now())
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
   @@index([taskId, createdAt])
 }

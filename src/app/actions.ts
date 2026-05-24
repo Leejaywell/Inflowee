@@ -40,6 +40,7 @@ import {
 } from "@/lib/store";
 import { syncSourceById } from "@/lib/source-ingestion";
 import { getSourcePresetById } from "@/lib/source-presets";
+import { generateTaskReport } from "@/lib/reports";
 import { refreshTaskIntelligence } from "@/lib/task-intelligence";
 import { LOCALE_COOKIE_NAME, normalizeLocale } from "@/lib/i18n";
 import {
@@ -403,6 +404,22 @@ export async function runSyncAll() {
   }
 
   redirect("/sources?synced=all");
+}
+
+export async function generateReportAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const taskId = getString(formData, "taskId");
+  const mode = getString(formData, "mode");
+
+  if (mode !== "current" && mode !== "daily" && mode !== "incremental") {
+    redirect(`/tasks/${taskId}?error=Invalid%20report%20mode.`);
+  }
+
+  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
+  await generateTaskReport(defaultStore, taskId, { mode });
+
+  revalidatePath(`/tasks/${taskId}`);
+  redirect(`/tasks/${taskId}`);
 }
 
 export async function saveWebhookEndpoint(formData: FormData) {

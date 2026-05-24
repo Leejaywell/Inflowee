@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { generateReportAction } from "@/app/actions";
 import { TaskControls } from "@/components/task-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
 import { ChatConsole } from "@/components/chat-console";
@@ -16,6 +17,7 @@ import {
   listBriefsFiltered,
   listChatMessages,
   listRecommendationBundlesByTask,
+  listReportsByTask,
   listSourcesByTask,
 } from "@/lib/store";
 import { getDictionary } from "@/lib/i18n";
@@ -51,10 +53,11 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     notFound();
   }
 
-  const [activeSources, recommendedBundles, recentBriefs] = await Promise.all([
+  const [activeSources, recommendedBundles, recentBriefs, reports] = await Promise.all([
     listSourcesByTask(store, taskId),
     listRecommendationBundlesByTask(store, taskId),
     listBriefsFiltered(store, { actorId: actor.id, taskId }),
+    listReportsByTask(store, taskId),
   ]);
   const recommendationStateKey = JSON.stringify({
     taskProfile: task.taskProfile ?? null,
@@ -185,6 +188,62 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
                       {brief.summary}
                     </p>
                   </Link>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-stone-100 pb-4">
+              <div>
+                <h2 className="text-lg font-semibold text-stone-950">
+                  Trend reports
+                </h2>
+                <p className="mt-1 text-sm text-stone-500">
+                  Generate a time-window analysis from stored briefs and items.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(["current", "daily", "incremental"] as const).map((mode) => (
+                  <form key={mode} action={generateReportAction}>
+                    <input name="taskId" type="hidden" value={taskId} />
+                    <input name="mode" type="hidden" value={mode} />
+                    <button className="inline-flex h-9 items-center justify-center rounded-xl border border-stone-200 px-3 text-xs font-semibold uppercase text-stone-700 transition hover:bg-stone-50">
+                      {mode}
+                    </button>
+                  </form>
+                ))}
+              </div>
+            </div>
+
+            {reports.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-center text-sm text-stone-500">
+                No reports yet. Generate a current report after syncing sources.
+              </div>
+            ) : (
+              <div className="grid gap-3">
+                {reports.slice(0, 3).map((report) => (
+                  <article
+                    key={report.id}
+                    className="rounded-xl border border-stone-100 bg-stone-50/70 p-4"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <h3 className="text-sm font-semibold text-stone-900">
+                          {report.title}
+                        </h3>
+                        <p className="mt-1 text-sm leading-6 text-stone-600">
+                          {report.summary}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold uppercase text-stone-500">
+                        {report.mode}
+                      </span>
+                    </div>
+                    <pre className="mt-3 max-h-44 overflow-auto whitespace-pre-wrap rounded-xl bg-white p-3 text-xs leading-5 text-stone-600">
+                      {report.markdown}
+                    </pre>
+                  </article>
                 ))}
               </div>
             )}

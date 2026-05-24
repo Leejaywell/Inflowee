@@ -7,6 +7,7 @@ import { Prisma, PrismaClient } from "@prisma/client";
 import { getDatabaseUrl, getPrisma, requireDatabaseUrl } from "./db.ts";
 
 export type TaskType = "TOPIC" | "QUESTION";
+export type ReportMode = "current" | "daily" | "incremental";
 export type SourceType =
   | "RSS"
   | "PAGE"
@@ -154,6 +155,23 @@ type BriefRow = {
   importance_score: number;
   tags_json: string;
   is_read: number;
+  created_at: string;
+  task_title?: string;
+};
+
+type ReportRow = {
+  id: string;
+  task_id: string;
+  mode: ReportMode;
+  title: string;
+  summary: string;
+  content_json: string;
+  markdown: string;
+  item_ids: string;
+  brief_ids: string;
+  source_citations: string;
+  period_start: string | null;
+  period_end: string | null;
   created_at: string;
   task_title?: string;
 };
@@ -344,6 +362,23 @@ export type BriefRecord = {
   taskTitle?: string;
 };
 
+export type ReportRecord = {
+  id: string;
+  taskId: string;
+  mode: ReportMode;
+  title: string;
+  summary: string;
+  content: Record<string, unknown>;
+  markdown: string;
+  itemIds: string[];
+  briefIds: string[];
+  sourceCitations: string[];
+  periodStart: string | null;
+  periodEnd: string | null;
+  createdAt: string;
+  taskTitle?: string;
+};
+
 export type ChatThreadRecord = {
   id: string;
   scopeType: "global" | "task" | "brief";
@@ -492,6 +527,25 @@ function mapBrief(row: BriefRow): BriefRecord {
     importanceScore: row.importance_score,
     tags: JSON.parse(row.tags_json) as string[],
     isRead: Boolean(row.is_read),
+    createdAt: row.created_at,
+    taskTitle: row.task_title,
+  };
+}
+
+function mapReport(row: ReportRow): ReportRecord {
+  return {
+    id: row.id,
+    taskId: row.task_id,
+    mode: row.mode,
+    title: row.title,
+    summary: row.summary,
+    content: JSON.parse(row.content_json) as Record<string, unknown>,
+    markdown: row.markdown,
+    itemIds: JSON.parse(row.item_ids) as string[],
+    briefIds: JSON.parse(row.brief_ids) as string[],
+    sourceCitations: JSON.parse(row.source_citations) as string[],
+    periodStart: row.period_start,
+    periodEnd: row.period_end,
     createdAt: row.created_at,
     taskTitle: row.task_title,
   };
@@ -1218,6 +1272,23 @@ export function createStore(
         FOREIGN KEY(brief_id) REFERENCES briefs(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS reports (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        mode TEXT NOT NULL CHECK(mode IN ('current', 'daily', 'incremental')),
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        content_json TEXT NOT NULL,
+        markdown TEXT NOT NULL,
+        item_ids TEXT NOT NULL DEFAULT '[]',
+        brief_ids TEXT NOT NULL DEFAULT '[]',
+        source_citations TEXT NOT NULL DEFAULT '[]',
+        period_start TEXT,
+        period_end TEXT,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(task_id) REFERENCES tasks(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS brief_items (
         brief_id TEXT NOT NULL,
         item_id TEXT NOT NULL,
@@ -1290,6 +1361,7 @@ export function createStore(
       CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);
       CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_reports_task_created_at ON reports(task_id, created_at DESC);
       CREATE INDEX IF NOT EXISTS idx_brief_reads_actor_read_at ON brief_reads(actor_id, read_at DESC);
       CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);
       CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);
@@ -1311,6 +1383,7 @@ export function createStore(
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_items_source_published_at ON items(source_id, published_at DESC, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_briefs_task_created_at ON briefs(task_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_reports_task_created_at ON reports(task_id, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_brief_reads_actor_read_at ON brief_reads(actor_id, read_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_chat_messages_thread_id ON chat_messages(thread_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_recommendation_bundles_task_position ON recommendation_bundles(task_id, position);");
@@ -1504,6 +1577,40 @@ function mapPrismaBrief(brief: {
     isRead: brief.briefReads ? brief.briefReads.length > 0 : brief.isRead,
     createdAt: brief.createdAt.toISOString(),
     taskTitle: brief.task?.title,
+  };
+}
+
+function mapPrismaReport(report: {
+  id: string;
+  taskId: string;
+  mode: string;
+  title: string;
+  summary: string;
+  contentJson: unknown;
+  markdown: string;
+  itemIds: unknown;
+  briefIds: unknown;
+  sourceCitations: unknown;
+  periodStart: Date | null;
+  periodEnd: Date | null;
+  createdAt: Date;
+  task?: { title: string } | null;
+}): ReportRecord {
+  return {
+    id: report.id,
+    taskId: report.taskId,
+    mode: report.mode as ReportMode,
+    title: report.title,
+    summary: report.summary,
+    content: (report.contentJson as Record<string, unknown>) ?? {},
+    markdown: report.markdown,
+    itemIds: (report.itemIds as string[]) ?? [],
+    briefIds: (report.briefIds as string[]) ?? [],
+    sourceCitations: (report.sourceCitations as string[]) ?? [],
+    periodStart: report.periodStart?.toISOString() ?? null,
+    periodEnd: report.periodEnd?.toISOString() ?? null,
+    createdAt: report.createdAt.toISOString(),
+    taskTitle: report.task?.title,
   };
 }
 
@@ -3372,6 +3479,135 @@ export async function listBriefsFiltered(
     ) as BriefRow[];
 
   return rows.map(mapBrief);
+}
+
+export async function createReportRecord(
+  store: Store,
+  input: {
+    taskId: string;
+    mode: ReportMode;
+    title: string;
+    summary: string;
+    content: Record<string, unknown>;
+    markdown: string;
+    itemIds: string[];
+    briefIds: string[];
+    sourceCitations: string[];
+    periodStart?: string | null;
+    periodEnd?: string | null;
+  },
+): Promise<string> {
+  if (store.prisma) {
+    const report = await store.prisma.report.create({
+      data: {
+        taskId: input.taskId,
+        mode: input.mode,
+        title: input.title,
+        summary: input.summary,
+        contentJson: input.content as Prisma.InputJsonValue,
+        markdown: input.markdown,
+        itemIds: input.itemIds,
+        briefIds: input.briefIds,
+        sourceCitations: input.sourceCitations,
+        periodStart: input.periodStart ? new Date(input.periodStart) : null,
+        periodEnd: input.periodEnd ? new Date(input.periodEnd) : null,
+      },
+    });
+
+    return report.id;
+  }
+
+  const id = randomUUID();
+  const timestamp = new Date().toISOString();
+
+  store.database
+    .prepare(
+      `INSERT INTO reports (
+        id,
+        task_id,
+        mode,
+        title,
+        summary,
+        content_json,
+        markdown,
+        item_ids,
+        brief_ids,
+        source_citations,
+        period_start,
+        period_end,
+        created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      id,
+      input.taskId,
+      input.mode,
+      input.title,
+      input.summary,
+      JSON.stringify(input.content),
+      input.markdown,
+      JSON.stringify(input.itemIds),
+      JSON.stringify(input.briefIds),
+      JSON.stringify(input.sourceCitations),
+      input.periodStart ?? null,
+      input.periodEnd ?? null,
+      timestamp,
+    );
+
+  return id;
+}
+
+export async function listReportsByTask(
+  store: Store,
+  taskId: string,
+): Promise<ReportRecord[]> {
+  if (store.prisma) {
+    const rows = await store.prisma.report.findMany({
+      where: { taskId },
+      include: { task: true },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return rows.map(mapPrismaReport);
+  }
+
+  const rows = store.database
+    .prepare(
+      `SELECT reports.*, tasks.title AS task_title
+       FROM reports
+       JOIN tasks ON tasks.id = reports.task_id
+       WHERE reports.task_id = ?
+       ORDER BY reports.created_at DESC`,
+    )
+    .all(taskId) as ReportRow[];
+
+  return rows.map(mapReport);
+}
+
+export async function getReportById(
+  store: Store,
+  reportId: string,
+): Promise<ReportRecord | null> {
+  if (store.prisma) {
+    const report = await store.prisma.report.findUnique({
+      where: { id: reportId },
+      include: { task: true },
+    });
+
+    return report ? mapPrismaReport(report) : null;
+  }
+
+  const row = store.database
+    .prepare(
+      `SELECT reports.*, tasks.title AS task_title
+       FROM reports
+       JOIN tasks ON tasks.id = reports.task_id
+       WHERE reports.id = ?
+       LIMIT 1`,
+    )
+    .get(reportId) as ReportRow | undefined;
+
+  return row ? mapReport(row) : null;
 }
 
 // --- Slice A + B: delete functions ---
