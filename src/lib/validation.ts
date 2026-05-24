@@ -23,6 +23,7 @@ export const createSourceSchema = z.object({
     "SEARCH_DISCOVERY",
     "COMMUNITY_DISCOVERY",
     "SOCIAL_DISCOVERY",
+    "HOTLIST_DISCOVERY",
   ]),
   title: z
     .string()
@@ -51,7 +52,8 @@ export const createSourceSchema = z.object({
     if (
       (value.sourceType === "SEARCH_DISCOVERY" ||
         value.sourceType === "COMMUNITY_DISCOVERY" ||
-        value.sourceType === "SOCIAL_DISCOVERY") &&
+        value.sourceType === "SOCIAL_DISCOVERY" ||
+        value.sourceType === "HOTLIST_DISCOVERY") &&
       url.protocol !== "radar:"
     ) {
       context.addIssue({

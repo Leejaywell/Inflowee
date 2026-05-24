@@ -30,6 +30,10 @@ import {
   buildRadarSourceConfig,
   buildRadarSourceUrl,
 } from "@/lib/radar-discovery";
+import {
+  buildHotlistSourceConfig,
+  buildHotlistSourceUrl,
+} from "@/lib/hotlist-discovery";
 
 type ChatScope = "global" | "task" | "brief";
 
@@ -203,15 +207,21 @@ export async function subscribeRecommendedSources(
     const isDiscovery =
       result.data.sourceType === "SEARCH_DISCOVERY" ||
       result.data.sourceType === "COMMUNITY_DISCOVERY" ||
-      result.data.sourceType === "SOCIAL_DISCOVERY";
+      result.data.sourceType === "SOCIAL_DISCOVERY" ||
+      result.data.sourceType === "HOTLIST_DISCOVERY";
+    const isHotlist = result.data.sourceType === "HOTLIST_DISCOVERY";
     const sourceId = await createSourceRecord(store, {
       taskId: result.data.taskId,
       sourceType: result.data.sourceType,
       title: result.data.title,
-      url: isDiscovery
+      url: isHotlist
+        ? buildHotlistSourceUrl()
+        : isDiscovery
         ? buildRadarSourceUrl(result.data.sourceType)
         : result.data.url,
-      configJson: isDiscovery
+      configJson: isHotlist
+        ? buildHotlistSourceConfig(task)
+        : isDiscovery
         ? buildRadarSourceConfig(task, result.data.sourceType)
         : null,
     });

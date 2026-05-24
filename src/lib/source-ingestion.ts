@@ -15,6 +15,10 @@ import {
   discoverRadarCandidates,
 } from "@/lib/radar-discovery";
 import {
+  buildHotlistSourceConfig,
+  discoverHotlistCandidates,
+} from "@/lib/hotlist-discovery";
+import {
   briefExistsForItem,
   createBriefRecord,
   createItemRecordResult,
@@ -105,12 +109,17 @@ function isDiscoverySourceType(sourceType: SourceType) {
   return (
     sourceType === "SEARCH_DISCOVERY" ||
     sourceType === "COMMUNITY_DISCOVERY" ||
-    sourceType === "SOCIAL_DISCOVERY"
+    sourceType === "SOCIAL_DISCOVERY" ||
+    sourceType === "HOTLIST_DISCOVERY"
   );
 }
 
 function isDiscoverySource(source: { sourceType: SourceType }) {
   return isDiscoverySourceType(source.sourceType);
+}
+
+function isHotlistSource(source: { sourceType: SourceType }) {
+  return source.sourceType === "HOTLIST_DISCOVERY";
 }
 
 function getSyncErrorMessage(error: unknown): string {
@@ -372,6 +381,30 @@ async function syncDiscoverySource(
   return result.candidates;
 }
 
+async function syncHotlistSource(
+  store: Store,
+  source: SourceRecord,
+  options?: {
+    fetchSourceFeedImpl?: typeof fetchSourceFeed;
+  },
+) {
+  const task = await getTaskById(store, source.taskId);
+
+  if (!task) {
+    throw new Error(`Task with ID ${source.taskId} not found.`);
+  }
+
+  const result = await discoverHotlistCandidates(task, source, options);
+
+  if (result.candidates.length === 0 && result.failures.length > 0) {
+    throw new Error(
+      result.failures.map((failure) => `${failure.provider}: ${failure.error}`).join("; "),
+    );
+  }
+
+  return result.candidates;
+}
+
 async function previewCandidateItems(
   store: Store,
   taskId: string,
@@ -397,7 +430,9 @@ async function previewCandidateItems(
     url: source.url,
     sourceType: source.sourceType,
     configJson: isDiscoverySourceType(source.sourceType)
-      ? buildRadarSourceConfig(task, source.sourceType)
+      ? isHotlistSource(source)
+        ? buildHotlistSourceConfig(task)
+        : buildRadarSourceConfig(task, source.sourceType)
       : null,
     status: "idle",
     lastSyncedAt: null,
@@ -410,10 +445,14 @@ async function previewCandidateItems(
 
   try {
     const rawItems: SourceItemCandidate[] = isDiscoverySource(sourceRecord)
-      ? await syncDiscoverySource(store, sourceRecord, {
-          fetchSourceFeedImpl: fetchImpl,
-          fetchImpl: options?.fetchImpl,
-        })
+      ? isHotlistSource(sourceRecord)
+        ? await syncHotlistSource(store, sourceRecord, {
+            fetchSourceFeedImpl: fetchImpl,
+          })
+        : await syncDiscoverySource(store, sourceRecord, {
+            fetchSourceFeedImpl: fetchImpl,
+            fetchImpl: options?.fetchImpl,
+          })
       : source.sourceType === "PAGE"
       ? await syncPageSource(sourceRecord, fetchImpl)
       : source.sourceType === "STRUCTURED"
@@ -563,6 +602,10 @@ export async function syncSourceById(
         ? await syncTelegramPublicSource(source, fetchImpl)
         : source.sourceType === "TELEGRAM_BOT"
         ? await syncTelegramBotSource(store, source, options?.telegramApiFetchImpl)
+        : isHotlistSource(source)
+        ? await syncHotlistSource(store, source, {
+            fetchSourceFeedImpl: fetchImpl,
+          })
         : isDiscoverySource(source)
         ? await syncDiscoverySource(store, source, {
             fetchSourceFeedImpl: fetchImpl,

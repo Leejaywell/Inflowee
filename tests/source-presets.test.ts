@@ -67,6 +67,8 @@ describe("source presets", () => {
         "36kr-tech",
         "bilibili-discovery",
         "weibo-discovery",
+        "china-hotlist-discovery",
+        "news-hotlist-discovery",
         "zhihu-search",
         "xiaohongshu-search",
         "linear-changelog",
@@ -91,6 +93,11 @@ describe("source presets", () => {
     expect(getSourcePresetById("bilibili-discovery")).toMatchObject({
       sourceType: "SOCIAL_DISCOVERY",
       configJson: { providers: ["bilibili"] },
+    });
+    expect(getSourcePresetById("china-hotlist-discovery")).toMatchObject({
+      sourceType: "HOTLIST_DISCOVERY",
+      category: "hotlist",
+      configJson: { providers: ["baidu", "weibo", "zhihu", "bilibili"] },
     });
   });
 });

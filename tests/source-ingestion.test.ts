@@ -35,6 +35,19 @@ function sampleFeedXml() {
   `;
 }
 
+function sampleHotlistHtml() {
+  return `
+    <html>
+      <body>
+        <ul class="hot-list">
+          <li><a href="/hot/ai-coding">Devin coding agent hot launch</a><span>热度 88万</span></li>
+          <li><a href="/hot/celebrity">Celebrity gossip</a><span>热度 60万</span></li>
+        </ul>
+      </body>
+    </html>
+  `;
+}
+
 describe("source ingestion quality and preview flow", () => {
   it("previews selected sources without persisting source records", async () => {
     const fixture = createSqliteFixture();
@@ -167,6 +180,56 @@ describe("source ingestion quality and preview flow", () => {
 
       expect(result.ok).toBe(true);
       expect(await listItemsBySource(fixture.store, sourceId)).toHaveLength(2);
+      expect(
+        await listBriefsFiltered(fixture.store, { actorId: "user-1", taskId }),
+      ).toHaveLength(1);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("syncs hotlist discovery sources through the same item and brief pipeline", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      const taskId = await createTaskRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "Coding agents",
+        taskType: "TOPIC",
+        userPrompt: "Monitor Devin coding agent product updates.",
+      });
+      await saveTaskProfile(fixture.store, taskId, {
+        keywords: ["Devin", "coding agent"],
+        suggestedQueries: ["Devin coding agent update"],
+      });
+      const sourceId = await createSourceRecord(fixture.store, {
+        taskId,
+        sourceType: "HOTLIST_DISCOVERY",
+        title: "Hotlist discovery",
+        url: "radar://hotlist-discovery",
+        configJson: {
+          providers: ["baidu"],
+          providerQuota: 3,
+          totalQuota: 3,
+        },
+      });
+
+      const result = await syncSourceById(fixture.store, sourceId, {
+        fetchSourceFeedImpl: vi.fn().mockResolvedValue(sampleHotlistHtml()),
+      });
+
+      expect(result.ok).toBe(true);
+      const items = await listItemsBySource(fixture.store, sourceId);
+      expect(items).toHaveLength(2);
+      expect(items.filter((item) => item.qualityStatus === "accepted")).toHaveLength(1);
+      const acceptedHotlistItem = items.find(
+        (item) => item.qualityStatus === "accepted",
+      );
+      expect(acceptedHotlistItem?.structuredFields).toMatchObject({
+        sourceProvider: "baidu",
+        platform: "Baidu Hot Search",
+        rank: 1,
+      });
       expect(
         await listBriefsFiltered(fixture.store, { actorId: "user-1", taskId }),
       ).toHaveLength(1);

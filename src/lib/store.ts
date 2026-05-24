@@ -17,7 +17,8 @@ export type SourceType =
   | "TELEGRAM_BOT"
   | "SEARCH_DISCOVERY"
   | "COMMUNITY_DISCOVERY"
-  | "SOCIAL_DISCOVERY";
+  | "SOCIAL_DISCOVERY"
+  | "HOTLIST_DISCOVERY";
 export type SourceStatus = "idle" | "success" | "error";
 export type SyncRunStatus = "running" | "success" | "error";
 export type DeliveryStatus = "running" | "success" | "error";
@@ -369,7 +370,7 @@ type CreateTaskInput = {
 
 const sourceStatusConstraint = "CHECK(status IN ('idle', 'success', 'error'))";
 const sourceTypeSql =
-  "'RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT', 'SEARCH_DISCOVERY', 'COMMUNITY_DISCOVERY', 'SOCIAL_DISCOVERY'";
+  "'RSS', 'PAGE', 'STRUCTURED', 'UPDATE', 'NEWSLETTER', 'TELEGRAM_PUBLIC', 'TELEGRAM_BOT', 'SEARCH_DISCOVERY', 'COMMUNITY_DISCOVERY', 'SOCIAL_DISCOVERY', 'HOTLIST_DISCOVERY'";
 const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
@@ -541,6 +542,7 @@ function migrateSourcesTable(database: DatabaseSync) {
   const needsTelegramPublicMigration = !sourcesTable.sql.includes("'TELEGRAM_PUBLIC'");
   const needsTelegramBotMigration = !sourcesTable.sql.includes("'TELEGRAM_BOT'");
   const needsDiscoveryMigration = !sourcesTable.sql.includes("'SEARCH_DISCOVERY'");
+  const needsHotlistMigration = !sourcesTable.sql.includes("'HOTLIST_DISCOVERY'");
   const needsConfigMigration = !sourcesTable.sql.includes("config_json");
   const needsScheduleMigration = !sourcesTable.sql.includes("sync_interval_minutes");
 
@@ -552,6 +554,7 @@ function migrateSourcesTable(database: DatabaseSync) {
     !needsTelegramPublicMigration &&
     !needsTelegramBotMigration &&
     !needsDiscoveryMigration &&
+    !needsHotlistMigration &&
     !needsConfigMigration &&
     !needsScheduleMigration
   ) {

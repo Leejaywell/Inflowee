@@ -5,6 +5,7 @@ export type SourcePresetCategory =
   | "community"
   | "domestic-tech"
   | "content-social"
+  | "hotlist"
   | "product-updates"
   | "jobs";
 
@@ -246,6 +247,24 @@ export const sourcePresets: SourcePreset[] = [
     sourceType: "SOCIAL_DISCOVERY",
     category: "content-social",
     configJson: { providers: ["bilibili"] },
+  },
+  {
+    id: "china-hotlist-discovery",
+    title: "全网热榜发现",
+    description: "Baidu, Weibo, Zhihu, and Bilibili hotlist discovery for a monitoring goal.",
+    url: "radar://hotlist-discovery/china",
+    sourceType: "HOTLIST_DISCOVERY",
+    category: "hotlist",
+    configJson: { providers: ["baidu", "weibo", "zhihu", "bilibili"] },
+  },
+  {
+    id: "news-hotlist-discovery",
+    title: "新闻热榜发现",
+    description: "Toutiao, The Paper, and Cailian Press hotlist discovery.",
+    url: "radar://hotlist-discovery/news",
+    sourceType: "HOTLIST_DISCOVERY",
+    category: "hotlist",
+    configJson: { providers: ["toutiao", "the-paper", "cls"] },
   },
   {
     id: "weibo-discovery",

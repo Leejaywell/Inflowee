@@ -368,6 +368,7 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
               <option value="NEWSLETTER">Newsletter Archive</option>
               <option value="TELEGRAM_PUBLIC">Telegram Public Feed</option>
               <option value="TELEGRAM_BOT">Telegram Bot Feed</option>
+              <option value="HOTLIST_DISCOVERY">Hotlist Discovery</option>
             </select>
           </label>
 
