@@ -17,6 +17,7 @@ model Task {
   summaryPreference     String                 @default("balanced")
   taskProfile           Json?
   scheduleProfile       Json?
+  deliveryChannels      Json?
   createdAt             DateTime               @default(now())
   updatedAt             DateTime               @updatedAt
   sources               Source[]

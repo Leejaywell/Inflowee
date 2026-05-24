@@ -3,6 +3,8 @@ import { notFound } from "next/navigation";
 
 import {
   generateReportAction,
+  saveTaskCustomScheduleAction,
+  saveTaskDeliveryChannelsAction,
   saveTaskSchedulePresetAction,
 } from "@/app/actions";
 import { TaskControls } from "@/components/task-controls";
@@ -25,6 +27,7 @@ import {
 } from "@/lib/store";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
+import { listConfiguredDeliveryChannels } from "@/lib/delivery";
 
 export const dynamic = "force-dynamic";
 
@@ -56,11 +59,18 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     notFound();
   }
 
-  const [activeSources, recommendedBundles, recentBriefs, reports] = await Promise.all([
+  const [
+    activeSources,
+    recommendedBundles,
+    recentBriefs,
+    reports,
+    deliveryChannels,
+  ] = await Promise.all([
     listSourcesByTask(store, taskId),
     listRecommendationBundlesByTask(store, taskId),
     listBriefsFiltered(store, { actorId: actor.id, taskId }),
     listReportsByTask(store, taskId),
+    listConfiguredDeliveryChannels(store),
   ]);
   const recommendationStateKey = JSON.stringify({
     taskProfile: task.taskProfile ?? null,
@@ -73,6 +83,8 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     : [];
   const schedulePreset = task.scheduleProfile?.preset ?? "always_on";
   const scheduleTimezone = task.scheduleProfile?.timezone ?? "Asia/Shanghai";
+  const currentWindow = task.scheduleProfile?.windows[0];
+  const isZh = locale === "zh";
 
   return (
     <div className="grid gap-6">
@@ -119,10 +131,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
           <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
             <div className="mb-4 border-b border-stone-100 pb-4">
               <h2 className="text-lg font-semibold text-stone-950">
-                Schedule profile
+                {isZh ? "调度策略" : "Schedule profile"}
               </h2>
               <p className="mt-1 text-sm text-stone-500">
-                Control when this monitoring goal collects sources.
+                {isZh
+                  ? "控制这个监控目标何时抓取、生成报告和推送。"
+                  : "Control when this monitoring goal collects, reports, and pushes."}
               </p>
             </div>
             <form
@@ -131,20 +145,26 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
             >
               <input name="taskId" type="hidden" value={taskId} />
               <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                Preset
+                {isZh ? "预设" : "Preset"}
                 <select
                   name="preset"
                   defaultValue={schedulePreset}
                   className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
                 >
-                  <option value="always_on">Always on</option>
-                  <option value="morning_evening">Morning and evening</option>
-                  <option value="office_hours">Office hours</option>
-                  <option value="nightly_summary">Nightly summary</option>
+                  <option value="always_on">{isZh ? "全天候" : "Always on"}</option>
+                  <option value="morning_evening">
+                    {isZh ? "早晚重点" : "Morning and evening"}
+                  </option>
+                  <option value="office_hours">
+                    {isZh ? "工作时间" : "Office hours"}
+                  </option>
+                  <option value="nightly_summary">
+                    {isZh ? "夜间总结" : "Nightly summary"}
+                  </option>
                 </select>
               </label>
               <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                Timezone
+                {isZh ? "时区" : "Timezone"}
                 <input
                   name="timezone"
                   defaultValue={scheduleTimezone}
@@ -152,7 +172,157 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
                 />
               </label>
               <button className="h-11 self-end rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
-                Save
+                {isZh ? "保存" : "Save"}
+              </button>
+            </form>
+            <form
+              action={saveTaskCustomScheduleAction}
+              className="mt-5 grid gap-3 border-t border-stone-100 pt-5"
+            >
+              <input name="taskId" type="hidden" value={taskId} />
+              <input name="timezone" type="hidden" value={scheduleTimezone} />
+              <div className="grid gap-3 sm:grid-cols-3">
+                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  {isZh ? "开始分钟" : "Start minute"}
+                  <input
+                    name="startMinutes"
+                    type="number"
+                    min={0}
+                    max={1439}
+                    defaultValue={currentWindow?.startMinutes ?? 540}
+                    className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  {isZh ? "结束分钟" : "End minute"}
+                  <input
+                    name="endMinutes"
+                    type="number"
+                    min={1}
+                    max={1440}
+                    defaultValue={currentWindow?.endMinutes ?? 1080}
+                    className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
+                  />
+                </label>
+                <label className="grid gap-1 text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
+                  {isZh ? "报告模式" : "Report mode"}
+                  <select
+                    name="reportMode"
+                    defaultValue={currentWindow?.reportMode ?? "current"}
+                    className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm font-semibold normal-case tracking-normal text-stone-900 outline-none transition focus:border-stone-400"
+                  >
+                    <option value="current">current</option>
+                    <option value="daily">daily</option>
+                    <option value="incremental">incremental</option>
+                  </select>
+                </label>
+              </div>
+              <div className="flex flex-wrap gap-2 text-sm text-stone-600">
+                {[0, 1, 2, 3, 4, 5, 6].map((day) => (
+                  <label
+                    key={day}
+                    className="inline-flex items-center gap-2 rounded-full border border-stone-200 px-3 py-2"
+                  >
+                    <input
+                      name="days"
+                      type="checkbox"
+                      value={day}
+                      defaultChecked={
+                        currentWindow?.days.includes(day) ?? true
+                      }
+                    />
+                    {
+                      (isZh
+                        ? ["日", "一", "二", "三", "四", "五", "六"]
+                        : ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])[
+                        day
+                      ]
+                    }
+                  </label>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-3 text-sm text-stone-600">
+                {[
+                  ["collect", isZh ? "抓取" : "Collect", currentWindow?.collect ?? true],
+                  [
+                    "generateBriefs",
+                    isZh ? "生成简报" : "Generate briefs",
+                    currentWindow?.generateBriefs ?? true,
+                  ],
+                  [
+                    "generateReports",
+                    isZh ? "生成报告" : "Generate reports",
+                    currentWindow?.generateReports ?? false,
+                  ],
+                  ["push", isZh ? "推送" : "Push", currentWindow?.push ?? false],
+                ].map(([name, label, checked]) => (
+                  <label key={String(name)} className="inline-flex items-center gap-2">
+                    <input
+                      name={String(name)}
+                      type="checkbox"
+                      value="1"
+                      defaultChecked={Boolean(checked)}
+                    />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              <button className="h-11 justify-self-start rounded-xl border border-stone-200 px-4 text-sm font-semibold text-stone-800 transition hover:bg-stone-50">
+                {isZh ? "保存自定义时间窗" : "Save custom window"}
+              </button>
+            </form>
+          </section>
+
+          <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+            <div className="mb-4 border-b border-stone-100 pb-4">
+              <h2 className="text-lg font-semibold text-stone-950">
+                {isZh ? "投递通道" : "Delivery channels"}
+              </h2>
+              <p className="mt-1 text-sm text-stone-500">
+                {isZh
+                  ? "留空则使用所有已配置通道。"
+                  : "Leave empty to use every configured channel."}
+              </p>
+            </div>
+            <form action={saveTaskDeliveryChannelsAction} className="grid gap-4">
+              <input name="taskId" type="hidden" value={taskId} />
+              <div className="grid gap-2 sm:grid-cols-2">
+                {deliveryChannels.map((channel) => (
+                  <label
+                    key={channel.type}
+                    className={`flex items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${
+                      channel.enabled
+                        ? "border-stone-200 bg-stone-50 text-stone-800"
+                        : "border-stone-100 bg-stone-50/60 text-stone-400"
+                    }`}
+                  >
+                    <span>
+                      <span className="block font-semibold">{channel.name}</span>
+                      <span className="text-xs">
+                        {channel.enabled
+                          ? isZh
+                            ? "已配置"
+                            : "configured"
+                          : isZh
+                            ? "未配置"
+                            : "not configured"}
+                      </span>
+                    </span>
+                    <input
+                      name="channels"
+                      type="checkbox"
+                      value={channel.type}
+                      defaultChecked={
+                        task.deliveryChannels?.includes(channel.type) ?? false
+                      }
+                      disabled={!channel.enabled}
+                      className="size-4"
+                    />
+                  </label>
+                ))}
+              </div>
+              <button className="h-11 justify-self-start rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800">
+                {isZh ? "保存通道" : "Save channels"}
               </button>
             </form>
           </section>

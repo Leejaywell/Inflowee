@@ -17,9 +17,11 @@
     "db:push": "prisma db push",
     "db:reset": "node --experimental-strip-types scripts/reset-dev.ts",
     "db:seed": "node --experimental-strip-types scripts/seed-dev.ts",
-    "inngest:dev": "inngest-cli dev -u http://localhost:3000/api/inngest"
+    "inngest:dev": "inngest-cli dev -u http://localhost:3000/api/inngest",
+    "mcp": "tsx scripts/inflowee-mcp.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "@prisma/client": "^6.9.0",
     "@resvg/resvg-js": "^2.6.2",
     "cheerio": "^1.2.0",
@@ -43,6 +45,7 @@
     "jsdom": "^26.1.0",
     "prisma": "^6.9.0",
     "tailwindcss": "^4",
+    "tsx": "^4.22.3",
     "typescript": "^5",
     "vitest": "^3.2.4"
   }

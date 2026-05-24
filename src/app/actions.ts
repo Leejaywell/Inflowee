@@ -31,15 +31,21 @@ import {
   listSources,
   markBriefRead,
   markBriefUnread,
+  saveBarkSettings,
+  saveDingTalkSettings,
+  saveEmailSettings,
   saveFeishuSettings,
   saveNtfySettings,
   saveSlackSettings,
   saveTelegramSettings,
   saveTelegramSourceSettings,
+  saveWeComSettings,
   saveWebhookSettings,
   setSourceSchedule,
+  updateTaskDeliveryChannels,
   updateTaskScheduleProfile,
 } from "@/lib/store";
+import { DELIVERY_ADAPTERS } from "@/lib/delivery";
 import { syncSourceById } from "@/lib/source-ingestion";
 import { getSourcePresetById } from "@/lib/source-presets";
 import { generateTaskReport } from "@/lib/reports";
@@ -59,6 +65,7 @@ import {
 import {
   createSourceSchema,
   createTaskSchema,
+  deliveryEndpointSchema,
   feishuWebhookEndpointSchema,
   ntfyEndpointSchema,
   slackWebhookEndpointSchema,
@@ -461,6 +468,71 @@ export async function saveTaskSchedulePresetAction(formData: FormData) {
   redirect(`/tasks/${taskId}`);
 }
 
+export async function saveTaskCustomScheduleAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const taskId = getString(formData, "taskId");
+  const timezone = getString(formData, "timezone") || "Asia/Shanghai";
+  const startMinutes = Number(getString(formData, "startMinutes"));
+  const endMinutes = Number(getString(formData, "endMinutes"));
+  const days = formData
+    .getAll("days")
+    .map((value) => Number(String(value)))
+    .filter((value) => Number.isInteger(value));
+  const reportMode = getString(formData, "reportMode");
+  const normalizedReportMode: "current" | "daily" | "incremental" =
+    reportMode === "daily" || reportMode === "incremental"
+      ? reportMode
+      : "current";
+  const profile = {
+    preset: "custom" as const,
+    timezone,
+    windows: [
+      {
+        id: "custom-window",
+        days,
+        startMinutes,
+        endMinutes,
+        collect: getString(formData, "collect") === "1",
+        generateBriefs: getString(formData, "generateBriefs") === "1",
+        generateReports: getString(formData, "generateReports") === "1",
+        push: getString(formData, "push") === "1",
+        reportMode: normalizedReportMode,
+        filterMode: "keyword" as const,
+        maxPushItems: 5,
+      },
+    ],
+  };
+  const errors = validateScheduleProfile(profile);
+
+  if (errors.length > 0) {
+    redirect(`/tasks/${taskId}?error=${encodeURIComponent(errors[0])}`);
+  }
+
+  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
+  await updateTaskScheduleProfile(defaultStore, taskId, profile);
+
+  revalidatePath(`/tasks/${taskId}`);
+  redirect(`/tasks/${taskId}`);
+}
+
+export async function saveTaskDeliveryChannelsAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const taskId = getString(formData, "taskId");
+  const allowedChannels = new Set<string>(
+    DELIVERY_ADAPTERS.map((adapter) => adapter.type),
+  );
+  const channels = formData
+    .getAll("channels")
+    .map((value) => String(value))
+    .filter((value) => allowedChannels.has(value));
+
+  await assertTaskAccess(defaultStore, { actorId: actor.id, taskId });
+  await updateTaskDeliveryChannels(defaultStore, taskId, channels);
+
+  revalidatePath(`/tasks/${taskId}`);
+  redirect(`/tasks/${taskId}`);
+}
+
 export async function saveWebhookEndpoint(formData: FormData) {
   await requireSessionActor();
   const parsed = webhookEndpointSchema.safeParse(getString(formData, "endpoint"));
@@ -556,9 +628,61 @@ export async function saveNtfyEndpoint(formData: FormData) {
   redirect("/settings?updated=ntfy");
 }
 
+async function saveGenericDeliveryEndpoint(
+  formData: FormData,
+  key: "dingtalk" | "wecom" | "bark" | "email",
+) {
+  await requireSessionActor();
+  const parsed = deliveryEndpointSchema.safeParse(getString(formData, "endpoint"));
+
+  if (!parsed.success) {
+    redirect(
+      `/settings?error=${encodeURIComponent(parsed.error.issues[0]?.message ?? "Invalid delivery endpoint.")}`,
+    );
+  }
+
+  if (key === "dingtalk") {
+    await saveDingTalkSettings(defaultStore, parsed.data);
+  } else if (key === "wecom") {
+    await saveWeComSettings(defaultStore, parsed.data);
+  } else if (key === "bark") {
+    await saveBarkSettings(defaultStore, parsed.data);
+  } else {
+    await saveEmailSettings(defaultStore, parsed.data);
+  }
+
+  revalidatePath("/settings");
+  redirect(`/settings?updated=${key}`);
+}
+
+export async function saveDingTalkEndpoint(formData: FormData) {
+  await saveGenericDeliveryEndpoint(formData, "dingtalk");
+}
+
+export async function saveWeComEndpoint(formData: FormData) {
+  await saveGenericDeliveryEndpoint(formData, "wecom");
+}
+
+export async function saveBarkEndpoint(formData: FormData) {
+  await saveGenericDeliveryEndpoint(formData, "bark");
+}
+
+export async function saveEmailEndpoint(formData: FormData) {
+  await saveGenericDeliveryEndpoint(formData, "email");
+}
+
 async function sendBriefToChannel(
   briefId: string,
-  channel: "webhook" | "slack" | "telegram" | "feishu" | "ntfy",
+  channel:
+    | "webhook"
+    | "slack"
+    | "telegram"
+    | "feishu"
+    | "ntfy"
+    | "dingtalk"
+    | "wecom"
+    | "bark"
+    | "email",
 ) {
   const actor = await requireSessionActor();
   await assertBriefAccess(defaultStore, { actorId: actor.id, briefId });

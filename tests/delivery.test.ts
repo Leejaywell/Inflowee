@@ -3,10 +3,18 @@
 import {
   buildDeliveryPayload,
   deliverBriefWithRetry,
+  deliverStoredBriefToConfiguredChannels,
   listConfiguredDeliveryChannels,
   splitDeliveryText,
 } from "@/lib/delivery";
-import { saveNtfySettings } from "@/lib/store";
+import {
+  createBriefRecord,
+  createTaskRecord,
+  saveDingTalkSettings,
+  saveNtfySettings,
+  saveWeComSettings,
+  updateTaskDeliveryChannels,
+} from "@/lib/store";
 import { makeBriefRecord } from "./helpers/records";
 import { createSqliteFixture } from "./helpers/sqlite-store";
 
@@ -40,6 +48,28 @@ describe("delivery payloads", () => {
         message: "A new coding agent launched.",
       }),
     );
+    await expect(
+      buildDeliveryPayload({ channel: "dingtalk", brief }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        msgtype: "text",
+        text: expect.objectContaining({
+          content: expect.stringContaining("Agent launch"),
+        }),
+      }),
+    );
+    await expect(buildDeliveryPayload({ channel: "bark", brief })).resolves.toEqual(
+      expect.objectContaining({
+        title: "Agent launch",
+        body: "A new coding agent launched.",
+      }),
+    );
+    await expect(buildDeliveryPayload({ channel: "email", brief })).resolves.toEqual(
+      expect.objectContaining({
+        subject: "Agent launch",
+        text: "A new coding agent launched.",
+      }),
+    );
   });
 
   it("exposes configured channel adapters without leaking credentials", async () => {
@@ -47,6 +77,10 @@ describe("delivery payloads", () => {
 
     try {
       await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
+      await saveDingTalkSettings(
+        fixture.store,
+        "https://oapi.dingtalk.com/robot/send?access_token=test",
+      );
 
       const channels = await listConfiguredDeliveryChannels(fixture.store);
 
@@ -60,6 +94,50 @@ describe("delivery payloads", () => {
         }),
       );
       expect(JSON.stringify(channels)).not.toContain("https://ntfy.sh/inflowee");
+      expect(JSON.stringify(channels)).not.toContain("access_token=test");
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it("uses task-level delivery channel overrides", async () => {
+    const fixture = createSqliteFixture();
+
+    try {
+      const taskId = await createTaskRecord(fixture.store, {
+        ownerId: "user-1",
+        title: "Track agents",
+        taskType: "TOPIC",
+        userPrompt: "Track coding agents.",
+      });
+      const briefId = await createBriefRecord(fixture.store, {
+        taskId,
+        itemIds: [],
+        title: "Agent launch",
+        summary: "A new coding agent launched.",
+        whyItMatters: "Developer tooling is changing.",
+        sourceCitations: ["https://example.com/agent"],
+      });
+      await saveNtfySettings(fixture.store, "https://ntfy.sh/inflowee");
+      await saveWeComSettings(
+        fixture.store,
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=test",
+      );
+      await updateTaskDeliveryChannels(fixture.store, taskId, ["ntfy"]);
+      const fetchImpl = vi.fn<typeof fetch>().mockResolvedValue(
+        new Response("ok", { status: 200 }),
+      );
+
+      const result = await deliverStoredBriefToConfiguredChannels(
+        fixture.store,
+        briefId,
+        { fetchImpl },
+      );
+
+      expect(result.status).toBe("success");
+      expect(result.deliveries).toHaveLength(1);
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe("https://ntfy.sh/inflowee");
     } finally {
       fixture.cleanup();
     }

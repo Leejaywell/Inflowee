@@ -1,12 +1,17 @@
 import { renderBriefHtmlDigest } from "@/lib/brief-render";
 import {
   createDeliveryLog,
+  getBarkSettings,
+  getDingTalkSettings,
+  getEmailSettings,
   getFeishuSettings,
   getNtfySettings,
   getSlackSettings,
   getTelegramSettings,
   finishDeliveryLog,
   getBriefById,
+  getTaskById,
+  getWeComSettings,
   getWebhookSettings,
   listItemsByBriefId,
   type DeliveryPayloadType,
@@ -25,7 +30,11 @@ export type DeliveryChannel =
   | "slack"
   | "telegram"
   | "feishu"
-  | "ntfy";
+  | "ntfy"
+  | "dingtalk"
+  | "wecom"
+  | "bark"
+  | "email";
 export type SlackDeliveryPayload = {
   text: string;
   blocks: Array<Record<string, unknown>>;
@@ -46,13 +55,38 @@ export type NtfyDeliveryPayload = {
   title: string;
   message: string;
 };
+export type DingTalkDeliveryPayload = {
+  msgtype: "text";
+  text: {
+    content: string;
+  };
+};
+export type WeComDeliveryPayload = {
+  msgtype: "text";
+  text: {
+    content: string;
+  };
+};
+export type BarkDeliveryPayload = {
+  title: string;
+  body: string;
+};
+export type EmailDeliveryPayload = {
+  subject: string;
+  text: string;
+  html?: string;
+};
 
 export type DeliveryPayloadUnion =
   | DeliveryPayload
   | SlackDeliveryPayload
   | TelegramDeliveryPayload
   | FeishuDeliveryPayload
-  | NtfyDeliveryPayload;
+  | NtfyDeliveryPayload
+  | DingTalkDeliveryPayload
+  | WeComDeliveryPayload
+  | BarkDeliveryPayload
+  | EmailDeliveryPayload;
 
 export type DeliveryFormatGuide = {
   contentTypes: Array<"plain" | "markdown" | "html" | "json">;
@@ -184,6 +218,42 @@ export async function buildDeliveryPayload(input: {
   html?: string;
 }): Promise<NtfyDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
+  channel: "dingtalk";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<DingTalkDeliveryPayload>;
+export async function buildDeliveryPayload(input: {
+  channel: "wecom";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<WeComDeliveryPayload>;
+export async function buildDeliveryPayload(input: {
+  channel: "bark";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<BarkDeliveryPayload>;
+export async function buildDeliveryPayload(input: {
+  channel: "email";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  html?: string;
+}): Promise<EmailDeliveryPayload>;
+export async function buildDeliveryPayload(input: {
   channel: DeliveryChannel;
   brief: {
     id: string;
@@ -231,6 +301,31 @@ export async function buildDeliveryPayload(input: {
       return {
         title: input.brief.title,
         message: input.brief.summary,
+      };
+    case "dingtalk":
+      return {
+        msgtype: "text",
+        text: {
+          content: `${input.brief.title}\n${input.brief.summary}`,
+        },
+      };
+    case "wecom":
+      return {
+        msgtype: "text",
+        text: {
+          content: `${input.brief.title}\n${input.brief.summary}`,
+        },
+      };
+    case "bark":
+      return {
+        title: input.brief.title,
+        body: input.brief.summary,
+      };
+    case "email":
+      return {
+        subject: input.brief.title,
+        text: input.brief.summary,
+        html: input.html,
       };
     default:
       return {
@@ -419,6 +514,89 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     },
     missingConfigurationMessage: "Configure an ntfy endpoint first.",
   },
+  {
+    type: "dingtalk",
+    name: "DingTalk",
+    payloadType: "dingtalk",
+    formatGuide: {
+      contentTypes: ["plain", "json"],
+      maxPayloadCharacters: 16_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Prefix the text body with the brief title.",
+    },
+    async getEndpoint(store) {
+      return (await getDingTalkSettings(store)).endpoint;
+    },
+    async buildPayloads({ brief }) {
+      return [await buildDeliveryPayload({ channel: "dingtalk", brief })];
+    },
+    missingConfigurationMessage: "Configure a DingTalk webhook endpoint first.",
+  },
+  {
+    type: "wecom",
+    name: "WeCom",
+    payloadType: "wecom",
+    formatGuide: {
+      contentTypes: ["plain", "json"],
+      maxPayloadCharacters: 16_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Prefix the text body with the brief title.",
+    },
+    async getEndpoint(store) {
+      return (await getWeComSettings(store)).endpoint;
+    },
+    async buildPayloads({ brief }) {
+      return [await buildDeliveryPayload({ channel: "wecom", brief })];
+    },
+    missingConfigurationMessage: "Configure a WeCom webhook endpoint first.",
+  },
+  {
+    type: "bark",
+    name: "Bark",
+    payloadType: "bark",
+    formatGuide: {
+      contentTypes: ["plain", "json"],
+      maxPayloadCharacters: 4_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Use the brief title as the notification title.",
+    },
+    async getEndpoint(store) {
+      return (await getBarkSettings(store)).endpoint;
+    },
+    async buildPayloads({ brief }) {
+      return splitDeliveryText(brief.summary, 4_000).map((body) => ({
+        title: brief.title,
+        body,
+      }));
+    },
+    missingConfigurationMessage: "Configure a Bark endpoint first.",
+  },
+  {
+    type: "email",
+    name: "Email SMTP relay",
+    payloadType: "email",
+    formatGuide: {
+      contentTypes: ["plain", "html", "json"],
+      maxPayloadCharacters: 80_000,
+      supportsLinks: true,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Use the brief title as the email subject.",
+    },
+    async getEndpoint(store) {
+      return (await getEmailSettings(store)).endpoint;
+    },
+    async buildPayloads({ brief, html }) {
+      return [await buildDeliveryPayload({ channel: "email", brief, html })];
+    },
+    missingConfigurationMessage: "Configure an email SMTP relay endpoint first.",
+  },
 ];
 
 function getDeliveryAdapter(channel: DeliveryChannel) {
@@ -443,6 +621,28 @@ export async function listConfiguredDeliveryChannels(store: Store) {
   );
 
   return configured;
+}
+
+export async function listDeliveryChannelsForTask(
+  store: Store,
+  taskId: string | null | undefined,
+) {
+  const channels = await listConfiguredDeliveryChannels(store);
+
+  if (!taskId) {
+    return channels.filter((channel) => channel.enabled);
+  }
+
+  const task = await getTaskById(store, taskId);
+  const overrides = task?.deliveryChannels?.filter(Boolean) ?? [];
+
+  if (overrides.length === 0) {
+    return channels.filter((channel) => channel.enabled);
+  }
+
+  return channels.filter(
+    (channel) => channel.enabled && overrides.includes(channel.type),
+  );
 }
 
 export async function deliverStoredBriefToChannel(
@@ -613,9 +813,10 @@ export async function deliverStoredBriefToConfiguredChannels(
     sleepImpl?: SleepLike;
   },
 ) {
-  const channels = (await listConfiguredDeliveryChannels(store))
-    .filter((channel) => channel.enabled)
-    .map((channel) => channel.type);
+  const brief = await getBriefById(store, briefId);
+  const channels = (await listDeliveryChannelsForTask(store, brief?.taskId)).map(
+    (channel) => channel.type,
+  );
 
   if (channels.length === 0) {
     throw new Error("Configure at least one delivery channel first.");

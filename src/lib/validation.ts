@@ -175,3 +175,12 @@ export const ntfyEndpointSchema = z
     (value) => value.startsWith("https://"),
     "Enter a valid https ntfy endpoint URL.",
   );
+
+export const deliveryEndpointSchema = z
+  .string()
+  .trim()
+  .url("Enter a valid delivery endpoint URL.")
+  .refine(
+    (value) => value.startsWith("https://"),
+    "Enter a valid https delivery endpoint URL.",
+  );

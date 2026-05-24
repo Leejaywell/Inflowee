@@ -1,9 +1,13 @@
 import {
+  saveBarkEndpoint,
+  saveDingTalkEndpoint,
+  saveEmailEndpoint,
   saveFeishuEndpoint,
   saveNtfyEndpoint,
   saveSlackEndpoint,
   saveTelegramSourceBot,
   saveTelegramDelivery,
+  saveWeComEndpoint,
   saveWebhookEndpoint,
 } from "@/app/actions";
 import { getAiRuntimeStatus } from "@/lib/ai-config";
@@ -13,12 +17,16 @@ import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import {
   defaultStore,
+  getBarkSettings,
   getDeliveryHealthSummary,
+  getDingTalkSettings,
+  getEmailSettings,
   getFeishuSettings,
   getNtfySettings,
   getSlackSettings,
   getTelegramSourceSettings,
   getTelegramSettings,
+  getWeComSettings,
   getWebhookSettings,
   listRecentDeliveryLogs,
 } from "@/lib/store";
@@ -38,6 +46,7 @@ export default async function SettingsPage({
     getRequestLocale(),
   ]);
   const t = getDictionary(locale).settings;
+  const isZh = locale === "zh";
   const aiStatus = getAiRuntimeStatus();
   const [
     webhookSettings,
@@ -46,6 +55,10 @@ export default async function SettingsPage({
     telegramSourceSettings,
     feishuSettings,
     ntfySettings,
+    dingTalkSettings,
+    weComSettings,
+    barkSettings,
+    emailSettings,
     recentLogs,
     deliveryHealth,
     deliveryChannels,
@@ -57,6 +70,10 @@ export default async function SettingsPage({
     getTelegramSourceSettings(defaultStore),
     getFeishuSettings(defaultStore),
     getNtfySettings(defaultStore),
+    getDingTalkSettings(defaultStore),
+    getWeComSettings(defaultStore),
+    getBarkSettings(defaultStore),
+    getEmailSettings(defaultStore),
     listRecentDeliveryLogs(defaultStore, 12, { actorId: actor.id }),
     getDeliveryHealthSummary(defaultStore, { actorId: actor.id }),
     listConfiguredDeliveryChannels(defaultStore),
@@ -64,6 +81,48 @@ export default async function SettingsPage({
   ]);
   const error = params?.error;
   const updated = params?.updated;
+  const extraDeliveryForms = [
+    {
+      key: "dingtalk",
+      title: "DingTalk",
+      description: isZh
+        ? "通过钉钉自定义机器人 Webhook 投递简报。"
+        : "Send briefs to a DingTalk custom robot webhook.",
+      placeholder: "https://oapi.dingtalk.com/robot/send?access_token=...",
+      value: dingTalkSettings.endpoint,
+      action: saveDingTalkEndpoint,
+    },
+    {
+      key: "wecom",
+      title: "WeCom",
+      description: isZh
+        ? "通过企业微信群机器人 Webhook 投递简报。"
+        : "Send briefs to an enterprise WeChat group robot webhook.",
+      placeholder: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=...",
+      value: weComSettings.endpoint,
+      action: saveWeComEndpoint,
+    },
+    {
+      key: "bark",
+      title: "Bark",
+      description: isZh
+        ? "通过 Bark endpoint 发送 iOS 推送。"
+        : "Send iOS push notifications through a Bark endpoint.",
+      placeholder: "https://api.day.app/your-key",
+      value: barkSettings.endpoint,
+      action: saveBarkEndpoint,
+    },
+    {
+      key: "email",
+      title: "Email SMTP relay",
+      description: isZh
+        ? "通过 HTTPS SMTP relay endpoint 发送邮件。"
+        : "Send email through a configured HTTPS SMTP relay endpoint.",
+      placeholder: "https://example.com/smtp-relay",
+      value: emailSettings.endpoint,
+      action: saveEmailEndpoint,
+    },
+  ];
   const slackPreview = await buildDeliveryPayload({
     channel: "slack",
     brief: {
@@ -256,7 +315,9 @@ export default async function SettingsPage({
           <div className="space-y-1">
             <h2 className="text-xl font-semibold">ntfy</h2>
             <p className="text-sm leading-6 text-stone-500">
-              Send brief notifications to an ntfy topic endpoint.
+              {isZh
+                ? "向 ntfy topic endpoint 发送简报通知。"
+                : "Send brief notifications to an ntfy topic endpoint."}
             </p>
           </div>
 
@@ -271,9 +332,38 @@ export default async function SettingsPage({
           </label>
 
           <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
-            Save ntfy
+            {isZh ? "保存 ntfy" : "Save ntfy"}
           </button>
         </form>
+
+        {extraDeliveryForms.map((channel) => (
+          <form
+            key={channel.key}
+            action={channel.action}
+            className="grid gap-4 rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
+          >
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold">{channel.title}</h2>
+              <p className="text-sm leading-6 text-stone-500">
+                {channel.description}
+              </p>
+            </div>
+
+            <label className="grid gap-2 text-sm">
+              <span className="font-medium text-stone-700">Endpoint</span>
+              <input
+                name="endpoint"
+                defaultValue={channel.value ?? ""}
+                placeholder={channel.placeholder}
+                className="h-12 rounded-2xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
+              />
+            </label>
+
+            <button className="inline-flex h-12 items-center justify-center rounded-2xl bg-stone-950 px-4 text-sm font-medium text-white transition hover:bg-stone-800">
+              {isZh ? "保存" : "Save"} {channel.title}
+            </button>
+          </form>
+        ))}
 
         <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
           <h2 className="text-xl font-semibold">{t.deliveryHealth}</h2>
@@ -370,7 +460,25 @@ export default async function SettingsPage({
                   : updated === "feishu"
                     ? t.feishuSaved
                   : updated === "ntfy"
-                    ? "ntfy settings saved."
+                    ? isZh
+                      ? "ntfy 设置已保存。"
+                      : "ntfy settings saved."
+                  : updated === "dingtalk"
+                    ? isZh
+                      ? "钉钉设置已保存。"
+                      : "DingTalk settings saved."
+                  : updated === "wecom"
+                    ? isZh
+                      ? "企业微信设置已保存。"
+                      : "WeCom settings saved."
+                  : updated === "bark"
+                    ? isZh
+                      ? "Bark 设置已保存。"
+                      : "Bark settings saved."
+                  : updated === "email"
+                    ? isZh
+                      ? "邮件设置已保存。"
+                      : "Email settings saved."
                 : t.updateApplied}
         </section>
       )}

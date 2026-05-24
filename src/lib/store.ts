@@ -62,6 +62,7 @@ type TaskRow = {
   summary_preference: string;
   task_profile: string | null;
   schedule_profile: string | null;
+  delivery_channels: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -232,6 +233,7 @@ export type TaskRecord = {
   summaryPreference: string;
   taskProfile?: TaskProfile | null;
   scheduleProfile?: TaskScheduleProfile | null;
+  deliveryChannels?: string[] | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -294,7 +296,11 @@ export type DeliveryPayloadType =
   | "slack"
   | "telegram"
   | "feishu"
-  | "ntfy";
+  | "ntfy"
+  | "dingtalk"
+  | "wecom"
+  | "bark"
+  | "email";
 
 export type DeliveryLogRecord = {
   id: string;
@@ -740,7 +746,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
   }
 
   const needsDeliveryPayloadUpgrade =
-    deliveryLogsTable && !deliveryLogsTable.sql.includes("'ntfy'");
+    deliveryLogsTable && !deliveryLogsTable.sql.includes("'email'");
 
   if (needsDeliveryPayloadUpgrade) {
     database.exec(`
@@ -751,7 +757,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
         id TEXT PRIMARY KEY,
         brief_id TEXT NOT NULL,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -799,7 +805,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       id TEXT PRIMARY KEY,
       brief_id TEXT NOT NULL,
       endpoint TEXT NOT NULL,
-      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy')),
+      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
       status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
       attempt_count INTEGER,
       response_status INTEGER,
@@ -937,6 +943,7 @@ function migrateTasksTable(database: DatabaseSync) {
         summary_preference TEXT NOT NULL DEFAULT 'balanced',
         task_profile TEXT,
         schedule_profile TEXT,
+        delivery_channels TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -951,6 +958,7 @@ function migrateTasksTable(database: DatabaseSync) {
         summary_preference,
         task_profile,
         schedule_profile,
+        delivery_channels,
         created_at,
         updated_at
       )
@@ -964,6 +972,7 @@ function migrateTasksTable(database: DatabaseSync) {
         summary_preference,
         CASE WHEN instr(sql, 'task_profile') > 0 THEN task_profile ELSE NULL END,
         CASE WHEN instr(sql, 'schedule_profile') > 0 THEN schedule_profile ELSE NULL END,
+        CASE WHEN instr(sql, 'delivery_channels') > 0 THEN delivery_channels ELSE NULL END,
         created_at,
         updated_at
       FROM tasks
@@ -984,6 +993,10 @@ function migrateTasksTable(database: DatabaseSync) {
 
   if (!tasksTable.sql.includes("schedule_profile")) {
     database.exec("ALTER TABLE tasks ADD COLUMN schedule_profile TEXT;");
+  }
+
+  if (!tasksTable.sql.includes("delivery_channels")) {
+    database.exec("ALTER TABLE tasks ADD COLUMN delivery_channels TEXT;");
   }
 }
 
@@ -1232,6 +1245,7 @@ export function createStore(
         summary_preference TEXT NOT NULL DEFAULT 'balanced',
         task_profile TEXT,
         schedule_profile TEXT,
+        delivery_channels TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -1371,7 +1385,7 @@ export function createStore(
         id TEXT PRIMARY KEY,
         brief_id TEXT NOT NULL,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -1445,6 +1459,9 @@ function mapTask(row: TaskRow): TaskRecord {
     scheduleProfile: row.schedule_profile
       ? (JSON.parse(row.schedule_profile) as TaskScheduleProfile)
       : null,
+    deliveryChannels: row.delivery_channels
+      ? (JSON.parse(row.delivery_channels) as string[])
+      : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -1460,6 +1477,7 @@ function mapPrismaTask(task: {
   summaryPreference: string;
   taskProfile: unknown;
   scheduleProfile: unknown;
+  deliveryChannels: unknown;
   createdAt: Date;
   updatedAt: Date;
 }): TaskRecord {
@@ -1474,6 +1492,7 @@ function mapPrismaTask(task: {
     taskProfile: (task.taskProfile as TaskProfile | null) ?? null,
     scheduleProfile:
       (task.scheduleProfile as TaskScheduleProfile | null) ?? null,
+    deliveryChannels: (task.deliveryChannels as string[] | null) ?? null,
     createdAt: task.createdAt.toISOString(),
     updatedAt: task.updatedAt.toISOString(),
   };
@@ -1785,6 +1804,7 @@ export async function createTaskRecord(
         userPrompt: input.userPrompt,
         relevanceLevel: 3,
         summaryPreference: "balanced",
+        deliveryChannels: [],
       },
     });
 
@@ -1805,9 +1825,10 @@ export async function createTaskRecord(
         relevance_level,
         summary_preference,
         schedule_profile,
+        delivery_channels,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
@@ -1818,6 +1839,7 @@ export async function createTaskRecord(
       3,
       "balanced",
       null,
+      JSON.stringify([]),
       timestamp,
       timestamp,
     );
@@ -2834,6 +2856,66 @@ export async function getNtfySettings(
   };
 }
 
+export async function saveDingTalkSettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "dingtalk_webhook_endpoint", endpoint);
+}
+
+export async function getDingTalkSettings(
+  store: Store,
+): Promise<WebhookSettingsRecord> {
+  const row = await getAppSetting(store, "dingtalk_webhook_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function saveWeComSettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "wecom_webhook_endpoint", endpoint);
+}
+
+export async function getWeComSettings(
+  store: Store,
+): Promise<WebhookSettingsRecord> {
+  const row = await getAppSetting(store, "wecom_webhook_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function saveBarkSettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "bark_endpoint", endpoint);
+}
+
+export async function getBarkSettings(
+  store: Store,
+): Promise<WebhookSettingsRecord> {
+  const row = await getAppSetting(store, "bark_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
+  };
+}
+
+export async function saveEmailSettings(store: Store, endpoint: string) {
+  await saveAppSetting(store, "email_smtp_relay_endpoint", endpoint);
+}
+
+export async function getEmailSettings(
+  store: Store,
+): Promise<WebhookSettingsRecord> {
+  const row = await getAppSetting(store, "email_smtp_relay_endpoint");
+
+  return {
+    endpoint: row.value,
+    updatedAt: row.updatedAt,
+  };
+}
+
 export async function hasProcessedDeliveryRequest(
   store: Store,
   requestKey: string,
@@ -3794,6 +3876,32 @@ export async function updateTaskScheduleProfile(
       "UPDATE tasks SET schedule_profile = ?, updated_at = ? WHERE id = ?",
     )
     .run(profile ? JSON.stringify(profile) : null, timestamp, taskId);
+}
+
+export async function updateTaskDeliveryChannels(
+  store: Store,
+  taskId: string,
+  channels: string[],
+): Promise<void> {
+  const uniqueChannels = [...new Set(channels)].filter(Boolean);
+
+  if (store.prisma) {
+    await store.prisma.task.update({
+      where: { id: taskId },
+      data: {
+        deliveryChannels: uniqueChannels as Prisma.InputJsonValue,
+      },
+    });
+
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare(
+      "UPDATE tasks SET delivery_channels = ?, updated_at = ? WHERE id = ?",
+    )
+    .run(JSON.stringify(uniqueChannels), timestamp, taskId);
 }
 
 export async function replaceRecommendationBundles(
