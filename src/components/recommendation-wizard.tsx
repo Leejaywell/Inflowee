@@ -30,6 +30,9 @@ export type RecommendationWizardLabels = {
   viewChannels: string;
   title: string;
   description: string;
+  selectStep: string;
+  previewStep: string;
+  confirmStep: string;
   refreshing: string;
   package: string;
   rationale: string;
@@ -62,6 +65,9 @@ const defaultLabels: RecommendationWizardLabels = {
   viewChannels: "View feed channels",
   title: "Recommended subscriptions",
   description: "Choose source packages, preview likely briefs, then confirm.",
+  selectStep: "Select sources",
+  previewStep: "Preview",
+  confirmStep: "Confirm",
   refreshing: "Refreshing...",
   package: "Subscription package",
   rationale: "AI Rationale",
@@ -85,6 +91,8 @@ type SelectedSource = {
   url: string;
   sourceType: SourceType;
 };
+
+type WizardStep = "select" | "preview" | "confirm";
 
 export function RecommendationWizard({
   taskId,
@@ -115,6 +123,7 @@ export function RecommendationWizard({
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [preview, setPreview] = useState<SubscriptionPreviewResult | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [step, setStep] = useState<WizardStep>("select");
 
   const toggleSource = (src: SourceRecommendation) => {
     setSelectedMap((prev) => {
@@ -134,7 +143,7 @@ export function RecommendationWizard({
 
   const handleSubscribe = () => {
     const list = Object.values(selectedMap);
-    if (list.length === 0) return;
+    if (list.length === 0 || !preview) return;
 
     setSuccess(false);
     startTransition(async () => {
@@ -159,6 +168,7 @@ export function RecommendationWizard({
       try {
         const result = await previewRecommendedSources(taskId, list);
         setPreview(result);
+        setStep("confirm");
       } catch (err) {
         setPreviewError(
           err instanceof Error
@@ -185,6 +195,11 @@ export function RecommendationWizard({
   };
 
   const selectedCount = Object.keys(selectedMap).length;
+  const stepItems: Array<{ key: WizardStep; label: string }> = [
+    { key: "select", label: labels.selectStep },
+    { key: "preview", label: labels.previewStep },
+    { key: "confirm", label: labels.confirmStep },
+  ];
 
   if (recommendedBundles.length === 0) {
     return (
@@ -277,80 +292,133 @@ export function RecommendationWizard({
         {refreshError ? (
           <p className="mt-2 text-xs text-rose-600">{refreshError}</p>
         ) : null}
+        <div className="mt-5 grid gap-2 sm:grid-cols-3">
+          {stepItems.map((item, index) => {
+            const isActive = item.key === step;
+            const isComplete =
+              (item.key === "select" && selectedCount > 0 && step !== "select") ||
+              (item.key === "preview" && Boolean(preview) && step === "confirm");
+
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => {
+                  if (item.key === "select") {
+                    setStep("select");
+                  } else if (item.key === "preview" && selectedCount > 0) {
+                    setStep("preview");
+                  } else if (item.key === "confirm" && preview) {
+                    setStep("confirm");
+                  }
+                }}
+                disabled={
+                  (item.key === "preview" && selectedCount === 0) ||
+                  (item.key === "confirm" && !preview)
+                }
+                className={`flex items-center gap-2 rounded-xl border px-3 py-2 text-left text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-45 ${
+                  isActive
+                    ? "border-[#0057ff] bg-[#0057ff]/10 text-[#0057ff]"
+                    : isComplete
+                      ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border-stone-200 bg-stone-50 text-stone-500"
+                }`}
+              >
+                <span className="flex size-5 shrink-0 items-center justify-center rounded-full bg-white text-[10px]">
+                  {isComplete ? "✓" : index + 1}
+                </span>
+                <span className="truncate">{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
 
-      <div className="space-y-6">
-        {recommendedBundles.map((bundle, bIdx) => (
-          <div
-            key={bIdx}
-            className="rounded-2xl border border-stone-200 bg-stone-50/50 p-5 space-y-4"
-          >
-            <div>
-              <span className="inline-flex rounded-full bg-[#0057ff]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#0057ff] uppercase">
-                {labels.package}
-              </span>
-              <h3 className="text-lg font-bold text-stone-950 mt-1.5">{bundle.title}</h3>
-              <p className="text-xs text-stone-600 mt-0.5 leading-relaxed">
-                {bundle.description}
-              </p>
-            </div>
-
-            {/* Rationale Quote */}
-            <div className="rounded-xl bg-[#f7f1e9]/60 border border-[#f7f1e9] p-4 text-xs text-stone-600 leading-relaxed italic flex gap-2.5 items-start">
-              <span className="text-lg font-serif text-stone-400 select-none">“</span>
+      {step === "select" ? (
+        <div className="space-y-6">
+          {recommendedBundles.map((bundle, bIdx) => (
+            <div
+              key={bIdx}
+              className="rounded-2xl border border-stone-200 bg-stone-50/50 p-5 space-y-4"
+            >
               <div>
-                <span className="font-semibold text-stone-700 not-italic block mb-0.5">
-                  {labels.rationale}
+                <span className="inline-flex rounded-full bg-[#0057ff]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#0057ff] uppercase">
+                  {labels.package}
                 </span>
-                {bundle.rationale}
+                <h3 className="text-lg font-bold text-stone-950 mt-1.5">{bundle.title}</h3>
+                <p className="text-xs text-stone-600 mt-0.5 leading-relaxed">
+                  {bundle.description}
+                </p>
               </div>
-            </div>
 
-            {/* Recommendations checklist */}
-            <div className="space-y-2 pt-1">
-              <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 block">
-                {labels.sourcesInBundle}
-              </span>
-              <div className="grid gap-2">
-                {bundle.sources.map((src) => {
-                  const isChecked = !!selectedMap[src.url];
-                  return (
-                    <label
-                      key={src.url}
-                      className={`flex items-center gap-3 p-3 rounded-xl border transition cursor-pointer select-none ${
-                        isChecked
-                          ? "bg-white border-[#0057ff]/30 shadow-sm"
-                          : "bg-white/40 border-stone-200 hover:bg-white"
-                      }`}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={() => toggleSource(src)}
-                        className="h-4 w-4 rounded border-stone-300 text-[#0057ff] focus:ring-[#0057ff]"
-                      />
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-bold text-stone-900 truncate">
-                            {src.title}
-                          </span>
-                          <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[8px] font-semibold text-stone-500 uppercase">
-                            {src.sourceType}
+              <div className="rounded-xl bg-[#f7f1e9]/60 border border-[#f7f1e9] p-4 text-xs text-stone-600 leading-relaxed italic flex gap-2.5 items-start">
+                <span className="text-lg font-serif text-stone-400 select-none">“</span>
+                <div>
+                  <span className="font-semibold text-stone-700 not-italic block mb-0.5">
+                    {labels.rationale}
+                  </span>
+                  {bundle.rationale}
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-1">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-stone-400 block">
+                  {labels.sourcesInBundle}
+                </span>
+                <div className="grid gap-2">
+                  {bundle.sources.map((src) => {
+                    const isChecked = !!selectedMap[src.url];
+                    return (
+                      <label
+                        key={src.url}
+                        className={`flex items-center gap-3 p-3 rounded-xl border transition cursor-pointer select-none ${
+                          isChecked
+                            ? "bg-white border-[#0057ff]/30 shadow-sm"
+                            : "bg-white/40 border-stone-200 hover:bg-white"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={() => {
+                            toggleSource(src);
+                            setPreview(null);
+                            setPreviewError(null);
+                          }}
+                          className="h-4 w-4 rounded border-stone-300 text-[#0057ff] focus:ring-[#0057ff]"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-stone-900 truncate">
+                              {src.title}
+                            </span>
+                            <span className="rounded-full bg-stone-100 px-2 py-0.5 text-[8px] font-semibold text-stone-500 uppercase">
+                              {src.sourceType}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-stone-400 truncate block mt-0.5">
+                            {src.url}
                           </span>
                         </div>
-                        <span className="text-[10px] text-stone-400 truncate block mt-0.5">
-                          {src.url}
-                        </span>
-                      </div>
-                    </label>
-                  );
-                })}
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+          <button
+            type="button"
+            onClick={() => setStep("preview")}
+            disabled={selectedCount === 0}
+            className="w-full h-12 rounded-2xl bg-stone-950 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
+          >
+            {labels.previewTitle}
+          </button>
+        </div>
+      ) : null}
 
+      {step === "preview" || step === "confirm" ? (
       <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -462,30 +530,43 @@ export function RecommendationWizard({
           </div>
         ) : null}
       </div>
+      ) : null}
 
-      {/* Subscribe Button */}
-      <button
-        onClick={handleSubscribe}
-        disabled={selectedCount === 0 || isPending}
-        className={`w-full h-12 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold transition ${
-          selectedCount > 0 && !isPending
-            ? "bg-[#0057ff] text-white hover:bg-[#0049d6]"
-            : "bg-stone-100 text-stone-400 cursor-not-allowed"
-        }`}
-      >
-        {isPending ? (
-          <>
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-stone-400 border-t-stone-850" />
-            {labels.confirming}
-          </>
-        ) : (
-          <>
-            {labels.confirm
-              .replace("{count}", String(selectedCount))
-              .replace("{s}", selectedCount !== 1 ? "s" : "")}
-          </>
-        )}
-      </button>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {step !== "select" ? (
+          <button
+            type="button"
+            onClick={() => setStep(step === "confirm" ? "preview" : "select")}
+            className="h-12 rounded-2xl border border-stone-200 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"
+          >
+            {step === "confirm" ? labels.previewTitle : labels.sourcesInBundle}
+          </button>
+        ) : null}
+        {step === "confirm" ? (
+          <button
+            onClick={handleSubscribe}
+            disabled={selectedCount === 0 || isPending || !preview}
+            className={`h-12 rounded-2xl flex items-center justify-center gap-2 text-sm font-semibold transition ${
+              selectedCount > 0 && !isPending && preview
+                ? "bg-[#0057ff] text-white hover:bg-[#0049d6]"
+                : "bg-stone-100 text-stone-400 cursor-not-allowed"
+            }`}
+          >
+            {isPending ? (
+              <>
+                <div className="h-4 w-4 animate-spin rounded-full border-2 border-stone-400 border-t-stone-850" />
+                {labels.confirming}
+              </>
+            ) : (
+              <>
+                {labels.confirm
+                  .replace("{count}", String(selectedCount))
+                  .replace("{s}", selectedCount !== 1 ? "s" : "")}
+              </>
+            )}
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }
