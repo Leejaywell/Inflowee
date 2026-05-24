@@ -301,15 +301,32 @@ export async function subscribeDiscoverySources(
 
 export async function createTaskAndSubscribeDiscoverySources(input: {
   title: string;
-  userPrompt: string;
+  userPrompt?: string;
   candidateIds: string[];
   categoryId?: string;
   selectedTagIds?: string[];
 }) {
   const store = defaultStore;
   const actor = await requireSessionActor();
-  const userPrompt = input.userPrompt.trim();
-  const title = input.title.trim() || userPrompt.slice(0, 28);
+  const allowedIds = new Set(input.candidateIds);
+  let candidates: DiscoverySourceCandidate[] =
+    buildGenericDiscoveryExperience().candidates.filter((candidate) =>
+      allowedIds.has(candidate.id),
+    );
+  if (candidates.length === 0) {
+    throw new Error("Select at least one valid discovery source.");
+  }
+
+  const title =
+    input.title.trim() ||
+    candidates[0]?.title?.slice(0, 28) ||
+    (input.categoryId ? `${input.categoryId} Topic` : "Discovery Topic");
+  const userPrompt =
+    input.userPrompt?.trim() ||
+    `订阅 Topic「${title}」，关注来源：${candidates
+      .slice(0, 5)
+      .map((candidate) => candidate.title)
+      .join("、")}。`;
   const parsed = createTaskSchema.safeParse({
     title,
     taskType: "TOPIC",
@@ -336,13 +353,18 @@ export async function createTaskAndSubscribeDiscoverySources(input: {
     throw new Error("Task not found after creation.");
   }
 
-  const allowedIds = new Set(input.candidateIds);
   const discoveryExperience = await buildTaskDiscoveryExperience(store, task, {
     categoryId: input.categoryId,
     selectedTagIds: input.selectedTagIds,
   });
-  const candidates: DiscoverySourceCandidate[] =
+  candidates =
     discoveryExperience.candidates.filter((candidate) => allowedIds.has(candidate.id));
+
+  if (candidates.length === 0) {
+    candidates = buildGenericDiscoveryExperience().candidates.filter((candidate) =>
+      allowedIds.has(candidate.id),
+    );
+  }
 
   if (candidates.length === 0) {
     throw new Error("Select at least one valid discovery source.");

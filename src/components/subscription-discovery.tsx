@@ -82,7 +82,7 @@ export function SubscriptionDiscovery({
     selectedCandidateIds.includes(candidate.id),
   );
   const effectiveTaskId = taskId ?? selectedTaskId;
-  const canCreateTaskForSelection = !taskId && !effectiveTaskId;
+  const shouldCreateTopicForSelection = !taskId && !effectiveTaskId;
 
   const resetForCategory = (nextCategoryId: string) => {
     setCategoryId(nextCategoryId);
@@ -131,7 +131,11 @@ export function SubscriptionDiscovery({
     startPreviewTransition(async () => {
       try {
         if (!effectiveTaskId) {
-          setError(isZh ? "请先选择或创建监控目标再预览。" : "Choose or create a goal before previewing.");
+          setError(
+            isZh
+              ? "预览需要先选择已有 Topic；新 Topic 添加后会直接同步并生成首批简报。"
+              : "Preview requires an existing Topic. New Topics sync and create the first briefs after adding.",
+          );
           return;
         }
 
@@ -377,19 +381,19 @@ export function SubscriptionDiscovery({
       {!taskId ? (
         <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 p-4">
           <h3 className="text-sm font-semibold text-stone-950">
-            {isZh ? "订阅到监控目标" : "Subscribe to a goal"}
+            {isZh ? "保存到 Topic" : "Save to Topic"}
           </h3>
           {taskOptions.length > 0 ? (
             <label className="mt-3 grid gap-1.5 text-sm">
               <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                {isZh ? "已有目标" : "Existing goal"}
+                {isZh ? "已有 Topic" : "Existing Topic"}
               </span>
               <select
                 value={selectedTaskId}
                 onChange={(event) => setSelectedTaskId(event.currentTarget.value)}
                 className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
               >
-                <option value="">{isZh ? "新建目标" : "Create new goal"}</option>
+                <option value="">{isZh ? "新建 Topic" : "Create new Topic"}</option>
                 {taskOptions.map((task) => (
                   <option key={task.id} value={task.id}>
                     {task.title}
@@ -398,11 +402,11 @@ export function SubscriptionDiscovery({
               </select>
             </label>
           ) : null}
-          {canCreateTaskForSelection ? (
+          {shouldCreateTopicForSelection ? (
             <div className="mt-3 grid gap-3">
               <label className="grid gap-1.5 text-sm">
                 <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {isZh ? "目标标题（可选）" : "Goal title (optional)"}
+                  {isZh ? "Topic 名称" : "Topic name"}
                 </span>
                 <input
                   value={newTaskTitle}
@@ -413,7 +417,7 @@ export function SubscriptionDiscovery({
               </label>
               <label className="grid gap-1.5 text-sm">
                 <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {isZh ? "监控目标" : "Monitoring goal"}
+                  {isZh ? "关注重点（可选）" : "Focus note (optional)"}
                 </span>
                 <textarea
                   value={newTaskPrompt}
@@ -421,8 +425,8 @@ export function SubscriptionDiscovery({
                   rows={3}
                   placeholder={
                     isZh
-                      ? "监控 AI 编程工具的新产品、融资和重要更新。"
-                      : "Monitor new products, funding, and important updates for AI coding tools."
+                      ? "例如：更关注新产品、融资和重要更新。"
+                      : "Example: focus more on new products, funding, and important updates."
                   }
                   className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400"
                 />
@@ -431,8 +435,8 @@ export function SubscriptionDiscovery({
           ) : null}
           <p className="mt-3 text-xs leading-5 text-stone-500">
             {isZh
-              ? "可以先浏览分类和标签；只有添加来源时才需要选择或创建目标。"
-              : "You can browse categories first. A goal is only required when adding sources."}
+              ? "发现路线可以先浏览和勾选来源；添加时保存为 Topic。AI 目标路线则从一句目标生成推荐源，最终也落到 Topic。"
+              : "Discovery lets you browse and select sources first, then save them as a Topic. The AI goal route also ends in a Topic after generating recommended sources from one sentence."}
           </p>
         </div>
       ) : null}
@@ -483,7 +487,7 @@ export function SubscriptionDiscovery({
           disabled={
             selectedCandidateIds.length === 0 ||
             isAdding ||
-            (!effectiveTaskId && newTaskPrompt.trim().length < 8)
+            (!effectiveTaskId && newTaskTitle.trim().length < 2)
           }
           className="h-11 rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
         >

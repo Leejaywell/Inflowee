@@ -31,8 +31,9 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
   }
 
   const tasks = await listTasks(defaultStore, { actorId: actor.id });
-  const selectedTask =
-    tasks.find((task) => task.id === params?.taskId) ?? tasks[0] ?? null;
+  const selectedTask = params?.taskId
+    ? tasks.find((task) => task.id === params.taskId) ?? null
+    : null;
   const experience = selectedTask
     ? await buildTaskDiscoveryExperience(defaultStore, selectedTask)
     : buildGenericDiscoveryExperience();
@@ -52,8 +53,8 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-stone-500">
               {isZh
-                ? "可以先浏览大分类、标签和候选来源；添加来源时再选择已有目标，或直接创建一个新监控目标。"
-                : "Browse broad categories, tags, and source candidates first. Choose or create a monitoring goal only when adding sources."}
+                ? "发现路线用于先浏览分类、标签和订阅源；添加时保存到已有 Topic，或新建 Topic。AI 目标路线则从一句目标生成推荐源。"
+                : "Discovery lets you browse categories, tags, and sources first. Save sources to an existing Topic, or create a new Topic. The AI goal route generates recommendations from one sentence."}
             </p>
           </div>
           <Link
@@ -69,6 +70,16 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
         <>
           <section className="rounded-[18px] border border-stone-900/10 bg-white p-4">
             <div className="flex flex-wrap gap-2">
+              <Link
+                href="/discover"
+                className={`inline-flex min-h-10 items-center rounded-xl border px-3 text-sm font-semibold transition ${
+                  selectedTask
+                    ? "border-stone-200 bg-stone-50 text-stone-700 hover:bg-white"
+                    : "border-[#0057ff] bg-[#0057ff] text-white"
+                }`}
+              >
+                {isZh ? "全部发现" : "All discovery"}
+              </Link>
               {tasks.map((task) => {
                 const active = task.id === selectedTask?.id;
 
@@ -105,8 +116,8 @@ export default async function DiscoverPage({ searchParams }: DiscoverPageProps) 
 
       <section className="rounded-[18px] border border-stone-900/10 bg-white p-6 text-sm leading-6 text-stone-500">
         {isZh
-          ? `发现页添加的来源会和 ${dict.shell.sources} 页面里的自定义来源进入同一个 Source 模型，后续同步、过滤、Brief 和投递流程保持一致。`
-          : `Sources added here use the same Source model as ${dict.shell.sources}, then flow through the existing sync, filtering, Brief, and delivery pipeline.`}
+          ? `发现页添加的来源会保存到 Topic，并和 ${dict.shell.sources} 页面里的自定义来源进入同一个 Source 模型。每个 Topic 后续可以配置独立同步、报告和投递策略。`
+          : `Sources added here are saved to Topics and use the same Source model as ${dict.shell.sources}. Each Topic can later have its own sync, report, and delivery strategy.`}
       </section>
     </div>
   );
