@@ -92,6 +92,14 @@ Respond in strict JSON format:
 
   // Strategy 1: Look for common repeating containers (article, tr, li, divs with classes like post, item, card)
   const selectors = [
+    "[class*='job-card']",
+    "[class*='job-primary']",
+    "[class*='job-item']",
+    "[class*='job_list'] li",
+    "[class*='job-list'] li",
+    "[class*='position-card']",
+    "[class*='position-item']",
+    "[class*='position']",
     "article",
     "tr",
     "li",
@@ -134,7 +142,10 @@ Respond in strict JSON format:
       if (!title || title.length < 3) return;
 
       let summary = "";
-      const $p = $el.find("p, span, .summary, .description").first();
+      let $p = $el.find("p, .summary, .description, [class*='desc']").first();
+      if ($p.length === 0) {
+        $p = $el.find("span").first();
+      }
       if ($p.length > 0) {
         summary = $p.text().trim();
       } else {

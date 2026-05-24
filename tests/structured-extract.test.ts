@@ -86,6 +86,43 @@ describe("Structured List Ingestion Extractor", () => {
     expect(items[1].canonicalUrl).toBe("https://news.ycombinator.com/item?id=456");
   });
 
+  it("extracts domestic job board cards with job class names", async () => {
+    const html = `
+      <html>
+        <body>
+          <div class="job-list">
+            <div class="job-card">
+              <a href="/job_detail/1.html">
+                <span class="job-name">AI 产品经理</span>
+              </a>
+              <p class="description">负责 AI 编程工具产品规划和增长。</p>
+            </div>
+            <div class="job-card">
+              <a href="/job_detail/2.html">
+                <span class="job-name">LLM 应用工程师</span>
+              </a>
+              <p class="description">建设企业级智能体应用。</p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const items = await extractStructuredList(html, "https://www.zhipin.com/web/geek/job");
+
+    expect(items).toHaveLength(2);
+    expect(items[0]).toMatchObject({
+      title: "AI 产品经理",
+      canonicalUrl: "https://www.zhipin.com/job_detail/1.html",
+      summary: "负责 AI 编程工具产品规划和增长。",
+    });
+    expect(items[1]).toMatchObject({
+      title: "LLM 应用工程师",
+      canonicalUrl: "https://www.zhipin.com/job_detail/2.html",
+      summary: "建设企业级智能体应用。",
+    });
+  });
+
   it("returns extraction warnings alongside structured fields", async () => {
     const html = `
       <html>
