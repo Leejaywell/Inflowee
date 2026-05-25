@@ -60,9 +60,9 @@ export async function syncDueSources(
   let reportsDelivered = 0;
 
   for (const source of dueSources) {
-    const topic = await getTopicById(store, source.topicId);
+    const topic = source.topicId ? await getTopicById(store, source.topicId) : null;
 
-    if (!shouldCollectForSchedule(topic?.scheduleProfile, scheduledAt)) {
+    if (source.topicId && !shouldCollectForSchedule(topic?.scheduleProfile, scheduledAt)) {
       skippedBySchedule++;
       continue;
     }
@@ -83,7 +83,9 @@ export async function syncDueSources(
 
     if (result.ok) {
       synced++;
-      syncedTopicIds.add(source.topicId);
+      if (source.topicId) {
+        syncedTopicIds.add(source.topicId);
+      }
       await scheduleNextSourceSync(
         store,
         source.id,

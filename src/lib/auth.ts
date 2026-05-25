@@ -5,7 +5,7 @@ import { cookies, headers } from "next/headers";
 import {
   defaultStore,
   hasBriefOwner,
-  getTopicBySourceId,
+  hasSourceOwner,
   hasTopicOwner,
   type Store,
 } from "./store";
@@ -331,16 +331,10 @@ export async function assertSourceAccess(
 ): Promise<void> {
   const store = maybeInput ? (storeOrInput as Store) : defaultStore;
   const input = maybeInput ?? (storeOrInput as SourceAccessInput);
-  const topic = await getTopicBySourceId(store, input.sourceId);
 
-  if (!topic) {
+  if (!(await hasSourceOwner(store, input.actorId, input.sourceId))) {
     throw new Error("Forbidden");
   }
-
-  await assertTopicAccess(store, {
-    actorId: input.actorId,
-    topicId: topic.id,
-  });
 }
 
 export async function assertBriefAccess(input: BriefAccessInput): Promise<void>;

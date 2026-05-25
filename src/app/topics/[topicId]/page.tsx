@@ -2,16 +2,17 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import {
+  clearTopicProfileAction,
   generateReportAction,
   previewTopicHtmlPushAction,
   saveTopicHtmlPushConfigAction,
   saveTopicCustomScheduleAction,
   saveTopicDeliveryChannelsAction,
   saveTopicSchedulePresetAction,
+  updateTopicTitleAndProfile,
 } from "@/app/actions";
 import { TopicControls } from "@/components/topic-controls";
 import { RecommendationWizard } from "@/components/recommendation-wizard";
-import { SubscriptionDiscovery } from "@/components/subscription-discovery";
 import { ChatConsole } from "@/components/chat-console";
 import { PageHeader, SectionNav } from "@/components/ui-shell";
 import {
@@ -34,7 +35,6 @@ import {
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
 import { listConfiguredDeliveryChannels } from "@/lib/delivery";
-import { buildTopicDiscoveryExperience } from "@/lib/discovery-runtime";
 import {
   getDefaultHtmlPushModules,
   HTML_PUSH_MODULE_PRESETS,
@@ -88,7 +88,7 @@ function formatDelta(value: number) {
   return String(value);
 }
 
-const SECTIONS = ["overview", "discover", "schedule", "delivery", "reports"] as const;
+const SECTIONS = ["overview", "discover", "schedule", "delivery", "reports", "sources"] as const;
 type Section = (typeof SECTIONS)[number];
 
 function normalizeSection(value: string | undefined): Section {
@@ -141,7 +141,6 @@ export default async function TopicDetailPage({ params, searchParams }: TopicDet
     topicProfile: topic.topicProfile ?? null,
     recommendedBundles,
   });
-  const discoveryExperience = await buildTopicDiscoveryExperience(defaultStore, topic);
   const actorScopeId = getActorScopedChatScopeId(actor.id, topicId);
   const chatThread = await findChatThread(store, "topic", actorScopeId);
   const chatMessages = chatThread
@@ -184,21 +183,49 @@ export default async function TopicDetailPage({ params, searchParams }: TopicDet
 
   const sectionLabels: Record<Section, string> = {
     overview: isZh ? "概览" : "Overview",
-    discover: isZh ? "发现来源" : "Sources & Discovery",
+    sources: isZh ? "来源管理" : "Sources",
+    discover: isZh ? "发现" : "Discover",
     schedule: isZh ? "调度策略" : "Schedule",
     delivery: isZh ? "投递通道" : "Delivery",
     reports: isZh ? "趋势报告" : "Reports",
   };
 
   const sectionHref = (s: Section) =>
-    s === "overview" ? `/topics/${topicId}` : `/topics/${topicId}?section=${s}`;
+    s === "overview"
+      ? `/topics/${topicId}`
+      : s === "sources"
+        ? `/topics/${topicId}/sources`
+        : `/topics/${topicId}?section=${s}`;
 
   return (
     <div className="grid gap-5">
       <PageHeader
-        eyebrow={t.badge}
+        eyebrow={isZh ? "话题" : "Topic"}
         title={topic.title}
-        description={`${t.focusLabel} ${topic.userPrompt}`}
+        description={topic.userPrompt}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <form action={updateTopicTitleAndProfile} className="flex items-center gap-2">
+              <input type="hidden" name="topicId" value={topicId} />
+              <input
+                name="title"
+                defaultValue={topic.title}
+                placeholder={isZh ? "话题名称" : "Topic name"}
+                className="h-9 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
+              />
+              <button className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 hover:bg-stone-50">
+                {isZh ? "重命名" : "Rename"}
+              </button>
+            </form>
+            {topic.topicProfile && (
+              <form action={clearTopicProfileAction.bind(null, topicId)}>
+                <button className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-500 hover:bg-stone-50 hover:text-rose-600">
+                  {isZh ? "清除 AI 档案" : "Clear AI profile"}
+                </button>
+              </form>
+            )}
+          </div>
+        }
         metrics={
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-stone-950 px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.12em] text-stone-50">
@@ -215,7 +242,7 @@ export default async function TopicDetailPage({ params, searchParams }: TopicDet
           {t.dashboard}
         </Link>
         <span className="text-stone-300">/</span>
-        <span className="text-xs font-medium uppercase tracking-[0.16em] text-stone-400">
+        <span className="text-xs font-medium text-stone-600 truncate max-w-[200px]">
           {topic.title}
         </span>
       </div>
@@ -263,16 +290,10 @@ export default async function TopicDetailPage({ params, searchParams }: TopicDet
                   </h2>
                   <div className="flex items-center gap-3">
                     <Link
-                      href={sectionHref("discover")}
+                      href={`/topics/${topicId}/sources`}
                       className="text-xs font-bold text-[#0057ff] hover:underline"
                     >
-                      {isZh ? "发现更多" : "Discover more"}
-                    </Link>
-                    <Link
-                      href="/sources"
-                      className="text-xs font-medium text-stone-400 hover:text-stone-600 hover:underline"
-                    >
-                      {t.advancedSourceManager}
+                      {isZh ? "管理来源" : "Manage sources"}
                     </Link>
                   </div>
                 </div>
@@ -396,14 +417,19 @@ export default async function TopicDetailPage({ params, searchParams }: TopicDet
                 recommendedBundles={recommendedBundles}
                 labels={dict.recommendation}
               />
-
-              <SubscriptionDiscovery
-                topicId={topicId}
-                categories={discoveryExperience.categories}
-                tags={discoveryExperience.tags}
-                candidates={discoveryExperience.candidates}
-                isZh={isZh}
-              />
+              <div className="rounded-[24px] border border-stone-900/10 bg-white p-5 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
+                <p className="mb-3 text-sm text-stone-600">
+                  {isZh
+                    ? "前往「来源管理」页面通过 AI 发现和管理这个话题的订阅来源。"
+                    : "Go to Sources to discover and manage subscriptions for this topic."}
+                </p>
+                <Link
+                  href={`/topics/${topicId}/sources`}
+                  className="inline-flex h-9 items-center rounded-xl bg-[#0057ff] px-4 text-sm font-semibold text-white transition hover:bg-[#0047d6]"
+                >
+                  {isZh ? "管理来源 →" : "Manage sources →"}
+                </Link>
+              </div>
             </>
           )}
 
@@ -895,7 +921,7 @@ export default async function TopicDetailPage({ params, searchParams }: TopicDet
           scopeType="topic"
           scopeId={topicId}
           initialMessages={chatMessages}
-          title={`${topic.title} ${t.assistantSuffix}`}
+          title={isZh ? "话题助手" : "Topic assistant"}
           subtitle={t.assistantSubtitle}
           labels={dict.chat}
         />

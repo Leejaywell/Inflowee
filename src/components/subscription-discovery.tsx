@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
+  analyzeDiscoveryNeed,
   createTopicAndSubscribeDiscoverySources,
   previewRecommendedSources,
   subscribeDiscoverySources,
@@ -17,6 +18,7 @@ import {
   filterDiscoverySourceCandidates,
   getDiscoveryTagBatch,
 } from "@/lib/discovery-catalog";
+import type { DiscoveryExperience } from "@/lib/discovery-runtime";
 import type { SubscriptionPreviewResult } from "@/lib/source-ingestion";
 
 type SubscriptionDiscoveryProps = {
@@ -40,56 +42,96 @@ export function SubscriptionDiscovery({
   const [selectedTopicId, setSelectedTopicId] = useState(topicId ?? topicOptions[0]?.id ?? "");
   const [newTopicTitle, setNewTopicTitle] = useState("");
   const [newTopicPrompt, setNewTopicPrompt] = useState("");
+  const [aiPrompt, setAiPrompt] = useState("");
+  const [aiResults, setAiResults] = useState<DiscoveryExperience | null>(null);
+  const [isAnalyzing, startAnalyzeTransition] = useTransition();
   const [categoryId, setCategoryId] = useState("all");
   const [batchIndex, setBatchIndex] = useState(0);
   const [shuffleSeed, setShuffleSeed] = useState(0);
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
-  const [preview, setPreview] = useState<SubscriptionPreviewResult | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [createdBriefCount, setCreatedBriefCount] = useState(0);
   const [isAdding, startAddTransition] = useTransition();
-  const [isPreviewing, startPreviewTransition] = useTransition();
+  // preview kept for possible future use
+  const [_preview, _setPreview] = useState<SubscriptionPreviewResult | null>(null);
+  const [_isPreviewing, _startPreviewTransition] = useTransition();
+
+  const effectiveTags = aiResults?.tags ?? tags;
+  const effectiveCandidates = aiResults?.candidates ?? candidates;
+  const effectiveCategories = aiResults?.categories ?? categories;
+
+  // Step 1 is "done" when the user has either run AI analysis or chosen a non-default category,
+  // or when we already have a topic context (pre-loaded AI experience).
+  const step1Done = aiResults !== null || categoryId !== "all" || !!topicId;
+
   const visibleTags = useMemo(
     () =>
       getDiscoveryTagBatch(
-        [...tags]
-          .filter(
-            (tag) => tag.categoryId === "all" || tag.categoryId === categoryId,
-          )
+        [...effectiveTags]
+          .filter((tag) => tag.categoryId === "all" || tag.categoryId === categoryId)
           .sort((a, b) => {
-            const aScore =
-              Math.sin((a.weight + shuffleSeed + a.id.length) * 999) * 1000;
-            const bScore =
-              Math.sin((b.weight + shuffleSeed + b.id.length) * 999) * 1000;
+            const aScore = Math.sin((a.weight + shuffleSeed + a.id.length) * 999) * 1000;
+            const bScore = Math.sin((b.weight + shuffleSeed + b.id.length) * 999) * 1000;
             return bScore - aScore || b.weight - a.weight;
           }),
         batchIndex,
       ),
-    [batchIndex, categoryId, shuffleSeed, tags],
+    [batchIndex, categoryId, shuffleSeed, effectiveTags],
   );
+
   const visibleCandidates = useMemo(
     () =>
       filterDiscoverySourceCandidates({
-        candidates,
+        candidates: effectiveCandidates,
         categoryId,
         selectedTagIds,
       }).slice(0, 10),
-    [candidates, categoryId, selectedTagIds],
+    [effectiveCandidates, categoryId, selectedTagIds],
   );
-  const selectedCandidates = visibleCandidates.filter((candidate) =>
-    selectedCandidateIds.includes(candidate.id),
-  );
+
   const effectiveTopicId = topicId ?? selectedTopicId;
   const shouldCreateTopicForSelection = !topicId && !effectiveTopicId;
+
+  const analyzeNeed = () => {
+    if (!aiPrompt.trim()) return;
+    setSelectedTagIds([]);
+    setSelectedCandidateIds([]);
+    setMessage(null);
+    setError(null);
+    setCreatedBriefCount(0);
+    startAnalyzeTransition(async () => {
+      try {
+        const result = await analyzeDiscoveryNeed(aiPrompt);
+        setAiResults(result);
+        setCategoryId("all");
+        setBatchIndex(0);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : isZh
+              ? "AI 分析失败，请稍后重试。"
+              : "AI analysis failed. Please try again.",
+        );
+      }
+    });
+  };
+
+  const clearAiResults = () => {
+    setAiResults(null);
+    setAiPrompt("");
+    setSelectedTagIds([]);
+    setSelectedCandidateIds([]);
+    setCategoryId("all");
+  };
 
   const resetForCategory = (nextCategoryId: string) => {
     setCategoryId(nextCategoryId);
     setBatchIndex(0);
     setSelectedTagIds([]);
     setSelectedCandidateIds([]);
-    setPreview(null);
     setMessage(null);
     setError(null);
     setCreatedBriefCount(0);
@@ -97,12 +139,9 @@ export function SubscriptionDiscovery({
 
   const toggleTag = (tagId: string) => {
     setSelectedTagIds((current) =>
-      current.includes(tagId)
-        ? current.filter((candidate) => candidate !== tagId)
-        : [...current, tagId],
+      current.includes(tagId) ? current.filter((id) => id !== tagId) : [...current, tagId],
     );
     setSelectedCandidateIds([]);
-    setPreview(null);
     setMessage(null);
     setError(null);
     setCreatedBriefCount(0);
@@ -114,57 +153,13 @@ export function SubscriptionDiscovery({
         ? current.filter((id) => id !== candidateId)
         : [...current, candidateId],
     );
-    setPreview(null);
     setMessage(null);
     setError(null);
     setCreatedBriefCount(0);
   };
 
-  const previewSelected = () => {
-    if (selectedCandidates.length === 0) {
-      return;
-    }
-
-    setPreview(null);
-    setMessage(null);
-    setError(null);
-    startPreviewTransition(async () => {
-      try {
-        if (!effectiveTopicId) {
-          setError(
-            isZh
-              ? "预览需要先选择已有话题；新话题添加后会直接同步并生成首批简报。"
-              : "Preview requires an existing Topic. New Topics sync and create the first briefs after adding.",
-          );
-          return;
-        }
-
-        const result = await previewRecommendedSources(
-          effectiveTopicId,
-          selectedCandidates.map((candidate) => ({
-            title: candidate.title,
-            url: candidate.url,
-            sourceType: candidate.sourceType,
-          })),
-        );
-        setPreview(result);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : isZh
-              ? "暂时无法预览选中的订阅源。"
-              : "Unable to preview selected sources.",
-        );
-      }
-    });
-  };
-
   const addSelected = () => {
-    if (selectedCandidateIds.length === 0) {
-      return;
-    }
-
+    if (selectedCandidateIds.length === 0) return;
     setMessage(null);
     setError(null);
     startAddTransition(async () => {
@@ -176,22 +171,27 @@ export function SubscriptionDiscovery({
             })
           : await createTopicAndSubscribeDiscoverySources({
               title: newTopicTitle,
-              userPrompt: newTopicPrompt,
+              userPrompt: newTopicPrompt || aiPrompt,
               candidateIds: selectedCandidateIds,
               categoryId,
               selectedTagIds,
             });
+        const added = result.createdSourceIds.length;
+        const briefs = result.createdBriefCount;
         setMessage(
           isZh
-            ? `已添加 ${result.createdSourceIds.length} 个来源，首次同步 ${result.syncedSourceCount} 个，生成 ${result.createdBriefCount} 份简报，跳过 ${result.skippedCandidateIds.length} 个。`
-            : `Added ${result.createdSourceIds.length} sources, synced ${result.syncedSourceCount}, created ${result.createdBriefCount} briefs, skipped ${result.skippedCandidateIds.length}.`,
+            ? briefs > 0
+              ? `已添加 ${added} 个来源，生成了 ${briefs} 份简报。`
+              : `已添加 ${added} 个来源。`
+            : briefs > 0
+              ? `Added ${added} sources — ${briefs} briefs created.`
+              : `Added ${added} sources.`,
         );
         setCreatedBriefCount(result.createdBriefCount);
         setSelectedCandidateIds([]);
         if ("topicId" in result && typeof result.topicId === "string") {
           setSelectedTopicId(result.topicId);
         }
-        setPreview(null);
         router.refresh();
       } catch (err) {
         setError(
@@ -205,309 +205,398 @@ export function SubscriptionDiscovery({
     });
   };
 
+  // ─── Helpers ──────────────────────────────────────────────────────────────
+  function sourceTypeLabel(type: string) {
+    const map: Record<string, [string, string]> = {
+      RSS_FEED: ["RSS", "RSS"],
+      ATOM_FEED: ["Atom", "Atom"],
+      SEARCH_DISCOVERY: ["搜索", "Search"],
+      SOCIAL_DISCOVERY: ["社交", "Social"],
+      COMMUNITY_DISCOVERY: ["社区", "Community"],
+      HOTLIST_DISCOVERY: ["热榜", "Trending"],
+    };
+    const [zh, en] = map[type] ?? [type, type];
+    return isZh ? zh : en;
+  }
+
+  // ─── Step indicator dot ────────────────────────────────────────────────────
+  function StepDot({ n, active }: { n: number; active: boolean }) {
+    return (
+      <span
+        className={`inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold transition ${
+          active ? "bg-[#0057ff] text-white" : "bg-stone-100 text-stone-500"
+        }`}
+      >
+        {n}
+      </span>
+    );
+  }
+
   return (
-    <section className="rounded-[24px] border border-stone-900/10 bg-white p-6 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
-      <div className="border-b border-stone-100 pb-4">
-        <h2 className="text-lg font-semibold text-stone-950">
-          {isZh ? "按分类发现订阅源" : "Discover sources by category"}
-        </h2>
-        <p className="mt-1 text-sm leading-6 text-stone-500">
-          {isZh
-            ? "先选大分类，再用兴趣标签筛选来源。自定义 URL 仍在高级来源管理里添加。"
-            : "Pick a broad category, then use interest tags to find sources. Custom URLs stay in advanced source management."}
-        </p>
-      </div>
+    <section className="overflow-hidden rounded-[24px] border border-stone-900/10 bg-white shadow-[0_16px_50px_rgba(33,24,9,0.06)]">
 
-      <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {categories.map((category) => (
-          <button
-            key={category.id}
-            type="button"
-            onClick={() => resetForCategory(category.id)}
-            className={`min-h-28 rounded-2xl border p-4 text-left transition ${
-              category.id === categoryId
-                ? "border-stone-950 bg-stone-950 text-white"
-                : "border-stone-200 bg-stone-50 text-stone-900 hover:border-stone-300"
-            }`}
-          >
-            <span
-              className={`inline-flex size-8 items-center justify-center rounded-xl text-xs font-semibold text-white ${category.accent}`}
-            >
-              {category.icon}
-            </span>
-            <span className="mt-3 block text-sm font-semibold">{category.title}</span>
-            <span
-              className={`mt-1 block text-xs leading-5 ${
-                category.id === categoryId ? "text-stone-300" : "text-stone-500"
-              }`}
-            >
-              {category.description}
-            </span>
-          </button>
-        ))}
-      </div>
+      {/* ── STEP 1: Define your interest ─────────────────────────────────── */}
+      <div className="p-6">
+        <div className="flex items-center gap-2.5">
+          <StepDot n={1} active={step1Done} />
+          <h2 className="text-sm font-semibold text-stone-900">
+            {isZh ? "输入需求" : "What to monitor"}
+          </h2>
+        </div>
 
-      <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-stone-950">
-            {isZh ? "兴趣标签" : "Interest tags"}
-          </h3>
-          <button
-            type="button"
-            onClick={() => {
-              setBatchIndex((current) => current + 1);
-              setShuffleSeed(Date.now());
-              setPreview(null);
+        <div className="mt-4 grid gap-3">
+          <textarea
+            value={aiPrompt}
+            onChange={(e) => setAiPrompt(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) analyzeNeed();
             }}
-            className="h-9 rounded-xl border border-stone-200 bg-white px-3 text-xs font-semibold text-stone-700 transition hover:bg-stone-50"
-          >
-            {isZh ? "换一批" : "Change batch"}
-          </button>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {visibleTags.map((tag) => {
-            const selected = selectedTagIds.includes(tag.id);
-
-            return (
-              <button
-                key={tag.id}
-                type="button"
-                onClick={() => toggleTag(tag.id)}
-                className={`rounded-full border px-3 py-2 text-xs font-semibold transition ${
-                  selected
-                    ? "border-[#0057ff] bg-[#0057ff] text-white"
-                    : "border-stone-200 bg-white text-stone-600 hover:border-stone-300"
-                }`}
-              >
-                {tag.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="mt-6 grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold text-stone-950">
-            {isZh ? "订阅源候选" : "Source candidates"}
-          </h3>
-          <span className="text-xs text-stone-400">
-            {visibleCandidates.length} {isZh ? "个候选" : "candidates"}
-          </span>
-        </div>
-        {visibleCandidates.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-center text-sm text-stone-500">
-            {isZh
-              ? "当前标签没有匹配来源。换一批标签或选择其他分类。"
-              : "No matching sources. Change the tag batch or choose another category."}
-          </div>
-        ) : (
-          visibleCandidates.map((candidate) => {
-            const selected = selectedCandidateIds.includes(candidate.id);
-
-            return (
-              <label
-                key={candidate.id}
-                className={`grid gap-3 rounded-2xl border p-4 transition sm:grid-cols-[auto_1fr] ${
-                  selected
-                    ? "border-[#0057ff] bg-[#0057ff]/5"
-                    : "border-stone-200 bg-stone-50"
-                }`}
-              >
-                <input
-                  type="checkbox"
-                  checked={selected}
-                  onChange={() => toggleCandidate(candidate.id)}
-                  className="mt-1 size-4"
-                />
-                <span className="min-w-0">
-                  <span className="flex flex-wrap items-center gap-2">
-                    <span className="font-semibold text-stone-950">
-                      {candidate.title}
-                    </span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase text-stone-500">
-                      {candidate.origin}
-                    </span>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold uppercase text-stone-500">
-                      {candidate.sourceType}
-                    </span>
-                  </span>
-                  <span className="mt-1 block truncate text-xs text-stone-500">
-                    {candidate.url}
-                  </span>
-                  <span className="mt-2 block text-sm leading-6 text-stone-600">
-                    {candidate.description}
-                  </span>
-                  <span className="mt-3 flex flex-wrap gap-2">
-                    {candidate.subscriberCount ? (
-                      <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-stone-500">
-                        {candidate.subscriberCount.toLocaleString()}{" "}
-                        {isZh ? "订阅" : "subs"}
-                      </span>
-                    ) : null}
-                    {candidate.recentSubscriberGrowth ? (
-                      <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-semibold text-sky-700">
-                        +{candidate.recentSubscriberGrowth.toLocaleString()}{" "}
-                        {isZh ? "近 7 天" : "7d"}
-                      </span>
-                    ) : null}
-                    {candidate.heatScore ? (
-                      <span className="rounded-full bg-orange-50 px-2.5 py-1 text-[10px] font-semibold text-orange-700">
-                        {isZh ? "热度" : "Heat"} {candidate.heatScore}
-                      </span>
-                    ) : null}
-                    {candidate.relevanceScore ? (
-                      <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">
-                        {isZh ? "相关" : "Relevant"}{" "}
-                        {Math.round(candidate.relevanceScore * 100)}%
-                      </span>
-                    ) : null}
-                    {candidate.trendLabels.slice(0, 3).map((label) => (
-                      <span
-                        key={label}
-                        className="rounded-full bg-white px-2.5 py-1 text-[10px] font-semibold text-stone-500"
-                      >
-                        {label}
-                      </span>
-                    ))}
-                  </span>
+            rows={2}
+            placeholder={
+              isZh
+                ? "例如：关注 AI 编程工具的新产品、融资和重要更新。"
+                : "Example: monitor new products, funding, and updates for AI coding tools."
+            }
+            className="resize-none rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 text-sm leading-6 outline-none transition focus:border-stone-400 focus:bg-white"
+          />
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={analyzeNeed}
+              disabled={!aiPrompt.trim() || isAnalyzing}
+              className="h-9 rounded-xl bg-[#0057ff] px-4 text-xs font-semibold text-white transition hover:bg-[#0049d6] disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
+            >
+              {isAnalyzing
+                ? isZh ? "分析中…" : "Analyzing…"
+                : isZh ? "AI 分析" : "Analyze"}
+            </button>
+            {aiResults ? (
+              <span className="text-xs text-stone-500">
+                <span className="font-medium text-emerald-600">
+                  {isZh
+                    ? `找到 ${aiResults.candidates.length} 个来源`
+                    : `${aiResults.candidates.length} sources found`}
                 </span>
-              </label>
-            );
-          })
-        )}
-      </div>
-
-      {!topicId ? (
-        <div className="mt-6 rounded-2xl border border-stone-200 bg-stone-50 p-4">
-          <h3 className="text-sm font-semibold text-stone-950">
-            {isZh ? "保存到话题" : "Save to Topic"}
-          </h3>
-          {topicOptions.length > 0 ? (
-            <label className="mt-3 grid gap-1.5 text-sm">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                {isZh ? "已有话题" : "Existing Topic"}
+                {" · "}
+                <button
+                  type="button"
+                  onClick={clearAiResults}
+                  className="underline hover:no-underline"
+                >
+                  {isZh ? "清除" : "Clear"}
+                </button>
               </span>
-              <select
-                value={selectedTopicId}
-                onChange={(event) => setSelectedTopicId(event.currentTarget.value)}
-                className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
+            ) : null}
+          </div>
+        </div>
+
+        <div className="mt-5">
+          <p className="mb-2 text-xs text-stone-400">
+            {isZh ? "或按分类浏览" : "Or browse by category"}
+          </p>
+          <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+            {effectiveCategories.map((category) => (
+              <button
+                key={category.id}
+                type="button"
+                onClick={() => resetForCategory(category.id)}
+                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition ${
+                  category.id === categoryId
+                    ? "border-stone-950 bg-stone-950 text-white"
+                    : "border-stone-200 bg-stone-50 text-stone-700 hover:border-stone-300"
+                }`}
               >
-                <option value="">{isZh ? "新建话题" : "Create new Topic"}</option>
-                {topicOptions.map((topic) => (
-                  <option key={topic.id} value={topic.id}>
-                    {topic.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {shouldCreateTopicForSelection ? (
-            <div className="mt-3 grid gap-3">
-              <label className="grid gap-1.5 text-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {isZh ? "话题名称" : "Topic name"}
-                </span>
-                <input
-                  value={newTopicTitle}
-                  onChange={(event) => setNewTopicTitle(event.currentTarget.value)}
-                  placeholder={isZh ? "AI 编程工具动向" : "AI coding tools"}
-                  className="h-11 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
-                />
-              </label>
-              <label className="grid gap-1.5 text-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {isZh ? "关注重点（可选）" : "Focus note (optional)"}
-                </span>
-                <textarea
-                  value={newTopicPrompt}
-                  onChange={(event) => setNewTopicPrompt(event.currentTarget.value)}
-                  rows={3}
-                  placeholder={
-                    isZh
-                      ? "例如：更关注新产品、融资和重要更新。"
-                      : "Example: focus more on new products, funding, and important updates."
-                  }
-                  className="rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-stone-400"
-                />
-              </label>
+                <span>{category.icon}</span>
+                {category.title}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* ── STEP 2: Tags ─────────────────────────────────────────────────── */}
+      {step1Done && (
+        <div className="border-t border-stone-100 p-6">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <StepDot n={2} active={selectedTagIds.length > 0} />
+              <h2 className="text-sm font-semibold text-stone-900">
+                {isZh ? "标签" : "Tags"}
+                {selectedTagIds.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-stone-400">
+                    {isZh ? `${selectedTagIds.length} 个已选` : `${selectedTagIds.length} selected`}
+                  </span>
+                )}
+              </h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setBatchIndex((i) => i + 1);
+                setShuffleSeed(Date.now());
+              }}
+              className="text-xs text-stone-400 transition hover:text-stone-600"
+            >
+              {isZh ? "换一批" : "More tags"}
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            {visibleTags.length === 0 ? (
+              <span className="text-xs text-stone-400">
+                {isZh ? "暂无相关标签" : "No tags available"}
+              </span>
+            ) : (
+              visibleTags.map((tag) => {
+                const selected = selectedTagIds.includes(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    type="button"
+                    onClick={() => toggleTag(tag.id)}
+                    className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${
+                      selected
+                        ? "border-[#0057ff] bg-[#0057ff] text-white"
+                        : "border-stone-200 bg-stone-50 text-stone-600 hover:border-stone-300"
+                    }`}
+                  >
+                    {tag.label}
+                  </button>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 3: Sources ──────────────────────────────────────────────── */}
+      {step1Done && (
+        <div className="border-t border-stone-100 p-6">
+          <div className="flex items-center gap-2.5">
+            <StepDot n={3} active={selectedCandidateIds.length > 0} />
+            <h2 className="text-sm font-semibold text-stone-900">
+              {isZh ? "来源" : "Sources"}
+            </h2>
+            <span className="text-xs text-stone-400">
+              {visibleCandidates.length}
+              {isZh ? " 个" : ""}
+              {selectedCandidateIds.length > 0 && (
+                <>
+                  {" · "}
+                  <span className="font-medium text-[#0057ff]">
+                    {isZh ? `${selectedCandidateIds.length} 已选` : `${selectedCandidateIds.length} selected`}
+                  </span>
+                </>
+              )}
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-2">
+            {visibleCandidates.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-center text-sm text-stone-400">
+                {isZh
+                  ? "没有匹配的来源，试试换一批标签。"
+                  : "No matching sources. Try different tags."}
+              </div>
+            ) : (
+              visibleCandidates.map((candidate) => {
+                const selected = selectedCandidateIds.includes(candidate.id);
+                return (
+                  <div
+                    key={candidate.id}
+                    className={`flex gap-3 rounded-2xl border p-4 transition ${
+                      selected
+                        ? "border-[#0057ff] bg-[#0057ff]/5"
+                        : "border-stone-100 bg-stone-50 hover:border-stone-200"
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="font-semibold text-stone-950">{candidate.title}</span>
+                          <span className="ml-2 text-[10px] font-semibold text-stone-400">
+                            {sourceTypeLabel(candidate.sourceType)}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => toggleCandidate(candidate.id)}
+                          className={`flex size-8 shrink-0 items-center justify-center rounded-xl text-base font-medium transition ${
+                            selected
+                              ? "bg-[#0057ff] text-white"
+                              : "bg-stone-200 text-stone-500 hover:bg-stone-300"
+                          }`}
+                        >
+                          {selected ? "−" : "+"}
+                        </button>
+                      </div>
+                      <p className="mt-1 truncate text-[11px] text-stone-400">{candidate.url}</p>
+                      <p className="mt-1.5 text-sm leading-5 text-stone-600">{candidate.description}</p>
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {candidate.subscriberCount ? (
+                          <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-stone-500">
+                            {candidate.subscriberCount.toLocaleString()}{" "}
+                            {isZh ? "订阅" : "subs"}
+                          </span>
+                        ) : null}
+                        {candidate.recentSubscriberGrowth ? (
+                          <span className="rounded-full bg-sky-50 px-2 py-0.5 text-[10px] font-semibold text-sky-600">
+                            +{candidate.recentSubscriberGrowth.toLocaleString()}{" "}
+                            {isZh ? "近7天" : "7d"}
+                          </span>
+                        ) : null}
+                        {candidate.heatScore ? (
+                          <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-orange-600">
+                            {isZh ? "热度" : "Heat"} {candidate.heatScore}
+                          </span>
+                        ) : null}
+                        {candidate.relevanceScore ? (
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-600">
+                            {isZh ? "相关" : "Rel."}{" "}
+                            {Math.round(candidate.relevanceScore * 100)}%
+                          </span>
+                        ) : null}
+                        {candidate.trendLabels.slice(0, 2).map((label) => (
+                          <span
+                            key={label}
+                            className="rounded-full bg-white px-2 py-0.5 text-[10px] font-semibold text-stone-400"
+                          >
+                            {label}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── STEP 4: Save ─────────────────────────────────────────────────── */}
+      {selectedCandidateIds.length > 0 && (
+        <div className="rounded-b-[24px] border-t border-stone-200 bg-stone-50 p-6">
+          <div className="flex items-center gap-2.5">
+            <StepDot n={4} active={false} />
+            <h2 className="text-sm font-semibold text-stone-900">
+              {isZh ? "添加到话题" : "Add to topic"}
+            </h2>
+          </div>
+
+          {!topicId && (
+            <div className="mt-4 grid gap-3">
+              {topicOptions.length > 0 ? (
+                <label className="grid gap-1.5">
+                  <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                    {isZh ? "话题" : "Topic"}
+                  </span>
+                  <select
+                    value={selectedTopicId}
+                    onChange={(e) => setSelectedTopicId(e.currentTarget.value)}
+                    className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
+                  >
+                    <option value="">{isZh ? "新建话题" : "New topic"}</option>
+                    {topicOptions.map((topic) => (
+                      <option key={topic.id} value={topic.id}>
+                        {topic.title}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
+              {shouldCreateTopicForSelection && (
+                <>
+                  <label className="grid gap-1.5">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                      {isZh ? "话题名称" : "Topic name"}
+                    </span>
+                    <input
+                      value={newTopicTitle}
+                      onChange={(e) => setNewTopicTitle(e.currentTarget.value)}
+                      placeholder={isZh ? "例如：AI 编程工具" : "e.g. AI coding tools"}
+                      className="h-10 rounded-xl border border-stone-200 bg-white px-3 text-sm outline-none transition focus:border-stone-400"
+                    />
+                  </label>
+                  {!aiPrompt && (
+                    <label className="grid gap-1.5">
+                      <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+                        {isZh ? "备注" : "Note"}
+                      </span>
+                      <textarea
+                        value={newTopicPrompt}
+                        onChange={(e) => setNewTopicPrompt(e.currentTarget.value)}
+                        rows={2}
+                        placeholder={
+                          isZh
+                            ? "关注重点、过滤条件等（可选）"
+                            : "Focus areas, filters, etc. (optional)"
+                        }
+                        className="resize-none rounded-xl border border-stone-200 bg-white px-3 py-2.5 text-sm outline-none transition focus:border-stone-400"
+                      />
+                    </label>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={addSelected}
+              disabled={isAdding}
+              className="h-10 rounded-xl bg-stone-950 px-5 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-200 disabled:text-stone-400"
+            >
+              {isAdding
+                ? isZh ? "添加中…" : "Adding…"
+                : isZh
+                  ? `添加 ${selectedCandidateIds.length} 个来源`
+                  : `Add ${selectedCandidateIds.length} sources`}
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCandidateIds([])}
+              className="h-10 rounded-xl border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-600 transition hover:bg-stone-100"
+            >
+              {isZh ? "清空" : "Clear"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Messages ─────────────────────────────────────────────────────── */}
+      {(message || error) && (
+        <div className="border-t border-stone-100 px-6 pb-6 pt-5 grid gap-3">
+          {message ? (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+              <p>{message}</p>
+              <div className="flex flex-wrap gap-2">
+                <Link
+                  href="/inbox"
+                  className="inline-flex h-9 items-center rounded-xl bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-800"
+                >
+                  {createdBriefCount > 0
+                    ? isZh ? "查看首批简报" : "View briefs"
+                    : isZh ? "打开简报箱" : "Open inbox"}
+                </Link>
+                <Link
+                  href="/sources"
+                  className="inline-flex h-9 items-center rounded-xl border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
+                >
+                  {isZh ? "查看来源" : "View sources"}
+                </Link>
+              </div>
             </div>
           ) : null}
-          <p className="mt-3 text-xs leading-5 text-stone-500">
-            {isZh
-              ? "发现路线可以先浏览和勾选来源；添加时保存为话题。智能创建路线则从一句关注方向生成推荐源，最终也落到话题。"
-              : "Discovery lets you browse and select sources first, then save them as a Topic. The AI creation route also ends in a Topic after generating recommended sources from one sentence."}
-          </p>
+          {error ? (
+            <p className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+              {error}
+            </p>
+          ) : null}
         </div>
-      ) : null}
+      )}
 
-      {preview ? (
-        <div className="mt-4 grid gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-sm text-emerald-800 sm:grid-cols-4">
-          <span>{preview.sourceCount} {isZh ? "来源" : "sources"}</span>
-          <span>{preview.candidateItemCount} {isZh ? "内容" : "items"}</span>
-          <span>{preview.acceptedItemCount} {isZh ? "可生成" : "brief-ready"}</span>
-          <span>{preview.rejectedItemCount} {isZh ? "已过滤" : "filtered"}</span>
-        </div>
-      ) : null}
-      {message ? (
-        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-          <p>{message}</p>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/inbox"
-              className="inline-flex h-9 items-center rounded-xl bg-emerald-700 px-3 text-xs font-semibold text-white transition hover:bg-emerald-800"
-            >
-              {createdBriefCount > 0
-                ? isZh
-                  ? "查看首批简报"
-                  : "View briefs"
-                : isZh
-                  ? "打开简报箱"
-                  : "Open inbox"}
-            </Link>
-            <Link
-              href="/sources"
-              className="inline-flex h-9 items-center rounded-xl border border-emerald-200 bg-white px-3 text-xs font-semibold text-emerald-800 transition hover:bg-emerald-50"
-            >
-              {isZh ? "查看来源" : "View sources"}
-            </Link>
-          </div>
-        </div>
-      ) : null}
-      {error ? (
-        <p className="mt-4 rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {error}
-        </p>
-      ) : null}
-
-      <div className="mt-5 flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={addSelected}
-          disabled={
-            selectedCandidateIds.length === 0 ||
-            isAdding ||
-            (!effectiveTopicId && newTopicTitle.trim().length < 2)
-          }
-          className="h-11 rounded-xl bg-stone-950 px-4 text-sm font-semibold text-white transition hover:bg-stone-800 disabled:cursor-not-allowed disabled:bg-stone-100 disabled:text-stone-400"
-        >
-          {isAdding
-            ? isZh
-              ? "添加中..."
-              : "Adding..."
-            : isZh
-              ? `添加 ${selectedCandidateIds.length} 个来源`
-              : `Add ${selectedCandidateIds.length} sources`}
-        </button>
-        <button
-          type="button"
-          onClick={previewSelected}
-          disabled={selectedCandidateIds.length === 0 || isPreviewing || !effectiveTopicId}
-          className="h-11 rounded-xl border border-stone-200 px-4 text-sm font-semibold text-stone-700 transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:text-stone-400"
-        >
-          {isPreviewing ? (isZh ? "预览中..." : "Previewing...") : isZh ? "预览已选" : "Preview selected"}
-        </button>
-      </div>
     </section>
   );
 }

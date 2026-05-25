@@ -101,7 +101,11 @@ type TopicRow = {
 
 type SourceRow = {
   id: string;
-  topic_id: string;
+  owner_id: string;
+  topic_id: string | null;
+  category_id: string;
+  categories_json: string | null;
+  tags_json: string | null;
   source_type: SourceType;
   title: string;
   url: string;
@@ -333,7 +337,11 @@ export type TopicRecord = {
 
 export type SourceRecord = {
   id: string;
-  topicId: string;
+  ownerId: string;
+  topicId: string | null;
+  categoryId: string;
+  categories: string[];
+  tags: string[];
   sourceType: SourceType;
   title: string;
   url: string;
@@ -403,7 +411,15 @@ export type DeliveryPayloadType =
   | "dingtalk"
   | "wecom"
   | "bark"
-  | "email";
+  | "email"
+  | "wechat";
+
+export type WechatSettingsRecord = {
+  baseUrl: string | null;
+  token: string | null;
+  toUserId: string | null;
+  updatedAt: string | null;
+};
 
 export type DeliveryLogRecord = {
   id: string;
@@ -659,7 +675,11 @@ const sourceTypeSql =
 const sourceTableDefinition = `
   CREATE TABLE IF NOT EXISTS sources (
     id TEXT PRIMARY KEY,
-    topic_id TEXT NOT NULL,
+    owner_id TEXT NOT NULL DEFAULT 'local-user',
+    topic_id TEXT,
+    category_id TEXT NOT NULL DEFAULT 'all',
+    categories_json TEXT,
+    tags_json TEXT,
     source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
     title TEXT NOT NULL,
     url TEXT NOT NULL,
@@ -671,14 +691,22 @@ const sourceTableDefinition = `
     next_sync_at TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+    FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE SET NULL
   );
 `;
 
 function mapSource(row: SourceRow): SourceRecord {
+  const categories = row.categories_json
+    ? (JSON.parse(row.categories_json) as string[])
+    : [row.category_id];
+  const tags = row.tags_json ? (JSON.parse(row.tags_json) as string[]) : [];
   return {
     id: row.id,
+    ownerId: row.owner_id,
     topicId: row.topic_id,
+    categoryId: row.category_id,
+    categories,
+    tags,
     sourceType: row.source_type,
     title: row.title,
     url: row.url,
@@ -918,6 +946,12 @@ function migrateSourcesTable(database: DatabaseSync) {
   const needsHotlistMigration = !sourcesTable.sql.includes("'HOTLIST_DISCOVERY'");
   const needsConfigMigration = !sourcesTable.sql.includes("config_json");
   const needsScheduleMigration = !sourcesTable.sql.includes("sync_interval_minutes");
+  const needsOwnerMigration = !sourcesTable.sql.includes("owner_id");
+  const needsCategoryMigration = !sourcesTable.sql.includes("category_id");
+  const needsOptionalTopicMigration = sourcesTable.sql.includes("topic_id TEXT NOT NULL");
+
+  const needsCategoriesJsonMigration = !sourcesTable.sql.includes("categories_json");
+  const needsTagsJsonMigration = !sourcesTable.sql.includes("tags_json");
 
   if (
     !needsStatusMigration &&
@@ -929,8 +963,20 @@ function migrateSourcesTable(database: DatabaseSync) {
     !needsDiscoveryMigration &&
     !needsHotlistMigration &&
     !needsConfigMigration &&
-    !needsScheduleMigration
+    !needsScheduleMigration &&
+    !needsOwnerMigration &&
+    !needsCategoryMigration &&
+    !needsOptionalTopicMigration
   ) {
+    if (needsCategoriesJsonMigration) {
+      database.exec("ALTER TABLE sources ADD COLUMN categories_json TEXT;");
+      database.exec("UPDATE sources SET categories_json = json_array(category_id);");
+    }
+
+    if (needsTagsJsonMigration) {
+      database.exec("ALTER TABLE sources ADD COLUMN tags_json TEXT;");
+    }
+
     return;
   }
 
@@ -940,7 +986,11 @@ function migrateSourcesTable(database: DatabaseSync) {
 
     CREATE TABLE sources_migrated (
       id TEXT PRIMARY KEY,
-      topic_id TEXT NOT NULL,
+      owner_id TEXT NOT NULL DEFAULT 'local-user',
+      topic_id TEXT,
+      category_id TEXT NOT NULL DEFAULT 'all',
+      categories_json TEXT,
+      tags_json TEXT,
       source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
       title TEXT NOT NULL,
       url TEXT NOT NULL,
@@ -952,12 +1002,15 @@ function migrateSourcesTable(database: DatabaseSync) {
       next_sync_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
-      FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+      FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE SET NULL
     );
 
     INSERT INTO sources_migrated (
       id,
+      owner_id,
       topic_id,
+      category_id,
+      categories_json,
       source_type,
       title,
       url,
@@ -971,8 +1024,14 @@ function migrateSourcesTable(database: DatabaseSync) {
       updated_at
     )
     SELECT
-      id,
-      topic_id,
+      sources.id,
+      COALESCE(
+        (SELECT owner_id FROM topics WHERE topics.id = sources.topic_id),
+        'local-user'
+      ),
+      sources.topic_id,
+      'all',
+      json_array('all'),
       CASE
         WHEN source_type IN (${sourceTypeSql}) THEN source_type
         ELSE 'PAGE'
@@ -1060,6 +1119,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
   const needsDeliveryPayloadUpgrade =
     deliveryLogsTable &&
     (!deliveryLogsTable.sql.includes("'email'") ||
+      !deliveryLogsTable.sql.includes("'wechat'") ||
       !deliveryLogsTable.sql.includes("content_type") ||
       deliveryLogsTable.sql.includes("brief_id TEXT NOT NULL"));
 
@@ -1081,7 +1141,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
         content_type TEXT NOT NULL DEFAULT 'brief',
         content_id TEXT,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email', 'wechat')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -1144,7 +1204,7 @@ function migrateDeliveryLogsTable(database: DatabaseSync) {
       content_type TEXT NOT NULL DEFAULT 'brief',
       content_id TEXT,
       endpoint TEXT NOT NULL,
-      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
+      payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email', 'wechat')),
       status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
       attempt_count INTEGER,
       response_status INTEGER,
@@ -1378,7 +1438,9 @@ function migrateLegacyTopicSchema(database: DatabaseSync) {
 
       CREATE TABLE sources_migrated (
         id TEXT PRIMARY KEY,
-        topic_id TEXT NOT NULL,
+        owner_id TEXT NOT NULL DEFAULT 'local-user',
+        topic_id TEXT,
+        category_id TEXT NOT NULL DEFAULT 'all',
         source_type TEXT NOT NULL CHECK(source_type IN (${sourceTypeSql})),
         title TEXT NOT NULL,
         url TEXT NOT NULL,
@@ -1390,12 +1452,14 @@ function migrateLegacyTopicSchema(database: DatabaseSync) {
         next_sync_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE CASCADE
+        FOREIGN KEY(topic_id) REFERENCES topics(id) ON DELETE SET NULL
       );
 
       INSERT INTO sources_migrated (
         id,
+        owner_id,
         topic_id,
+        category_id,
         source_type,
         title,
         url,
@@ -1409,8 +1473,13 @@ function migrateLegacyTopicSchema(database: DatabaseSync) {
         updated_at
       )
       SELECT
-        id,
+        sources.id,
+        COALESCE(
+          (SELECT owner_id FROM topics WHERE topics.id = sources.task_id),
+          'local-user'
+        ),
         task_id,
+        'all',
         source_type,
         title,
         url,
@@ -2064,7 +2133,7 @@ export function createStore(
         content_type TEXT NOT NULL DEFAULT 'brief',
         content_id TEXT,
         endpoint TEXT NOT NULL,
-        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email')),
+        payload_type TEXT NOT NULL CHECK(payload_type IN ('html', 'slack', 'telegram', 'feishu', 'ntfy', 'dingtalk', 'wecom', 'bark', 'email', 'wechat')),
         status TEXT NOT NULL CHECK(status IN ('running', 'success', 'error')),
         attempt_count INTEGER,
         response_status INTEGER,
@@ -2157,6 +2226,8 @@ export function createStore(
     migrateDeliveryLogsTable(nextDatabase);
     migrateHtmlPushTables(nextDatabase);
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_topics_owner_created_at ON topics(owner_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_owner_created_at ON sources(owner_id, created_at DESC);");
+    nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_category_created_at ON sources(category_id, created_at DESC);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_topic_id ON sources(topic_id);");
     nextDatabase.exec("CREATE INDEX IF NOT EXISTS idx_sources_next_sync_at ON sources(next_sync_at);");
     nextDatabase.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_items_source_url ON items(source_id, canonical_url);");
@@ -2244,7 +2315,11 @@ function mapPrismaTopic(topic: {
 
 function mapPrismaSource(source: {
   id: string;
-  topicId: string;
+  ownerId: string;
+  topicId: string | null;
+  categoryId: string;
+  categoriesJson: unknown;
+  tagsJson: unknown;
   sourceType: string;
   title: string;
   url: string;
@@ -2257,9 +2332,17 @@ function mapPrismaSource(source: {
   createdAt: Date;
   updatedAt: Date;
 }): SourceRecord {
+  const categories = Array.isArray(source.categoriesJson)
+    ? (source.categoriesJson as string[])
+    : [source.categoryId];
+  const tags = Array.isArray(source.tagsJson) ? (source.tagsJson as string[]) : [];
   return {
     id: source.id,
+    ownerId: source.ownerId,
     topicId: source.topicId,
+    categoryId: source.categoryId,
+    categories,
+    tags,
     sourceType: source.sourceType as SourceType,
     title: source.title,
     url: source.url,
@@ -3238,7 +3321,8 @@ export async function getSourceById(
       where: { id: sourceId },
     });
 
-    return row ? mapPrismaSource(row) : null;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return row ? mapPrismaSource(row as any) : null;
   }
 
   const row = store.database
@@ -3258,7 +3342,7 @@ export async function getTopicBySourceId(
       include: { topic: true },
     });
 
-    return row ? mapPrismaTopic(row.topic) : null;
+    return row?.topic ? mapPrismaTopic(row.topic) : null;
   }
 
   const row = store.database
@@ -3274,20 +3358,51 @@ export async function getTopicBySourceId(
   return row ? mapTopic(row) : null;
 }
 
+export async function hasSourceOwner(
+  store: Store,
+  actorId: string,
+  sourceId: string,
+): Promise<boolean> {
+  const source = await getSourceById(store, sourceId);
+
+  if (!source) {
+    return false;
+  }
+
+  return source.ownerId === actorId;
+}
+
 export async function createSourceRecord(
   store: Store,
   input: {
-    topicId: string;
+    ownerId?: string;
+    topicId?: string | null;
+    categoryId?: string;
+    categories?: string[];
+    tags?: string[];
     sourceType: SourceType;
     title: string;
     url: string;
     configJson?: Record<string, unknown> | null;
   },
 ) {
+  const ownerId =
+    input.ownerId ??
+    (input.topicId ? (await getTopicById(store, input.topicId))?.ownerId : null) ??
+    "local-user";
+  const categories = input.categories ?? (input.categoryId ? [input.categoryId] : ["all"]);
+  const categoryId = categories[0] ?? input.categoryId ?? "all";
+  const tags = input.tags ?? [];
+
   if (store.prisma) {
-    const source = await store.prisma.source.create({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const source = await (store.prisma.source.create as any)({
       data: {
-        topicId: input.topicId,
+        ownerId,
+        topicId: input.topicId ?? null,
+        categoryId,
+        categoriesJson: categories,
+        tagsJson: tags.length > 0 ? tags : undefined,
         sourceType: input.sourceType,
         title: input.title,
         url: input.url,
@@ -3295,22 +3410,26 @@ export async function createSourceRecord(
           (input.configJson as Prisma.InputJsonValue | undefined) ?? undefined,
         status: "idle",
         syncIntervalMinutes: 360,
-        nextSyncAt: new Date(),
+        nextSyncAt: new Date(0),
       },
     });
 
-    return source.id;
+    return (source as { id: string }).id;
   }
 
   const timestamp = new Date().toISOString();
   const id = randomUUID();
-  const nextSyncAt = timestamp;
+  const nextSyncAt = new Date(0).toISOString();
 
   store.database
     .prepare(
       `INSERT INTO sources (
         id,
+        owner_id,
         topic_id,
+        category_id,
+        categories_json,
+        tags_json,
         source_type,
         title,
         url,
@@ -3320,11 +3439,15 @@ export async function createSourceRecord(
         next_sync_at,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(
       id,
-      input.topicId,
+      ownerId,
+      input.topicId ?? null,
+      categoryId,
+      JSON.stringify(categories),
+      tags.length > 0 ? JSON.stringify(tags) : null,
       input.sourceType,
       input.title,
       input.url,
@@ -3608,7 +3731,8 @@ export async function listSourcesByTopic(
       orderBy: { createdAt: "desc" },
     });
 
-    return rows.map(mapPrismaSource);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return rows.map((row) => mapPrismaSource(row as any));
   }
 
   const rows = store.database
@@ -3638,7 +3762,8 @@ export async function listDueSources(
       orderBy: [{ nextSyncAt: "asc" }, { createdAt: "asc" }],
     });
 
-    return rows.map(mapPrismaSource);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return rows.map((row) => mapPrismaSource(row as any));
   }
 
   const rows = store.database
@@ -4106,6 +4231,29 @@ async function getAppSetting(store: Store, key: string) {
   };
 }
 
+export type UserProfileRecord = {
+  nickname: string | null;
+  avatar: string | null;
+};
+
+export async function saveUserProfile(
+  store: Store,
+  { nickname, avatar }: { nickname: string; avatar: string },
+) {
+  await Promise.all([
+    saveAppSetting(store, "user_nickname", nickname),
+    saveAppSetting(store, "user_avatar", avatar),
+  ]);
+}
+
+export async function getUserProfile(store: Store): Promise<UserProfileRecord> {
+  const [nicknameRow, avatarRow] = await Promise.all([
+    getAppSetting(store, "user_nickname"),
+    getAppSetting(store, "user_avatar"),
+  ]);
+  return { nickname: nicknameRow.value, avatar: avatarRow.value };
+}
+
 export async function saveWebhookSettings(store: Store, endpoint: string) {
   await saveAppSetting(store, "webhook_endpoint", endpoint);
 }
@@ -4276,6 +4424,34 @@ export async function getEmailSettings(
   return {
     endpoint: row.value,
     updatedAt: row.updatedAt,
+  };
+}
+
+export async function saveWechatSettings(
+  store: Store,
+  input: { baseUrl: string; token: string; toUserId: string },
+) {
+  await Promise.all([
+    saveAppSetting(store, "wechat_base_url", input.baseUrl),
+    saveAppSetting(store, "wechat_token", input.token),
+    saveAppSetting(store, "wechat_to_user_id", input.toUserId),
+  ]);
+}
+
+export async function getWechatSettings(
+  store: Store,
+): Promise<WechatSettingsRecord> {
+  const [urlRow, tokenRow, toUserRow] = await Promise.all([
+    getAppSetting(store, "wechat_base_url"),
+    getAppSetting(store, "wechat_token"),
+    getAppSetting(store, "wechat_to_user_id"),
+  ]);
+
+  return {
+    baseUrl: urlRow.value,
+    token: tokenRow.value,
+    toUserId: toUserRow.value,
+    updatedAt: tokenRow.updatedAt ?? urlRow.updatedAt,
   };
 }
 
@@ -4670,9 +4846,7 @@ export async function listRecentSyncRuns(
       where: filters.actorId
         ? {
             source: {
-              topic: {
-                ownerId: filters.actorId,
-              },
+              ownerId: filters.actorId,
             },
           }
         : undefined,
@@ -4690,8 +4864,7 @@ export async function listRecentSyncRuns(
             `SELECT sync_runs.*
              FROM sync_runs
              JOIN sources ON sources.id = sync_runs.source_id
-             JOIN topics ON topics.id = sources.topic_id
-             WHERE topics.owner_id = ?
+             WHERE sources.owner_id = ?
              ORDER BY sync_runs.started_at DESC
              LIMIT ?`,
           )
@@ -4789,38 +4962,41 @@ export async function getDeliveryHealthSummary(
 
 export async function listSources(
   store: Store = defaultStore,
-  filters: { actorId?: string } = {},
+  filters: { actorId?: string; categoryId?: string } = {},
 ): Promise<SourceRecord[]> {
   if (store.prisma) {
     const rows = await store.prisma.source.findMany({
-      where: filters.actorId
-        ? {
-            topic: {
-              ownerId: filters.actorId,
-            },
-          }
-        : undefined,
+      where: {
+        ...(filters.actorId ? { ownerId: filters.actorId } : {}),
+        ...(filters.categoryId ? { categoryId: filters.categoryId } : {}),
+      },
       orderBy: { createdAt: "desc" },
     });
 
-    return rows.map(mapPrismaSource);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return rows.map((row) => mapPrismaSource(row as any));
   }
 
-  const rows = (
-    filters.actorId
-      ? store.database
-          .prepare(
-            `SELECT DISTINCT sources.*
-             FROM sources
-             JOIN topics ON topics.id = sources.topic_id
-             WHERE topics.owner_id = ?
-             ORDER BY sources.created_at DESC`,
-          )
-          .all(filters.actorId)
-      : store.database
-          .prepare("SELECT * FROM sources ORDER BY created_at DESC")
-          .all()
-  ) as SourceRow[];
+  const where: string[] = [];
+  const params: string[] = [];
+
+  if (filters.actorId) {
+    where.push("owner_id = ?");
+    params.push(filters.actorId);
+  }
+
+  if (filters.categoryId) {
+    where.push("category_id = ?");
+    params.push(filters.categoryId);
+  }
+
+  const rows = store.database
+    .prepare(
+      `SELECT * FROM sources
+       ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
+       ORDER BY created_at DESC`,
+    )
+    .all(...params) as SourceRow[];
 
   return rows.map(mapSource);
 }
@@ -5546,6 +5722,40 @@ export async function updateTopicControls(
        WHERE id = ?`,
     )
     .run(relevanceLevel, summaryPreference, timestamp, topicId);
+}
+
+export async function renameTopic(
+  store: Store,
+  topicId: string,
+  title: string,
+): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.topic.update({ where: { id: topicId }, data: { title } });
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare(`UPDATE topics SET title = ?, updated_at = ? WHERE id = ?`)
+    .run(title, timestamp, topicId);
+}
+
+export async function clearTopicProfile(
+  store: Store,
+  topicId: string,
+): Promise<void> {
+  if (store.prisma) {
+    await store.prisma.topic.update({
+      where: { id: topicId },
+      data: { topicProfile: Prisma.DbNull },
+    });
+    return;
+  }
+
+  const timestamp = new Date().toISOString();
+  store.database
+    .prepare(`UPDATE topics SET topic_profile = NULL, updated_at = ? WHERE id = ?`)
+    .run(timestamp, topicId);
 }
 
 export async function getOrCreateChatThread(

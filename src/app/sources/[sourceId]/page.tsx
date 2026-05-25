@@ -116,6 +116,10 @@ export default async function SourceDiagnosticsPage({
           <h2 className="text-lg font-semibold">Source state</h2>
           <div className="mt-4 grid gap-3 text-sm text-stone-600">
             <div>Type: {source.sourceType}</div>
+            <div>Category: {source.categoryId}</div>
+            <div>
+              Scope: {source.topicId ? "Linked exploration" : "Custom source"}
+            </div>
             <div>Status: {source.status}</div>
             <div>
               Last synced: {source.lastSyncedAt ? new Date(source.lastSyncedAt).toLocaleString() : "Never"}

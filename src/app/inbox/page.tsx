@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { deleteBrief, toggleBriefRead } from "@/app/actions";
+import { MetricPill, PageHeader, Surface } from "@/components/ui-shell";
 import { requireSessionActor } from "@/lib/auth";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
@@ -33,27 +34,35 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
     listBriefsFiltered(defaultStore, { actorId: actor.id, topicId, unreadOnly }),
     listTopics(defaultStore, { actorId: actor.id }),
   ]);
+  const selectedTopic = topicId
+    ? topics.find((topic) => topic.id === topicId) ?? null
+    : null;
+  const unreadCount = briefs.filter((brief) => !brief.isRead).length;
 
   return (
-    <div className="grid gap-6">
-      <section className="grid gap-6 rounded-[18px] border border-stone-900/10 bg-white p-8">
-        <div className="space-y-3">
-          <span className="inline-flex rounded-full bg-[#0057ff] px-3 py-1 text-xs font-medium tracking-[0.12em] text-white uppercase">
-            {t.badge}
-          </span>
-          <div className="space-y-2">
-            <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">
-              {t.title}
-            </h1>
-            <p className="max-w-2xl text-base leading-7 text-stone-600 sm:text-lg">
-              {t.description}
-            </p>
+    <div className="grid gap-5">
+      <PageHeader
+        eyebrow={t.badge}
+        title={t.title}
+        description={t.description}
+        metrics={
+          <div className="grid gap-3 sm:grid-cols-3">
+            <MetricPill value={briefs.length} label={t.briefCount} />
+            <MetricPill
+              value={unreadCount}
+              label={t.unreadOnly}
+              tone={unreadCount > 0 ? "accent" : "default"}
+            />
+            <MetricPill
+              value={selectedTopic?.title ?? t.all}
+              label={t.filter}
+            />
           </div>
-        </div>
-      </section>
+        }
+      />
 
       {/* Filter bar */}
-      <section className="flex flex-wrap items-center gap-3 rounded-[20px] border border-stone-900/10 bg-white px-5 py-3 shadow-[0_8px_24px_rgba(33,24,9,0.04)]">
+      <Surface className="flex flex-wrap items-center gap-3" padded="sm">
         <span className="text-sm font-medium text-stone-500">{t.filter}:</span>
 
         <Link
@@ -101,7 +110,7 @@ export default async function InboxPage({ searchParams }: InboxPageProps) {
         <span className="ml-auto text-sm text-stone-400">
           {briefs.length} {t.briefCount}
         </span>
-      </section>
+      </Surface>
 
       {briefs.length === 0 ? (
         <section className="rounded-[24px] border border-dashed border-stone-200 bg-white px-6 py-10 text-sm text-stone-500 shadow-[0_16px_50px_rgba(33,24,9,0.06)]">

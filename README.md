@@ -18,8 +18,8 @@ Open [http://localhost:3000](http://localhost:3000) with your browser to see the
 ## Local verification
 
 1. Start the app with `pnpm dev`
-2. Open `/` and create a monitoring goal
-3. Open `/sources` and add a source for that goal
+2. Open `/` and create a Topic
+3. Open `/sources` and add a source for that Topic
 4. Open `/inbox` after syncing and confirm a brief appears
 5. Open `/inbox/<briefId>/html` and confirm the HTML digest renders
 
@@ -40,7 +40,7 @@ pnpm test && pnpm lint && pnpm typecheck && pnpm build
 - [ ] `POST /api/jobs/sync`
 - [ ] Verify `/inbox`
 - [ ] Verify `/settings`
-- [ ] Verify `/spaces/[spaceId]/tasks/[taskId]`
+- [ ] Verify `/topics/[topicId]`
 
 ## Brief Surface Verification
 
@@ -50,7 +50,7 @@ pnpm test && pnpm lint && pnpm typecheck && pnpm build
 - Run `pnpm typecheck`
 - Open `/inbox`
 - Open `/inbox/<briefId>`
-- Ask one question from a task or brief chat console
+- Ask one question from a Topic or brief chat console
 - Confirm citations render and provenance badges show `Stored context` or `Live context`
 
 ## Scheduled Sync Verification

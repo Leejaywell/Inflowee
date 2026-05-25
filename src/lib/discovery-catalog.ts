@@ -1,6 +1,6 @@
 import { sourcePresets, type SourcePresetCategory } from "@/lib/source-presets";
 import type { SubscriptionDiscoveryPlan } from "@/lib/ai";
-import type { SourceType, TopicProfile } from "@/lib/store";
+import type { SourceRecord, SourceType, TopicProfile } from "@/lib/store";
 
 export type DiscoveryCategory = {
   id: string;
@@ -25,7 +25,7 @@ export type DiscoveryTag = {
   weight: number;
 };
 
-export type DiscoverySourceOrigin = "preset" | "ai" | "discovery";
+export type DiscoverySourceOrigin = "preset" | "ai" | "discovery" | "custom";
 
 export type DiscoverySourceCandidate = {
   id: string;
@@ -54,6 +54,7 @@ export type DiscoveryCatalogContext = {
   profile?: TopicProfile | null;
   aiPlan?: SubscriptionDiscoveryPlan | null;
   stats?: DiscoverySourceStats | null;
+  customSources?: SourceRecord[];
   categoryId?: string;
   selectedTagIds?: string[];
 };
@@ -445,6 +446,27 @@ export function mapSourcePresetsToDiscoveryCandidates(
   });
 }
 
+export function mapCustomSourcesToDiscoveryCandidates(
+  sources: SourceRecord[] = [],
+): DiscoverySourceCandidate[] {
+  return sources.map((source) => ({
+    id: `custom:${source.id}`,
+    title: source.title,
+    description: "用户自定义添加的来源。",
+    url: source.url,
+    sourceType: source.sourceType,
+    categoryIds: [...new Set(["all", source.categoryId])],
+    tagIds: [...new Set(["custom", source.sourceType.toLowerCase(), source.categoryId])],
+    origin: "custom" as const,
+    subscriberCount: undefined,
+    recentSubscriberGrowth: undefined,
+    heatScore: source.topicId ? 62 : 58,
+    relevanceScore: source.topicId ? 0.72 : 0.45,
+    trendLabels: [source.topicId ? "探索已使用" : "自定义源"],
+    configJson: source.configJson,
+  }));
+}
+
 export function buildTopicAiCandidates(
   profile?: TopicProfile | null,
 ): DiscoverySourceCandidate[] {
@@ -615,6 +637,7 @@ export function getDiscoverySourceCandidates(
     ...buildTopicAiCandidates(context.profile),
     ...buildTopicDiscoveryCandidates(context.profile),
     ...buildContextualDiscoveryCandidates(context),
+    ...mapCustomSourcesToDiscoveryCandidates(context.customSources),
     ...mapSourcePresetsToDiscoveryCandidates(context),
   ].sort((a, b) => {
     const aScore = (a.heatScore ?? 0) + (a.relevanceScore ?? 0) * 100;

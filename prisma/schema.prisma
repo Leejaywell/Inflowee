@@ -32,7 +32,11 @@ model Topic {
 
 model Source {
   id                  String    @id @default(uuid())
-  topicId             String
+  ownerId             String    @default("local-user")
+  topicId             String?
+  categoryId          String    @default("all")
+  categoriesJson      Json?
+  tagsJson            Json?
   sourceType          String
   title               String
   url                 String
@@ -44,10 +48,12 @@ model Source {
   nextSyncAt          DateTime?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
-  topic               Topic     @relation(fields: [topicId], references: [id], onDelete: Cascade)
+  topic               Topic?    @relation(fields: [topicId], references: [id], onDelete: SetNull)
   items               Item[]
   syncRuns            SyncRun[]
 
+  @@index([ownerId, createdAt])
+  @@index([categoryId, createdAt])
   @@index([topicId, createdAt])
   @@index([nextSyncAt, status])
 }

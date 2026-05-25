@@ -1,14 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
-import { createTopic, deleteTopic } from "@/app/actions";
+import { deleteTopic } from "@/app/actions";
 import { ChatConsole } from "@/components/chat-console";
 import {
   MetricPill,
   Notice,
   PageHeader,
-  PrimaryButton,
-  SecondaryButton,
   Surface,
 } from "@/components/ui-shell";
 import { getActorScopedChatScopeId, getSessionUser } from "@/lib/auth";
@@ -75,6 +73,9 @@ export default async function Home({ searchParams }: HomeProps) {
 
   const sourceCountByTopic = new Map<string, number>();
   for (const source of sources) {
+    if (!source.topicId) {
+      continue;
+    }
     sourceCountByTopic.set(source.topicId, (sourceCountByTopic.get(source.topicId) ?? 0) + 1);
   }
 
@@ -82,18 +83,6 @@ export default async function Home({ searchParams }: HomeProps) {
     <div className="grid gap-5">
       <PageHeader
         eyebrow={t.badge}
-        title={t.title}
-        description={t.description}
-        actions={
-          <>
-            <SecondaryButton href="/discover">
-              {isZh ? "发现来源" : "Discover sources"}
-            </SecondaryButton>
-            <PrimaryButton href="/sources">
-              {isZh ? "管理来源" : "Manage sources"}
-            </PrimaryButton>
-          </>
-        }
         metrics={
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
             <MetricPill value={topics.length} label={t.topicsLabel} />
@@ -187,35 +176,6 @@ export default async function Home({ searchParams }: HomeProps) {
             </div>
           )}
 
-          <div className="mt-5 border-t border-stone-100 pt-5">
-            <form action={createTopic} className="grid gap-3">
-              <div className="space-y-0.5">
-                <h3 className="text-sm font-semibold text-stone-800">{t.createTitle}</h3>
-                <p className="text-xs leading-5 text-stone-500">{t.createDescription}</p>
-              </div>
-              <label className="grid gap-1.5 text-sm">
-                <span className="font-medium text-stone-700">{t.titleLabel}</span>
-                <input
-                  name="title"
-                  placeholder={t.titlePlaceholder}
-                  className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-4 outline-none transition focus:border-stone-400 focus:bg-white"
-                />
-              </label>
-              <input name="topicType" type="hidden" value="TOPIC" />
-              <label className="grid gap-1.5 text-sm">
-                <span className="font-medium text-stone-700">{t.promptLabel}</span>
-                <textarea
-                  name="userPrompt"
-                  rows={3}
-                  placeholder={t.promptPlaceholder}
-                  className="rounded-xl border border-stone-200 bg-stone-50 px-4 py-3 outline-none transition focus:border-stone-400 focus:bg-white"
-                />
-              </label>
-              <button className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0057ff] px-4 text-sm font-medium text-white transition hover:bg-[#0049d6]">
-                {t.createButton}
-              </button>
-            </form>
-          </div>
         </Surface>
 
         {/* Right column: Briefs + Activity + Chat */}

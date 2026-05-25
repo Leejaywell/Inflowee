@@ -20,7 +20,11 @@ CREATE TABLE "Topic" (
 -- CreateTable
 CREATE TABLE "Source" (
     "id" TEXT NOT NULL,
-    "topicId" TEXT NOT NULL,
+    "ownerId" TEXT NOT NULL DEFAULT 'local-user',
+    "topicId" TEXT,
+    "categoryId" TEXT NOT NULL DEFAULT 'all',
+    "categoriesJson" JSONB,
+    "tagsJson" JSONB,
     "sourceType" TEXT NOT NULL,
     "title" TEXT NOT NULL,
     "url" TEXT NOT NULL,
@@ -185,6 +189,12 @@ CREATE TABLE "ChatMessage" (
 CREATE INDEX "Topic_ownerId_createdAt_idx" ON "Topic"("ownerId", "createdAt");
 
 -- CreateIndex
+CREATE INDEX "Source_ownerId_createdAt_idx" ON "Source"("ownerId", "createdAt");
+
+-- CreateIndex
+CREATE INDEX "Source_categoryId_createdAt_idx" ON "Source"("categoryId", "createdAt");
+
+-- CreateIndex
 CREATE INDEX "Source_topicId_createdAt_idx" ON "Source"("topicId", "createdAt");
 
 -- CreateIndex
@@ -218,7 +228,7 @@ CREATE UNIQUE INDEX "ChatThread_scopeType_scopeId_key" ON "ChatThread"("scopeTyp
 CREATE INDEX "ChatMessage_threadId_createdAt_idx" ON "ChatMessage"("threadId", "createdAt");
 
 -- AddForeignKey
-ALTER TABLE "Source" ADD CONSTRAINT "Source_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "Topic"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+ALTER TABLE "Source" ADD CONSTRAINT "Source_topicId_fkey" FOREIGN KEY ("topicId") REFERENCES "Topic"("id") ON DELETE SET NULL ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "Item" ADD CONSTRAINT "Item_sourceId_fkey" FOREIGN KEY ("sourceId") REFERENCES "Source"("id") ON DELETE CASCADE ON UPDATE CASCADE;
@@ -247,3 +257,7 @@ ALTER TABLE "RecommendationBundle" ADD CONSTRAINT "RecommendationBundle_topicId_
 -- AddForeignKey
 ALTER TABLE "ChatMessage" ADD CONSTRAINT "ChatMessage_threadId_fkey" FOREIGN KEY ("threadId") REFERENCES "ChatThread"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+-- AddColumn (safe migration for existing databases)
+ALTER TABLE "Source" ADD COLUMN IF NOT EXISTS "categoriesJson" JSONB;
+ALTER TABLE "Source" ADD COLUMN IF NOT EXISTS "tagsJson" JSONB;
+UPDATE "Source" SET "categoriesJson" = jsonb_build_array("categoryId") WHERE "categoriesJson" IS NULL;

@@ -15,6 +15,7 @@ import {
   createTopicRecord,
   getOrCreateChatThread,
   getTopicById,
+  listSources,
   listChatMessages,
   updateTopicControls,
 } from "@/lib/store";
@@ -41,7 +42,9 @@ import {
 } from "@/lib/discovery-catalog";
 import {
   buildGenericDiscoveryExperience,
+  buildPromptDiscoveryExperience,
   buildTopicDiscoveryExperience,
+  type DiscoveryExperience,
 } from "@/lib/discovery-runtime";
 import { createDiscoverySourcesForTopic } from "@/lib/discovery-subscriptions";
 
@@ -188,6 +191,7 @@ export async function subscribeRecommendedSources(
     index,
     result: createSourceSchema.safeParse({
       topicId,
+      categoryId: "all",
       sourceType: source.sourceType,
       title: source.title,
       url: source.url,
@@ -221,7 +225,9 @@ export async function subscribeRecommendedSources(
       result.data.sourceType === "HOTLIST_DISCOVERY";
     const isHotlist = result.data.sourceType === "HOTLIST_DISCOVERY";
     const sourceId = await createSourceRecord(store, {
-      topicId: result.data.topicId,
+      ownerId: actor.id,
+      topicId,
+      categoryId: result.data.categoryId,
       sourceType: result.data.sourceType,
       title: result.data.title,
       url: isHotlist
@@ -275,7 +281,9 @@ export async function subscribeDiscoverySources(
     discoveryExperience.candidates.filter((candidate) => allowedIds.has(candidate.id));
 
   if (candidates.length === 0) {
-    candidates = buildGenericDiscoveryExperience().candidates.filter((candidate) =>
+    candidates = buildGenericDiscoveryExperience(
+      await listSources(store, { actorId: actor.id }),
+    ).candidates.filter((candidate) =>
       allowedIds.has(candidate.id),
     );
   }
@@ -309,8 +317,9 @@ export async function createTopicAndSubscribeDiscoverySources(input: {
   const store = defaultStore;
   const actor = await requireSessionActor();
   const allowedIds = new Set(input.candidateIds);
+  const customSources = await listSources(store, { actorId: actor.id });
   let candidates: DiscoverySourceCandidate[] =
-    buildGenericDiscoveryExperience().candidates.filter((candidate) =>
+    buildGenericDiscoveryExperience(customSources).candidates.filter((candidate) =>
       allowedIds.has(candidate.id),
     );
   if (candidates.length === 0) {
@@ -361,7 +370,7 @@ export async function createTopicAndSubscribeDiscoverySources(input: {
     discoveryExperience.candidates.filter((candidate) => allowedIds.has(candidate.id));
 
   if (candidates.length === 0) {
-    candidates = buildGenericDiscoveryExperience().candidates.filter((candidate) =>
+    candidates = buildGenericDiscoveryExperience(customSources).candidates.filter((candidate) =>
       allowedIds.has(candidate.id),
     );
   }
@@ -402,6 +411,7 @@ export async function previewRecommendedSources(
     index,
     result: createSourceSchema.safeParse({
       topicId,
+      categoryId: "all",
       sourceType: source.sourceType,
       title: source.title,
       url: source.url,
@@ -433,6 +443,12 @@ export async function previewRecommendedSources(
         };
       }),
   );
+}
+
+export async function analyzeDiscoveryNeed(prompt: string): Promise<DiscoveryExperience> {
+  const actor = await requireSessionActor();
+  const customSources = await listSources(defaultStore, { actorId: actor.id });
+  return buildPromptDiscoveryExperience(defaultStore, prompt.trim(), customSources);
 }
 
 export async function updateTopicControlSettings(

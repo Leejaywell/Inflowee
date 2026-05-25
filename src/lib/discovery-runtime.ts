@@ -103,6 +103,7 @@ export async function buildTopicDiscoveryContext(
     profile: topic.topicProfile ?? null,
     aiPlan,
     stats,
+    customSources: await listSources(store, { actorId: topic.ownerId }),
     categoryId: options.categoryId,
     selectedTagIds: options.selectedTagIds,
   };
@@ -153,11 +154,57 @@ export async function buildTopicDiscoveryExperience(
   };
 }
 
-export function buildGenericDiscoveryExperience(): DiscoveryExperience {
+export async function buildPromptDiscoveryExperience(
+  _store: Store,
+  prompt: string,
+  customSources: Awaited<ReturnType<typeof listSources>> = [],
+): Promise<DiscoveryExperience> {
+  const aiPlan = await planSubscriptionDiscovery({ title: "", prompt, profile: null });
+  const context: DiscoveryCatalogContext = {
+    profile: null,
+    aiPlan,
+    stats: null,
+    customSources,
+  };
+  const categories = getDiscoveryCategories(aiPlan);
+  const tags = [
+    ...new Map(
+      categories
+        .flatMap((category) => getDiscoveryTags(category.id, context))
+        .map((tag) => [tag.id, tag] as const),
+    ).values(),
+  ];
+  const candidateMap = new Map<string, DiscoverySourceCandidate>();
+
+  for (const candidate of getDiscoverySourceCandidates(context)) {
+    candidateMap.set(candidate.id, candidate);
+  }
+
+  for (const category of categories) {
+    for (const tag of tags
+      .filter((item) => item.categoryId === "all" || item.categoryId === category.id)
+      .slice(0, 12)) {
+      for (const candidate of getDiscoverySourceCandidates({
+        ...context,
+        categoryId: category.id,
+        selectedTagIds: [tag.id],
+      })) {
+        candidateMap.set(candidate.id, candidate);
+      }
+    }
+  }
+
+  return { categories, tags, candidates: [...candidateMap.values()] };
+}
+
+export function buildGenericDiscoveryExperience(
+  customSources: Awaited<ReturnType<typeof listSources>> = [],
+): DiscoveryExperience {
   const context: DiscoveryCatalogContext = {
     profile: null,
     aiPlan: null,
     stats: null,
+    customSources,
   };
   const categories = getDiscoveryCategories();
   const tags = [

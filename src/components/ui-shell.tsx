@@ -38,7 +38,7 @@ export function Surface({
 
 type PageHeaderProps = {
   eyebrow?: string;
-  title: string;
+  title?: string;
   description?: string;
   actions?: React.ReactNode;
   metrics?: React.ReactNode;
@@ -60,9 +60,11 @@ export function PageHeader({
               {eyebrow}
             </span>
           ) : null}
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-950 sm:text-3xl">
-            {title}
-          </h1>
+          {title ? (
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-stone-950 sm:text-3xl">
+              {title}
+            </h1>
+          ) : null}
           {description ? (
             <p className="mt-1 max-w-3xl text-sm leading-6 text-stone-500">
               {description}

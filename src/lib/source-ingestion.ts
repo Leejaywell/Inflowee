@@ -135,7 +135,7 @@ export async function storeSourceItemsAndCreateBriefs(
   store: Store,
   source: {
     id: string;
-    topicId: string;
+    topicId: string | null;
     sourceType?: SourceType;
     title?: string;
     url?: string;
@@ -143,10 +143,7 @@ export async function storeSourceItemsAndCreateBriefs(
   },
   items: SourceItemCandidate[],
 ) {
-  const topic = await getTopicById(store, source.topicId);
-  if (!topic) {
-    throw new Error(`Topic with ID ${source.topicId} not found.`);
-  }
+  const topic = source.topicId ? await getTopicById(store, source.topicId) : null;
 
   const enrichedItems = await Promise.all(
     items.map((item) =>
@@ -159,7 +156,28 @@ export async function storeSourceItemsAndCreateBriefs(
 
   const storedItems = await Promise.all(
     enrichedItems.map((item) => {
-      const quality = analyzeItemQuality(topic, item);
+      const quality = topic
+        ? analyzeItemQuality(topic, item)
+        : {
+            isReal: true,
+            relevanceScore: null,
+            relevanceReason: null,
+            keywordMentioned: null,
+            matchedTerms: [],
+            qualityStatus: "accepted" as const,
+            qualityError: null,
+            viewCount: null,
+            likeCount: null,
+            commentCount: null,
+            shareCount: null,
+            replyCount: null,
+            repostCount: null,
+            sourceNativeScore: null,
+            authorName: null,
+            authorUsername: null,
+            authorFollowers: null,
+            authorVerified: null,
+          };
 
       return createItemRecordResult(store, {
         sourceId: source.id,
@@ -208,7 +226,7 @@ export async function storeSourceItemsAndCreateBriefs(
     .filter((pair) => !pair.exists)
     .map((pair) => pair.item);
 
-  if (unbriefedItems.length === 0) {
+  if (!topic || !source.topicId || unbriefedItems.length === 0) {
     return {
       insertedItemCount: insertedItems.length,
       createdBriefCount: 0,
@@ -353,6 +371,10 @@ async function syncDiscoverySource(
     fetchImpl?: typeof fetch;
   },
 ) {
+  if (!source.topicId) {
+    throw new Error("Discovery sources require an exploration context.");
+  }
+
   const topic = await getTopicById(store, source.topicId);
 
   if (!topic) {
@@ -377,6 +399,10 @@ async function syncHotlistSource(
     fetchSourceFeedImpl?: typeof fetchSourceFeed;
   },
 ) {
+  if (!source.topicId) {
+    throw new Error("Hotlist sources require an exploration context.");
+  }
+
   const topic = await getTopicById(store, source.topicId);
 
   if (!topic) {
@@ -414,7 +440,11 @@ async function previewCandidateItems(
   const fetchImpl = options?.fetchSourceFeedImpl ?? fetchSourceFeed;
   const sourceRecord: SourceRecord = {
     id: "preview",
+    ownerId: topic.ownerId,
     topicId,
+    categoryId: "all",
+    categories: ["all"],
+    tags: [],
     title: source.title,
     url: source.url,
     sourceType: source.sourceType,

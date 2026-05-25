@@ -58,6 +58,7 @@ export async function createDiscoverySourcesForTopic(
   for (const candidate of candidates) {
     const parsed = createSourceSchema.safeParse({
       topicId,
+      categoryId: candidate.categoryIds.find((id) => id !== "all") ?? "all",
       sourceType: candidate.sourceType,
       title: candidate.title,
       url: candidate.url,
@@ -96,7 +97,9 @@ export async function createDiscoverySourcesForTopic(
     }
 
     const sourceId = await createSourceRecord(store, {
+      ownerId: topic.ownerId,
       topicId,
+      categoryId: parsed.data.categoryId,
       sourceType: parsed.data.sourceType,
       title: parsed.data.title,
       url,

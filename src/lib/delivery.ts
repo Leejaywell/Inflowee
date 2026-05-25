@@ -15,6 +15,7 @@ import {
   getNtfySettings,
   getSlackSettings,
   getTelegramSettings,
+  getWechatSettings,
   finishDeliveryLog,
   getBriefById,
   getTopicById,
@@ -42,7 +43,8 @@ export type DeliveryChannel =
   | "dingtalk"
   | "wecom"
   | "bark"
-  | "email";
+  | "email"
+  | "wechat";
 export type SlackDeliveryPayload = {
   text: string;
   blocks: Array<Record<string, unknown>>;
@@ -84,6 +86,13 @@ export type EmailDeliveryPayload = {
   text: string;
   html?: string;
 };
+export type WechatDeliveryPayload = {
+  _wechat: true;
+  baseUrl: string;
+  token: string;
+  toUserId: string;
+  text: string;
+};
 
 export type DeliveryPayloadUnion =
   | DeliveryPayload
@@ -94,7 +103,8 @@ export type DeliveryPayloadUnion =
   | DingTalkDeliveryPayload
   | WeComDeliveryPayload
   | BarkDeliveryPayload
-  | EmailDeliveryPayload;
+  | EmailDeliveryPayload
+  | WechatDeliveryPayload;
 
 export type DeliveryFormatGuide = {
   contentTypes: Array<"plain" | "markdown" | "html" | "json">;
@@ -163,6 +173,49 @@ function getDeliveryRetryDelayMs(attempt: number) {
 
 function isEmailPayload(payload: DeliveryPayloadUnion): payload is EmailDeliveryPayload {
   return "subject" in payload && "text" in payload;
+}
+
+function isWechatPayload(payload: DeliveryPayloadUnion): payload is WechatDeliveryPayload {
+  return "_wechat" in payload && (payload as WechatDeliveryPayload)._wechat === true;
+}
+
+async function deliverWechatMessage(payload: WechatDeliveryPayload): Promise<number> {
+  const baseUrl = payload.baseUrl.endsWith("/") ? payload.baseUrl : `${payload.baseUrl}/`;
+  const xWechatUin = Buffer.from(
+    String(Math.floor(Math.random() * 0xffffffff)),
+    "utf-8",
+  ).toString("base64");
+
+  const body = {
+    msg: {
+      to_user_id: payload.toUserId,
+      item_list: [{ type: 1, text_item: { text: payload.text } }],
+    },
+    base_info: {},
+  };
+
+  const response = await fetch(`${baseUrl}ilink/bot/sendmessage`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      AuthorizationType: "ilink_bot_token",
+      Authorization: `Bearer ${payload.token}`,
+      "X-WECHAT-UIN": xWechatUin,
+      "iLink-App-Id": "bot",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    const responseText = await response.text().catch(() => "");
+    throw new Error(
+      responseText
+        ? `WeChat delivery failed (${response.status}): ${responseText}`
+        : `WeChat delivery failed with status ${response.status}`,
+    );
+  }
+
+  return response.status;
 }
 
 function renderTemplate(
@@ -371,6 +424,19 @@ export async function buildDeliveryPayload(input: {
   htmlUrl?: string | null;
 }): Promise<EmailDeliveryPayload>;
 export async function buildDeliveryPayload(input: {
+  channel: "wechat";
+  brief: {
+    id: string;
+    title: string;
+    summary: string;
+  };
+  baseUrl: string;
+  token: string;
+  toUserId: string;
+  html?: string;
+  htmlUrl?: string | null;
+}): Promise<WechatDeliveryPayload>;
+export async function buildDeliveryPayload(input: {
   channel: DeliveryChannel;
   brief: {
     id: string;
@@ -378,6 +444,9 @@ export async function buildDeliveryPayload(input: {
     summary: string;
   };
   chatId?: string;
+  baseUrl?: string;
+  token?: string;
+  toUserId?: string;
   html?: string;
   htmlUrl?: string | null;
 }): Promise<DeliveryPayloadUnion> {
@@ -450,6 +519,14 @@ export async function buildDeliveryPayload(input: {
         text: summary,
         html: input.html,
       };
+    case "wechat":
+      return {
+        _wechat: true,
+        baseUrl: input.baseUrl ?? "",
+        token: input.token ?? "",
+        toUserId: input.toUserId ?? "",
+        text: `${input.brief.title}\n${summary}`,
+      };
     default:
       return {
         briefId: input.brief.id,
@@ -468,6 +545,10 @@ export async function deliverBriefDigest(input: {
 }): Promise<number> {
   if (isEmailPayload(input.payload)) {
     return deliverEmailSmtp(input.endpoint, input.payload);
+  }
+
+  if (isWechatPayload(input.payload)) {
+    return deliverWechatMessage(input.payload);
   }
 
   const fetchImpl = input.fetchImpl ?? fetch;
@@ -769,6 +850,38 @@ export const DELIVERY_ADAPTERS: DeliveryAdapter[] = [
     },
     missingConfigurationMessage: "Configure an email SMTP relay endpoint first.",
   },
+  {
+    type: "wechat",
+    name: "WeChat (ilink)",
+    payloadType: "wechat",
+    formatGuide: {
+      contentTypes: ["plain"],
+      maxPayloadCharacters: 4_000,
+      supportsLinks: false,
+      supportsButtons: false,
+      batchSeparator: "\n\n",
+      titleRule: "Prefix the plain text body with the brief title.",
+    },
+    async getEndpoint(store) {
+      const settings = await getWechatSettings(store);
+      return settings.baseUrl && settings.token && settings.toUserId ? settings.baseUrl : null;
+    },
+    async buildPayloads({ brief, store, contentType, htmlUrl }) {
+      const settings = await getWechatSettings(store);
+      const summary = await renderDeliveryBody(store, { ...brief, contentType });
+      const text = appendHtmlUrlToDeliveryText({ text: `${brief.title}\n${summary}`, htmlUrl });
+      return [
+        {
+          _wechat: true as const,
+          baseUrl: settings.baseUrl ?? "",
+          token: settings.token ?? "",
+          toUserId: settings.toUserId ?? "",
+          text,
+        },
+      ];
+    },
+    missingConfigurationMessage: "Configure WeChat (ilink) delivery first.",
+  },
 ];
 
 function getDeliveryAdapter(channel: DeliveryChannel) {
@@ -851,6 +964,14 @@ async function getDeliveryChannelSettings(
 
   if (channel === "bark") {
     return getBarkSettings(store);
+  }
+
+  if (channel === "wechat") {
+    const settings = await getWechatSettings(store);
+    return {
+      endpoint: settings.baseUrl && settings.token && settings.toUserId ? settings.baseUrl : null,
+      updatedAt: settings.updatedAt,
+    };
   }
 
   return getEmailSettings(store);

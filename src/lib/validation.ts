@@ -17,7 +17,13 @@ export const createTopicSchema = z.object({
 });
 
 export const createSourceSchema = z.object({
-  topicId: z.string().trim().min(1, "Select a Topic."),
+  topicId: z.string().trim().optional(),
+  categoryId: z.string().trim().min(1).default("all"),
+  categories: z
+    .array(z.string().trim().min(1))
+    .min(1, "Select at least one category.")
+    .default(["all"]),
+  tags: z.array(z.string().trim()).default([]),
   sourceType: z.enum([
     "RSS",
     "PAGE",

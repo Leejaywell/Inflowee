@@ -1,16 +1,17 @@
 import {
-  createPresetSource,
-  createSource,
   deleteSource,
   runSourceSync,
   runSyncAll,
   updateSourceSchedule,
 } from "@/app/actions";
 import Link from "next/link";
+import { AddSourceModal } from "@/components/add-source-modal";
+import { SourceTestFetch } from "@/components/source-test-fetch";
 import { MetricPill, Notice, PageHeader, Surface } from "@/components/ui-shell";
 import { requireSessionActor } from "@/lib/auth";
 import { getDictionary } from "@/lib/i18n";
 import { getRequestLocale } from "@/lib/i18n-server";
+import { discoveryCategories } from "@/lib/discovery-catalog";
 import {
   defaultStore,
   getSourceHealthSummary,
@@ -22,7 +23,6 @@ import {
   type SourceRecord,
   type SourceStatus,
 } from "@/lib/store";
-import { sourcePresets } from "@/lib/source-presets";
 
 type SourcesPageProps = {
   searchParams?: Promise<{
@@ -62,35 +62,38 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
     listRecentSyncRuns(defaultStore, 10, { actorId: actor.id }),
     searchParams,
   ]);
-  const sourcesByTopic = new Map<string, SourceWithRuns[]>();
+  const categoryOptions = discoveryCategories;
+  const topicById = new Map(topicsRaw.map((topic) => [topic.id, topic]));
+  const sourcesByCategory = new Map<string, SourceWithRuns[]>();
   const sourceById = new Map<string, SourceRecord>();
 
   for (const source of sources) {
     sourceById.set(source.id, source);
-    const topicSources = sourcesByTopic.get(source.topicId) ?? [];
-    topicSources.push({
+    const categorySources = sourcesByCategory.get(source.categoryId) ?? [];
+    categorySources.push({
       ...source,
       recentRuns: await listRecentSyncRunsBySource(defaultStore, source.id),
     });
-    sourcesByTopic.set(source.topicId, topicSources);
+    sourcesByCategory.set(source.categoryId, categorySources);
   }
 
-  const topics = topicsRaw.map((topic) => ({
-    ...topic,
-    sources: sourcesByTopic.get(topic.id) ?? [],
-  }));
+  const sourceGroups = categoryOptions
+    .map((category) => ({
+      ...category,
+      sources: sourcesByCategory.get(category.id) ?? [],
+    }))
+    .filter((category) => category.id === "all" || category.sources.length > 0);
   const created = params?.created;
   const error = params?.error;
   const synced = params?.synced;
   const updated = params?.updated;
-  const totalSources = topics.reduce((count, topic) => count + topic.sources.length, 0);
+  const totalSources = sources.length;
 
   return (
     <div className="grid gap-5">
       <PageHeader
         eyebrow={t.badge}
         title={t.title}
-        description={t.description}
         metrics={
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <MetricPill value={healthSummary.healthy} label={t.healthy} tone="success" />
@@ -130,17 +133,12 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
         {/* Source library */}
         <Surface>
           <div className="mb-5 flex items-center justify-between border-b border-stone-100 pb-5">
-            <div>
-              <h2 className="text-xl font-semibold">{t.topicSources}</h2>
-              <p className="mt-1 text-sm leading-6 text-stone-500">
-                {t.topicSourcesDescription}
-              </p>
-            </div>
+            <h2 className="text-xl font-semibold">{isZh ? "来源库" : "Source library"}</h2>
             <div className="flex items-center gap-3">
               <span className="text-xs uppercase tracking-[0.14em] text-stone-400">
                 {totalSources} {t.sources}
               </span>
-              {topics.length > 0 && topics.some((tk) => tk.sources.length > 0) && (
+              {sources.length > 0 && (
                 <form action={runSyncAll}>
                   <button className="inline-flex h-9 items-center justify-center rounded-xl bg-stone-900 px-4 text-xs font-semibold uppercase tracking-wider text-white transition hover:bg-stone-800">
                     {t.syncAll}
@@ -150,33 +148,32 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
             </div>
           </div>
 
-          {topics.length === 0 ? (
+          {sources.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 px-5 py-8 text-sm text-stone-500">
-              {t.noTopics}
+              {isZh
+                ? "还没有来源。可以添加自定义来源，或在发现页通过 AI 分析需求后选择来源。"
+                : "No sources yet. Add a custom source, or use Discover to analyze a need and pick sources."}
             </div>
           ) : (
             <div className="grid gap-5">
-              {topics.map((topic) => (
-                <div key={topic.id}>
+              {sourceGroups.map((category) => (
+                <div key={category.id}>
                   <div className="mb-3 flex items-center gap-2">
-                    <Link
-                      href={`/topics/${topic.id}`}
-                      className="text-base font-semibold text-stone-950 hover:text-[#0057ff]"
-                    >
-                      {topic.title}
-                    </Link>
+                    <span className="text-base font-semibold text-stone-950">
+                      {category.title}
+                    </span>
                     <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-xs font-medium text-stone-500">
-                      {topic.sources.length} {t.sources}
+                      {category.sources.length} {t.sources}
                     </span>
                   </div>
 
-                  {topic.sources.length === 0 ? (
+                  {category.sources.length === 0 ? (
                     <p className="rounded-xl border border-dashed border-stone-200 bg-stone-50 px-4 py-4 text-sm text-stone-500">
-                      {t.noSourcesForTopic}
+                      {isZh ? "这个分类下还没有来源。" : "No sources in this category yet."}
                     </p>
                   ) : (
                     <div className="grid gap-3">
-                      {topic.sources.map((source) => (
+                      {category.sources.map((source) => (
                         <div
                           key={source.id}
                           className="rounded-2xl bg-stone-50 p-4 shadow-[0_4px_16px_rgba(33,24,9,0.04)]"
@@ -187,8 +184,21 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
                             </h4>
                             <div className="flex flex-wrap items-center gap-2">
                               <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-stone-600">
-                                {source.sourceType}
+                                {t.sourceTypeLabels[source.sourceType as keyof typeof t.sourceTypeLabels] ?? source.sourceType}
                               </span>
+                              {source.topicId ? (
+                                <Link
+                                  href={`/topics/${source.topicId}`}
+                                  className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-[#0057ff] hover:underline"
+                                >
+                                  {topicById.get(source.topicId)?.title ??
+                                    (isZh ? "探索" : "Exploration")}
+                                </Link>
+                              ) : (
+                                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-stone-500">
+                                  {isZh ? "自定义" : "Custom"}
+                                </span>
+                              )}
                               <span
                                 className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusClasses[source.status]}`}
                               >
@@ -292,153 +302,22 @@ export default async function SourcesPage({ searchParams }: SourcesPageProps) {
 
         {/* Right: Add source forms */}
         <div className="grid content-start gap-5 lg:sticky lg:top-6 lg:max-h-[calc(100vh-48px)] lg:overflow-y-auto">
-          {/* Custom source form */}
-          <form
-            action={createSource}
-            className="rounded-[24px] border border-stone-900/10 bg-white p-5 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
-          >
-            <div className="mb-4 space-y-0.5">
-              <h2 className="text-base font-semibold">{t.addSource}</h2>
-              <p className="text-xs leading-5 text-stone-500">{t.addSourceDescription}</p>
-            </div>
+            {/* Add custom source modal */}
+          <AddSourceModal
+            categoryOptions={categoryOptions}
+            isZh={isZh}
+            labels={{
+              addSource: t.addSource,
+              addSourceDescription: t.addSourceDescription,
+              sourceType: t.sourceType,
+              sourceTitle: t.sourceTitle,
+              feedUrl: t.feedUrl,
+              telegramHelp: t.telegramHelp,
+              saveSource: t.saveSource,
+            }}
+          />
 
-            <div className="grid gap-3">
-              <label className="grid gap-1.5 text-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {t.topic}
-                </span>
-                <select
-                  name="topicId"
-                  className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
-                  defaultValue=""
-                >
-                  <option value="" disabled>
-                    {t.selectTopic}
-                  </option>
-                  {topics.map((topic) => (
-                    <option key={topic.id} value={topic.id}>
-                      {topic.title}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="grid gap-1.5 text-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {t.sourceType}
-                </span>
-                <select
-                  name="sourceType"
-                  className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
-                  defaultValue="RSS"
-                >
-                  <option value="RSS">RSS Feed</option>
-                  <option value="PAGE">Web Page</option>
-                  <option value="STRUCTURED">Structured List</option>
-                  <option value="UPDATE">Update Feed</option>
-                  <option value="NEWSLETTER">Newsletter Archive</option>
-                  <option value="TELEGRAM_PUBLIC">Telegram Public Feed</option>
-                  <option value="TELEGRAM_BOT">Telegram Bot Feed</option>
-                  <option value="HOTLIST_DISCOVERY">Hotlist Discovery</option>
-                </select>
-              </label>
-
-              <label className="grid gap-1.5 text-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {t.sourceTitle}
-                </span>
-                <input
-                  name="title"
-                  placeholder="OpenAI Blog RSS"
-                  className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
-                />
-              </label>
-
-              <label className="grid gap-1.5 text-sm">
-                <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                  {t.feedUrl}
-                </span>
-                <input
-                  name="url"
-                  placeholder="https://example.com/feed.xml"
-                  className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
-                />
-              </label>
-              <p className="text-xs leading-5 text-stone-400">{t.telegramHelp}</p>
-
-              <button
-                className="inline-flex h-11 items-center justify-center rounded-xl bg-[#0057ff] px-4 text-sm font-medium text-white transition hover:bg-[#0049d6] disabled:opacity-50"
-                disabled={topics.length === 0}
-              >
-                {t.saveSource}
-              </button>
-            </div>
-          </form>
-
-          {/* Built-in sources */}
-          <form
-            action={createPresetSource}
-            className="rounded-[24px] border border-stone-900/10 bg-white p-5 shadow-[0_16px_50px_rgba(33,24,9,0.06)]"
-          >
-            <div className="mb-4 space-y-0.5">
-              <h2 className="text-base font-semibold">{t.builtInSources}</h2>
-              <p className="text-xs leading-5 text-stone-500">{t.builtInDescription}</p>
-            </div>
-
-            <label className="mb-4 grid gap-1.5 text-sm">
-              <span className="text-xs font-semibold uppercase tracking-[0.12em] text-stone-500">
-                {t.topic}
-              </span>
-              <select
-                name="topicId"
-                className="h-11 rounded-xl border border-stone-200 bg-stone-50 px-3 text-sm outline-none transition focus:border-stone-400 focus:bg-white"
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  {t.selectTopic}
-                </option>
-                {topics.map((topic) => (
-                  <option key={topic.id} value={topic.id}>
-                    {topic.title}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <div className="grid gap-2">
-              {sourcePresets.map((preset) => (
-                <article
-                  key={preset.id}
-                  className="rounded-[16px] border border-stone-200 bg-stone-50 px-4 py-3"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 space-y-1">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <h3 className="text-sm font-semibold text-stone-900">
-                          {preset.title}
-                        </h3>
-                        <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-stone-500">
-                          {preset.category}
-                        </span>
-                      </div>
-                      <p className="text-xs leading-5 text-stone-600">
-                        {preset.description}
-                      </p>
-                    </div>
-                    <button
-                      type="submit"
-                      name="presetId"
-                      value={preset.id}
-                      className="inline-flex h-8 shrink-0 items-center justify-center rounded-xl bg-stone-900 px-3 text-xs font-semibold uppercase tracking-wider text-white transition hover:bg-stone-800 disabled:opacity-40"
-                      disabled={topics.length === 0}
-                    >
-                      {t.add}
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </form>
+          <SourceTestFetch isZh={isZh} />
 
           <Link
             href="/discover"

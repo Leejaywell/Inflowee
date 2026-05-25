@@ -21,6 +21,7 @@ import {
   type DeliveryChannel,
 } from "@/lib/delivery";
 import {
+  clearTopicProfile,
   createSourceRecord,
   createTopicRecord,
   defaultStore,
@@ -32,10 +33,10 @@ import {
   getSlackSettings,
   getTelegramSettings,
   getWebhookSettings,
-  hasTopicRecord,
   listSources,
   markBriefRead,
   markBriefUnread,
+  renameTopic,
   saveHtmlPushConfig,
   saveTopicHtmlPushConfig,
   saveBarkSettings,
@@ -49,6 +50,8 @@ import {
   saveTelegramSettings,
   saveTelegramSourceSettings,
   saveWeComSettings,
+  saveUserProfile,
+  saveWechatSettings,
   saveWebhookSettings,
   setSourceSchedule,
   updateTopicDeliveryChannels,
@@ -58,6 +61,8 @@ import { encryptSecret } from "@/lib/secret-box";
 import { DELIVERY_ADAPTERS } from "@/lib/delivery";
 import { previewTopicHtmlPublication } from "@/lib/html-push";
 import { syncSourceById } from "@/lib/source-ingestion";
+import { fetchSourceFeed } from "@/lib/source-sync";
+import { parseFeedItems } from "@/lib/rss";
 import { getSourcePresetById } from "@/lib/source-presets";
 import { generateTopicReport } from "@/lib/reports";
 import {
@@ -213,7 +218,8 @@ export async function createTopic(formData: FormData) {
   }
 
   revalidatePath("/");
-  redirect(`/topics/${topicId}`);
+  revalidatePath("/discover");
+  redirect(`/topics/${topicId}?section=discover`);
 }
 
 export async function refreshStoredTopicIntelligence(topicId: string) {
@@ -230,8 +236,11 @@ export async function refreshStoredTopicIntelligence(topicId: string) {
 export async function createSource(formData: FormData) {
   const actor = await requireSessionActor();
   const sourceType = getString(formData, "sourceType");
+  const categories = formData.getAll("categories").map(String).filter(Boolean);
+  const tags = formData.getAll("tags").map(String).filter(Boolean);
   const parsed = createSourceSchema.safeParse({
-    topicId: getString(formData, "topicId"),
+    categories: categories.length > 0 ? categories : ["all"],
+    tags,
     sourceType,
     title: getString(formData, "title"),
     url: normalizeSourceUrl(sourceType, getString(formData, "url")),
@@ -243,31 +252,26 @@ export async function createSource(formData: FormData) {
     );
   }
 
-  if (!(await hasTopicRecord(defaultStore, parsed.data.topicId))) {
-    redirect("/sources?error=Select%20a%20valid%20Topic.");
-  }
-
-  await assertTopicAccess(defaultStore, {
-    actorId: actor.id,
-    topicId: parsed.data.topicId,
-  });
-
   let destination = "/sources?created=source";
 
   try {
-    await createSourceRecord(defaultStore, parsed.data);
+    await createSourceRecord(defaultStore, {
+      ...parsed.data,
+      ownerId: actor.id,
+      topicId: null,
+    });
   } catch {
     destination = "/sources?error=Unable%20to%20create%20source.";
   }
 
   revalidatePath("/sources");
-  revalidatePath(`/topics/${parsed.data.topicId}`);
+  revalidatePath("/discover");
   redirect(destination);
 }
 
 export async function createPresetSource(formData: FormData) {
   const actor = await requireSessionActor();
-  const topicId = getString(formData, "topicId");
+  const categoryId = getString(formData, "categoryId") || "all";
   const presetId = getString(formData, "presetId");
   const preset = getSourcePresetById(presetId);
 
@@ -275,17 +279,13 @@ export async function createPresetSource(formData: FormData) {
     redirect("/sources?error=Unknown%20built-in%20source.");
   }
 
-  if (!(await hasTopicRecord(defaultStore, topicId))) {
-    redirect("/sources?error=Select%20a%20valid%20Topic.");
-  }
-
-  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
-
   let destination = "/sources?created=source";
 
   try {
     await createSourceRecord(defaultStore, {
-      topicId,
+      ownerId: actor.id,
+      topicId: null,
+      categoryId,
       sourceType: preset.sourceType,
       title: preset.title,
       url: preset.url,
@@ -296,7 +296,7 @@ export async function createPresetSource(formData: FormData) {
   }
 
   revalidatePath("/sources");
-  revalidatePath(`/topics/${topicId}`);
+  revalidatePath("/discover");
   redirect(destination);
 }
 
@@ -312,7 +312,9 @@ export async function runSourceSync(formData: FormData) {
 
   revalidatePath("/sources");
   revalidatePath(`/sources/${sourceId}`);
-  revalidatePath(`/topics/${result.source.topicId}`);
+  if (result.source.topicId) {
+    revalidatePath(`/topics/${result.source.topicId}`);
+  }
   revalidatePath("/inbox");
 
   if (!result.ok) {
@@ -690,6 +692,17 @@ export async function saveHtmlPushConfigAction(formData: FormData) {
   redirect("/settings?updated=html-push");
 }
 
+export async function saveUserProfileAction(formData: FormData) {
+  await requireSessionActor();
+  const nickname = getString(formData, "nickname").trim().slice(0, 20);
+  const avatar = getString(formData, "avatar") || "🎯";
+  if (!nickname) {
+    return;
+  }
+  await saveUserProfile(defaultStore, { nickname, avatar });
+  revalidatePath("/");
+}
+
 export async function saveWebhookEndpoint(formData: FormData) {
   await requireSessionActor();
   const parsed = webhookEndpointSchema.safeParse(getString(formData, "endpoint"));
@@ -831,6 +844,122 @@ export async function saveEmailEndpoint(formData: FormData) {
   await saveGenericDeliveryEndpoint(formData, "email");
 }
 
+export async function saveWechatEndpoint(formData: FormData) {
+  await requireSessionActor();
+  const baseUrl = getString(formData, "baseUrl").trim();
+  const token = getString(formData, "token").trim();
+  const toUserId = getString(formData, "toUserId").trim();
+
+  if (!baseUrl || !token || !toUserId) {
+    redirect(
+      `/settings?error=${encodeURIComponent("All WeChat fields (gateway URL, token, user ID) are required.")}`,
+    );
+  }
+
+  await saveWechatSettings(defaultStore, { baseUrl, token, toUserId });
+  revalidatePath("/settings");
+  redirect("/settings?updated=wechat");
+}
+
+// In-memory QR login sessions (cleared on cold start; QR codes expire in ~2 min anyway)
+const wechatQrSessions = new Map<string, { ticket: string; qrcodeImgUrl: string }>();
+
+export async function startWechatQrLoginAction(): Promise<{
+  ok: boolean;
+  sessionKey?: string;
+  qrcodeImgUrl?: string;
+  error?: string;
+}> {
+  await requireSessionActor();
+
+  try {
+    const res = await fetch(
+      "https://ilinkai.weixin.qq.com/ilink/bot/get_bot_qrcode?bot_type=3",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ local_token_list: [] }),
+      },
+    );
+
+    if (!res.ok) {
+      return { ok: false, error: `QR request failed: ${res.status}` };
+    }
+
+    const data = await res.json();
+    if (data.ret !== 0) {
+      return { ok: false, error: data.errmsg ?? `API error: ${data.ret}` };
+    }
+
+    // qrcode_img_content is a WeChat page URL; wrap it to get a scannable QR image
+    const qrContent: string = data.qrcode_img_content;
+    const qrcodeImgUrl = `https://api.qrserver.com/v1/create-qr-code/?size=192x192&data=${encodeURIComponent(qrContent)}`;
+
+    const sessionKey = crypto.randomUUID();
+    wechatQrSessions.set(sessionKey, {
+      ticket: data.qrcode,
+      qrcodeImgUrl,
+    });
+    setTimeout(() => wechatQrSessions.delete(sessionKey), 5 * 60 * 1000);
+
+    return { ok: true, sessionKey, qrcodeImgUrl };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Network error" };
+  }
+}
+
+export async function pollWechatQrStatusAction(sessionKey: string): Promise<{
+  status: "wait" | "scaned" | "confirmed" | "expired" | "error";
+  error?: string;
+}> {
+  await requireSessionActor();
+
+  const session = wechatQrSessions.get(sessionKey);
+  if (!session) {
+    return { status: "expired" };
+  }
+
+  try {
+    const res = await fetch(
+      `https://ilinkai.weixin.qq.com/ilink/bot/get_qrcode_status?qrcode=${encodeURIComponent(session.ticket)}`,
+    );
+
+    if (!res.ok) {
+      return { status: "error", error: `Poll failed: ${res.status}` };
+    }
+
+    const data = await res.json();
+    if (data.ret !== 0) {
+      return { status: "error", error: data.errmsg ?? `Poll error: ${data.ret}` };
+    }
+
+    const status: string = data.status ?? "wait";
+
+    if (status === "confirmed") {
+      wechatQrSessions.delete(sessionKey);
+      await saveWechatSettings(defaultStore, {
+        baseUrl: data.baseurl ?? "",
+        token: data.bot_token ?? "",
+        toUserId: data.ilink_user_id ?? "",
+      });
+      return { status: "confirmed" };
+    }
+
+    if (status === "expired") {
+      wechatQrSessions.delete(sessionKey);
+      return { status: "expired" };
+    }
+
+    if (status === "scaned" || status === "wait") {
+      return { status: status as "scaned" | "wait" };
+    }
+
+    return { status: "error", error: `Unexpected status: ${status}` };
+  } catch (e) {
+    return { status: "error", error: e instanceof Error ? e.message : "Network error" };
+  }
+}
+
 export async function testDeliveryChannelAction(formData: FormData) {
   await requireSessionActor();
   const channel = getString(formData, "channel") as DeliveryChannel;
@@ -955,4 +1084,96 @@ export async function sendBriefToNtfy(formData: FormData) {
   const briefId = getString(formData, "briefId");
 
   await sendBriefToChannel(briefId, "ntfy");
+}
+
+export async function renameTopicAction(topicId: string, title: string) {
+  const actor = await requireSessionActor();
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+
+  const trimmed = title.trim();
+
+  if (trimmed.length < 2) {
+    throw new Error("Topic name must be at least 2 characters.");
+  }
+
+  await renameTopic(defaultStore, topicId, trimmed);
+  revalidatePath(`/topics/${topicId}`);
+  revalidatePath("/");
+
+  return { success: true };
+}
+
+export async function clearTopicProfileAction(topicId: string): Promise<void> {
+  const actor = await requireSessionActor();
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+  await clearTopicProfile(defaultStore, topicId);
+  revalidatePath(`/topics/${topicId}`);
+}
+
+export async function deleteTopicSourceAction(formData: FormData) {
+  const actor = await requireSessionActor();
+  const sourceId = getString(formData, "sourceId");
+  const topicId = getString(formData, "topicId");
+  await assertSourceAccess(defaultStore, { actorId: actor.id, sourceId });
+  await deleteSourceRecord(defaultStore, sourceId);
+  revalidatePath(`/topics/${topicId}/sources`);
+  revalidatePath(`/topics/${topicId}`);
+  revalidatePath("/sources");
+  redirect(`/topics/${topicId}/sources`);
+}
+
+export async function testSourceFetchAction(
+  url: string,
+  sourceType: string,
+): Promise<{
+  ok: boolean;
+  items?: Array<{ title: string; canonicalUrl: string; publishedAt: string | null }>;
+  error?: string;
+}> {
+  await requireSessionActor();
+
+  const feedTypes = ["RSS", "PAGE", "STRUCTURED", "UPDATE", "NEWSLETTER", "ATOM_FEED", "RSS_FEED"];
+
+  if (!feedTypes.includes(sourceType)) {
+    return { ok: false, error: "Test fetch only supports feed-based sources." };
+  }
+
+  try {
+    const content = await fetchSourceFeed(url);
+    const items = parseFeedItems(content);
+
+    return {
+      ok: true,
+      items: items.slice(0, 5).map((item) => ({
+        title: item.title,
+        canonicalUrl: item.canonicalUrl,
+        publishedAt: item.publishedAt,
+      })),
+    };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Fetch failed.",
+    };
+  }
+}
+
+export async function updateTopicTitleAndProfile(formData: FormData) {
+  const topicId = getString(formData, "topicId");
+  const title = getString(formData, "title");
+  const actor = await requireSessionActor();
+  await assertTopicAccess(defaultStore, { actorId: actor.id, topicId });
+
+  const trimmed = title.trim();
+
+  if (trimmed.length < 2) {
+    redirect(
+      `/topics/${topicId}?error=${encodeURIComponent("Topic name must be at least 2 characters.")}`,
+    );
+  }
+
+  await renameTopic(defaultStore, topicId, trimmed);
+  revalidatePath(`/topics/${topicId}`);
+  revalidatePath("/");
+  redirect(`/topics/${topicId}`);
 }
